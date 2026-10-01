@@ -4,27 +4,27 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>공간실록 시제품</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&family=IBM+Plex+Sans+KR:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
 <style>
 :root{
   --paper:#EEF1EE; --panel:#FFFFFF; --ink:#1E2A2F; --muted:#5E6B6A; --line:#C9D1CE;
-  --blue:#2B4C8C; --mark:#F2DC4A; --mark-ink:#1E2A2F; --faint:.35;
-  --serif:'Gowun Batang','Nanum Myeongjo','AppleMyungjo',serif;
-  --sans:'IBM Plex Sans KR','Apple SD Gothic Neo','Malgun Gothic',system-ui,sans-serif;
+  --blue:#1F5EFF; --mark:#FFD43B; --mark-ink:#1E2A2F; --faint:.35;
+  --route:#00B85C; --route-ink:#FFFFFF;
+  --sans:'Pretendard Variable',Pretendard,'Apple SD Gothic Neo','Malgun Gothic',system-ui,sans-serif;
   box-sizing:border-box;
   padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
 }
 @media (prefers-color-scheme:dark){
   :root:not([data-theme="light"]){
     --paper:#141A1D; --panel:#1A2125; --ink:#E4E8E5; --muted:#9AA6A4; --line:#2E3A3E;
-    --blue:#8FB0F0; --mark:#E8D44D; --mark-ink:#141A1D; --faint:.4;
+    --blue:#6E9BFF; --mark:#FFD43B; --mark-ink:#141A1D; --faint:.4;
+    --route:#1FCB72; --route-ink:#0B1F14;
   }
 }
 :root[data-theme="dark"]{
   --paper:#141A1D; --panel:#1A2125; --ink:#E4E8E5; --muted:#9AA6A4; --line:#2E3A3E;
-  --blue:#8FB0F0; --mark:#E8D44D; --mark-ink:#141A1D; --faint:.4;
+  --blue:#6E9BFF; --mark:#FFD43B; --mark-ink:#141A1D; --faint:.4;
+  --route:#1FCB72; --route-ink:#0B1F14;
 }
 *,*::before,*::after{box-sizing:inherit}
 html{height:100%;scroll-padding-top:env(safe-area-inset-top,0px)}
@@ -35,7 +35,7 @@ button,input{font:inherit;color:inherit}
 .app{display:grid;grid-template-columns:380px 1fr;height:100%}
 .side{background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
 .side-head{padding:22px 22px 14px}
-.brand{font-family:var(--serif);font-weight:700;font-size:34px;line-height:1.1;margin:0;letter-spacing:-.01em}
+.brand{font-family:var(--sans);font-weight:800;font-size:32px;line-height:1.1;margin:0;letter-spacing:-.03em}
 .tagline{margin:6px 0 0;color:var(--muted);font-size:14px}
 .actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}
 .btn{border:1px solid var(--ink);background:var(--ink);color:var(--panel);padding:8px 14px;border-radius:6px;cursor:pointer;font-size:14px;font-weight:500}
@@ -63,7 +63,7 @@ button,input{font:inherit;color:inherit}
 .item{width:100%;text-align:left;background:transparent;border:0;border-radius:6px;padding:10px;cursor:pointer;display:block}
 .item:hover{background:var(--paper)}
 .item[aria-current="true"]{background:var(--paper);box-shadow:inset 3px 0 0 var(--mark)}
-.item-name{font-family:var(--serif);font-weight:700;font-size:17px}
+.item-name{font-family:var(--sans);font-weight:700;font-size:17px}
 .item-sub{font-size:13px;color:var(--muted)}
 .empty{padding:18px 22px;color:var(--muted);font-size:14px}
 
@@ -82,19 +82,32 @@ button,input{font:inherit;color:inherit}
 .mapmsg[hidden]{display:none}
 .mapmsg p{max-width:34em;margin:0}
 
-/* 네이버 지도 위 장소 표시 */
-.pin{position:relative;width:20px;height:20px;display:grid;place-items:center;cursor:pointer}
-.pin.faint{opacity:var(--faint);cursor:default}
-.pin-dot{width:16px;height:16px;border-radius:50%;background:var(--panel);border:2.5px solid var(--blue);display:grid;place-items:center;box-shadow:0 1px 3px rgba(20,30,35,.35)}
-.pin-dot::after{content:"";width:5px;height:5px;border-radius:50%;background:var(--blue)}
-.pin.sel .pin-dot{width:20px;height:20px;box-shadow:0 0 0 7px var(--mark),0 2px 6px rgba(20,30,35,.35)}
-.pin-label{position:absolute;left:24px;top:50%;transform:translateY(-50%);white-space:nowrap;font-family:var(--serif);font-size:12px;color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:1px 6px}
-.pin.sel .pin-label{font-weight:700;font-size:14px;left:30px}
+/* 네이버 지도 위 장소 표시: 유형별 색 물방울 핀, 끝점(14,29)이 좌표 */
+.pin{position:relative;width:28px;height:32px;cursor:pointer;transform-origin:14px 29px;transition:transform .12s ease-out}
+.pin:hover{transform:scale(1.1)}
+.pin.faint{opacity:var(--faint);filter:grayscale(.8);cursor:default}
+.pin.faint:hover{transform:none}
+.pin-head{position:absolute;left:2px;top:0;width:24px;height:24px;border-radius:50% 50% 50% 0;background:var(--c);border:2px solid #FFFFFF;transform:rotate(-45deg);box-shadow:-1px 2px 6px rgba(15,20,40,.35)}
+.pin-head::after{content:"";position:absolute;inset:6px;border-radius:50%;background:#FFFFFF}
+.pin.sel{transform:scale(1.35)}
+.pin.sel .pin-head{box-shadow:0 0 0 3px var(--mark),-1px 2px 6px rgba(15,20,40,.35)}
+.pin-label{position:absolute;left:30px;top:3px;white-space:nowrap;font-size:12px;font-weight:600;color:var(--ink);background:var(--panel);border-radius:999px;padding:2px 8px;box-shadow:0 1px 4px rgba(15,20,40,.25)}
+.pin.sel .pin-label{font-size:11px;font-weight:700;background:var(--c);color:#FFFFFF}
+
+.legend{position:absolute;left:14px;top:14px;z-index:10;display:flex;flex-wrap:wrap;gap:6px 12px;max-width:calc(100% - 140px);background:var(--panel);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:500;box-shadow:0 1px 6px rgba(15,20,40,.18)}
+.legend[hidden]{display:none}
+.legend span{display:inline-flex;align-items:center;gap:5px}
+.legend i,.item-name i{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--c);flex:none}
+.item-name{display:flex;align-items:center;gap:8px}
+
+.d-route{margin-top:16px;display:flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:11px 14px;border-radius:8px;background:var(--route);color:var(--route-ink);font-weight:700;font-size:15px;text-decoration:none}
+.d-route:hover{filter:brightness(1.06)}
+.d-route-note{margin:6px 0 0;font-size:12px;color:var(--muted);text-align:center}
 
 .detail{position:absolute;left:16px;bottom:16px;width:min(360px,calc(100% - 32px));max-height:calc(100% - 80px);overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:18px 18px 16px;box-shadow:0 10px 30px rgba(20,30,35,.18);z-index:10}
 .detail[hidden]{display:none}
 .d-head{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
-.d-name{font-family:var(--serif);font-weight:700;font-size:24px;line-height:1.2;margin:0}
+.d-name{font-family:var(--sans);font-weight:700;font-size:24px;line-height:1.2;margin:0}
 .d-meta{font-size:13px;color:var(--muted);margin:4px 0 0}
 .d-close{border:0;background:transparent;font-size:22px;line-height:1;cursor:pointer;color:var(--muted);padding:2px 4px}
 .scale{margin:14px 0 0;display:grid;grid-template-columns:72px 1fr;row-gap:7px;font-size:13px}
@@ -105,7 +118,7 @@ button,input{font:inherit;color:inherit}
 .opt.none{font-style:italic}
 .d-block{margin-top:14px;font-size:14px}
 .d-label{font-size:12px;color:var(--muted)}
-.d-note{font-family:var(--serif);font-size:16px;line-height:1.7;margin:4px 0 0}
+.d-note{font-family:var(--sans);font-size:16px;line-height:1.7;margin:4px 0 0}
 .d-date{font-size:12px;color:var(--muted);margin-top:12px}
 
 @media (max-width:899px){
@@ -177,6 +190,7 @@ button,input{font:inherit;color:inherit}
   <main class="mapwrap">
     <div id="map" role="region" aria-label="성수동 지도와 기록된 공간 위치"></div>
     <div class="mapmsg" id="mapmsg" hidden><p id="mapmsgText"></p></div>
+    <div class="legend" id="legend" hidden aria-label="장소 유형별 색"></div>
     <div class="mapctl">
       <button type="button" id="zin" aria-label="확대">+</button>
       <button type="button" id="zout" aria-label="축소">−</button>
@@ -241,6 +255,29 @@ function normDate(v){
 }
 // 지도 표시는 HTML 문자열로 만들어지므로, 장소 이름은 반드시 이스케이프한다
 function esc(s){ return String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' })[c]); }
+
+// 유형 글자로 색 묶음을 고른다. 위에서부터 먼저 맞는 것을 쓴다.
+const CATEGORIES = [
+  { name:'베이커리',  color:'#FF8A00', test:/베이커리|빵/ },
+  { name:'북카페',    color:'#7B3FF2', test:/북|책|서점/ },
+  { name:'찻집',      color:'#00A86B', test:/찻집|티|차/ },
+  { name:'문화공간',  color:'#FF2E7E', test:/복합|문화|전시|갤러리/ },
+  { name:'카페',      color:'#1F5EFF', test:/카페|커피|로스터/ },
+  { name:'기타',      color:'#5B6475', test:/.*/ }
+];
+const category = p => CATEGORIES.find(c => c.test.test(p.type || '')) || CATEGORIES[CATEGORIES.length - 1];
+
+// 길찾기: 휴대폰은 네이버 지도 앱을 열고, 앱이 없거나 컴퓨터면 네이버 지도 웹으로 간다
+const IS_MOBILE = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+function routeLinks(p){
+  const name = encodeURIComponent(p.name);
+  return {
+    app: `nmap://route/public?dlat=${p.lat}&dlng=${p.lng}&dname=${name}&appname=${encodeURIComponent(location.origin)}`,
+    web: IS_MOBILE
+      ? `https://m.map.naver.com/route.nhn?menu=route&ename=${name}&ex=${p.lng}&ey=${p.lat}&pathType=1&showMap=true`
+      : `https://map.naver.com/index.nhn?elng=${p.lng}&elat=${p.lat}&etext=${name}&menu=route&pathType=1`
+  };
+}
 
 function rowsToPlaces(rows){
   const issues = [];
@@ -431,7 +468,8 @@ function renderList(vis){
   for (const p of vis) {
     const li = el('li'); const b = el('button','item'); b.type = 'button';
     if (state.sel === p.id) b.setAttribute('aria-current','true');
-    b.appendChild(el('div','item-name', p.name));
+    const nm = el('div','item-name'); const dot = el('i'); dot.style.setProperty('--c', category(p).color);
+    nm.append(dot, el('span', null, p.name)); b.appendChild(nm);
     const sub = [p.type, p.noise && `소음 ${p.noise}`, p.outlet && `콘센트 ${p.outlet}`, p.stay].filter(Boolean).join(', ');
     b.appendChild(el('div','item-sub', sub || '기록된 속성 없음'));
     b.addEventListener('click', () => select(p.id, true));
@@ -462,6 +500,17 @@ function renderDetail(){
   if (p.furniture) { const b = el('div','d-block'); b.append(el('div','d-label','가구'), el('div',null,p.furniture)); d.appendChild(b); }
   if (p.note) { const b = el('div','d-block'); b.append(el('div','d-label','한 줄 기록'), el('p','d-note',p.note)); d.appendChild(b); }
   if (p.date) d.appendChild(el('div','d-date', `방문일 ${p.date}`));
+
+  const links = routeLinks(p);
+  const route = el('a','d-route','네이버 지도로 길찾기');
+  route.href = links.web; route.target = '_blank'; route.rel = 'noopener';
+  if (IS_MOBILE) route.addEventListener('click', e => {
+    e.preventDefault();
+    location.href = links.app;
+    // 앱이 열리면 페이지가 가려진다. 1.5초 뒤에도 그대로면 앱이 없다고 보고 웹으로 연다.
+    setTimeout(() => { if (!document.hidden) location.href = links.web; }, 1500);
+  });
+  d.append(route, el('p','d-route-note', IS_MOBILE ? '네이버 지도 앱이 있으면 앱으로, 없으면 웹으로 열려요.' : '새 탭에서 네이버 지도가 열려요. 출발지를 입력하면 경로가 나와요.'));
   d.hidden = false;
 }
 function select(id, center){
@@ -496,6 +545,14 @@ function initMap(){
   });
   naver.maps.Event.addListener(map, 'zoom_changed', () => renderMap(state.places.filter(matches)));
   syncMarkers(); fitAll(); renderAll();
+  // 지도 영역 크기가 바뀌면 지도에 알려 준다. 크기가 0이던 상태(숨겨진 탭 등)에서 처음 보이면 범위도 다시 맞춘다.
+  const box = $('map'); let wasEmpty = !box.clientWidth || !box.clientHeight;
+  new ResizeObserver(() => {
+    const w = box.clientWidth, h = box.clientHeight;
+    if (!w || !h) { wasEmpty = true; return; }
+    map.setSize(new naver.maps.Size(w, h));
+    if (wasEmpty) { wasEmpty = false; fitAll(); }
+  }).observe(box);
 }
 function syncMarkers(){
   if (!map) return;
@@ -524,13 +581,23 @@ function renderMap(vis){
     const on = visSet.has(p.id), sel = p.id === state.sel;
     const cls = 'pin' + (sel ? ' sel' : '') + (on ? '' : ' faint');
     const label = (sel || (on && showLabels)) ? `<span class="pin-label">${esc(p.name)}</span>` : '';
-    mk.setIcon({ content: `<div class="${cls}"><span class="pin-dot"></span>${label}</div>`, anchor: new naver.maps.Point(10, 10) });
+    mk.setIcon({ content: `<div class="${cls}" style="--c:${category(p).color}"><span class="pin-head"></span>${label}</div>`, anchor: new naver.maps.Point(14, 29) });
     mk.setZIndex(sel ? 300 : on ? 200 : 100);
   }
 }
+function renderLegend(){
+  const lg = $('legend'); lg.replaceChildren();
+  const used = new Set(state.places.map(p => category(p).name));
+  for (const c of CATEGORIES) {
+    if (!used.has(c.name)) continue;
+    const s = el('span'); const i = el('i'); i.style.setProperty('--c', c.color);
+    s.append(i, document.createTextNode(c.name)); lg.appendChild(s);
+  }
+  lg.hidden = !map || !used.size;
+}
 function renderAll(){
   const vis = state.places.filter(matches);
-  renderList(vis); renderMap(vis); renderDetail();
+  renderList(vis); renderMap(vis); renderLegend(); renderDetail();
 }
 
 /* ---------- 시작 ---------- */
