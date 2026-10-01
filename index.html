@@ -58,6 +58,19 @@ button,input{font:inherit;color:inherit}
 .count-row{display:flex;justify-content:space-between;align-items:baseline;padding:14px 22px 8px}
 .count{font-size:13px;color:var(--muted)}
 .linkbtn{background:none;border:0;color:var(--blue);cursor:pointer;font-size:13px;padding:0}
+.count-tools{display:flex;align-items:baseline;gap:14px}
+.sortbtn{border:1px solid var(--line);background:transparent;border-radius:999px;padding:2px 10px;font-size:12px;font-weight:600;cursor:pointer;color:var(--muted)}
+.sortbtn[aria-pressed="true"]{background:var(--blue);border-color:var(--blue);color:#FFFFFF}
+.item-dist{font-size:12px;font-weight:600;color:var(--blue);margin-top:2px;font-variant-numeric:tabular-nums}
+.mapctl .loc[aria-pressed="true"]{background:var(--blue);border-color:var(--blue);color:#FFFFFF}
+.me-dot{width:18px;height:18px;border-radius:50%;background:#1F5EFF;border:3px solid #FFFFFF;box-shadow:0 0 0 2px rgba(31,94,255,.35),0 1px 4px rgba(15,20,40,.4)}
+@media (prefers-reduced-motion:no-preference){
+  .me-dot{animation:pulse 2s ease-out infinite}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(31,94,255,.5),0 1px 4px rgba(15,20,40,.4)}100%{box-shadow:0 0 0 14px rgba(31,94,255,0),0 1px 4px rgba(15,20,40,.4)}}
+}
+.d-where{margin:12px 0 0;padding:10px 12px;border-radius:8px;background:var(--paper);font-size:13px;display:grid;gap:3px;font-variant-numeric:tabular-nums}
+.d-where b{font-weight:700;color:var(--blue)}
+.d-where .muted{color:var(--muted);font-size:12px}
 
 .list{list-style:none;margin:0;padding:0 12px 12px}
 .item{width:100%;text-align:left;background:transparent;border:0;border-radius:6px;padding:10px;cursor:pointer;display:block}
@@ -158,7 +171,10 @@ button,input{font:inherit;color:inherit}
       </div>
       <div class="count-row">
         <span class="count" id="count"></span>
-        <button class="linkbtn" id="btnClear" type="button">필터 지우기</button>
+        <span class="count-tools">
+          <button class="sortbtn" id="btnSort" type="button" aria-pressed="false">가까운 순</button>
+          <button class="linkbtn" id="btnClear" type="button">필터 지우기</button>
+        </span>
       </div>
       <ul class="list" id="list"></ul>
       <div class="notes">
@@ -181,6 +197,7 @@ button,input{font:inherit;color:inherit}
             <li>압축을 풀었을 때 지나치게 커지는 파일은 거부합니다.</li>
             <li>좌표는 국내 범위, 상태 값은 정해진 목록만 받아들입니다.</li>
             <li>수식, 매크로, 링크는 읽지 않고 값만 가져옵니다.</li>
+            <li>내 위치는 이 화면에서 거리를 계산하는 데만 쓰고, 저장하거나 어디로도 보내지 않습니다.</li>
           </ul>
         </details>
       </div>
@@ -195,6 +212,7 @@ button,input{font:inherit;color:inherit}
       <button type="button" id="zin" aria-label="확대">+</button>
       <button type="button" id="zout" aria-label="축소">−</button>
       <button type="button" class="wide" id="zfit">전체 보기</button>
+      <button type="button" class="wide loc" id="zloc" aria-pressed="false">내 위치</button>
     </div>
     <section class="detail" id="detail" hidden aria-live="polite"></section>
   </main>
@@ -277,6 +295,32 @@ function routeLinks(p){
       ? `https://m.map.naver.com/route.nhn?menu=route&ename=${name}&ex=${p.lng}&ey=${p.lat}&pathType=1&showMap=true`
       : `https://map.naver.com/index.nhn?elng=${p.lng}&elat=${p.lat}&etext=${name}&menu=route&pathType=1`
   };
+}
+
+/* ---------- 거리 ---------- */
+// 성수동 일대 지하철역 (역 중심 기준 대략 좌표)
+const STATIONS = [
+  { name:'성수역',       line:'2호선',      lat:37.5446, lng:127.0560 },
+  { name:'뚝섬역',       line:'2호선',      lat:37.5472, lng:127.0474 },
+  { name:'건대입구역',   line:'2·7호선',    lat:37.5404, lng:127.0692 },
+  { name:'서울숲역',     line:'수인분당선', lat:37.5436, lng:127.0447 },
+  { name:'뚝섬유원지역', line:'7호선',      lat:37.5315, lng:127.0667 }
+];
+const STATION_MAX_M = 1500; // 이보다 먼 역은 "가까운 역"으로 보여 주지 않는다
+
+function distM(a, b){ // 두 좌표 사이 직선거리(m)
+  const R = 6371000, rad = Math.PI / 180;
+  const dLat = (b.lat - a.lat) * rad, dLng = (b.lng - a.lng) * rad;
+  const h = Math.sin(dLat/2) ** 2 + Math.cos(a.lat*rad) * Math.cos(b.lat*rad) * Math.sin(dLng/2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+// 실제 길은 직선보다 돌아가므로 1.3배로 잡고, 분당 75m를 걷는다고 본다
+const walkMin = m => Math.max(1, Math.round(m * 1.3 / 75));
+const fmtDist = m => m < 1000 ? `${Math.max(10, Math.round(m / 10) * 10)}m` : `${(m / 1000).toFixed(1)}km`;
+function nearestStation(p){
+  let best = null;
+  for (const s of STATIONS) { const m = distM(p, s); if (!best || m < best.m) best = { ...s, m }; }
+  return best && best.m <= STATION_MAX_M ? best : null;
 }
 
 function rowsToPlaces(rows){
@@ -409,7 +453,7 @@ async function handleFile(file){
 }
 
 /* ---------- 상태 ---------- */
-const state = { places:[], filters:{}, q:'', sel:null };
+const state = { places:[], filters:{}, q:'', sel:null, me:null, sortNear:false };
 for (const k of Object.keys(ENUMS)) state.filters[k] = new Set();
 const $ = id => document.getElementById(id);
 function el(tag, cls, text){ const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
@@ -472,6 +516,7 @@ function renderList(vis){
     nm.append(dot, el('span', null, p.name)); b.appendChild(nm);
     const sub = [p.type, p.noise && `소음 ${p.noise}`, p.outlet && `콘센트 ${p.outlet}`, p.stay].filter(Boolean).join(', ');
     b.appendChild(el('div','item-sub', sub || '기록된 속성 없음'));
+    if (state.me) { const m = distM(state.me, p); b.appendChild(el('div','item-dist', `${fmtDist(m)} · 걸어서 약 ${walkMin(m)}분`)); }
     b.addEventListener('click', () => select(p.id, true));
     li.appendChild(b); list.appendChild(li);
   }
@@ -487,6 +532,21 @@ function renderDetail(){
   const close = el('button','d-close','×'); close.type = 'button'; close.setAttribute('aria-label','닫기');
   close.addEventListener('click', () => select(null));
   head.append(t, close); d.appendChild(head);
+
+  const st = nearestStation(p);
+  if (state.me || st) {
+    const w = el('div','d-where');
+    if (state.me) {
+      const m = distM(state.me, p); const line = el('div');
+      line.append('내 위치에서 ', el('b', null, fmtDist(m)), `, 걸어서 약 ${walkMin(m)}분`); w.appendChild(line);
+    }
+    if (st) {
+      const line = el('div');
+      line.append(`${st.name}(${st.line})에서 `, el('b', null, `걸어서 약 ${walkMin(st.m)}분`), ` (${fmtDist(st.m)})`); w.appendChild(line);
+    }
+    w.appendChild(el('div','muted','직선거리로 계산한 대략적인 값이에요.'));
+    d.appendChild(w);
+  }
   const dl = el('dl','scale');
   for (const [k, def] of Object.entries(ENUMS)) {
     dl.appendChild(el('dt', null, def.label));
@@ -595,8 +655,47 @@ function renderLegend(){
   }
   lg.hidden = !map || !used.size;
 }
+/* ---------- 내 위치 ---------- */
+let watchId = null, meMarker = null, meCircle = null, panOnFix = false;
+
+function locate(thenSort){
+  if (thenSort) state.sortNear = true;
+  if (state.me) { if (map) map.panTo(new naver.maps.LatLng(state.me.lat, state.me.lng)); renderAll(); return; }
+  if (!('geolocation' in navigator)) { setStatus('이 브라우저는 위치 확인을 지원하지 않아요.', true); state.sortNear = false; renderAll(); return; }
+  if (watchId !== null) return; // 이미 위치를 찾는 중
+  setStatus('내 위치를 찾는 중이에요…', false);
+  panOnFix = !thenSort;
+  watchId = navigator.geolocation.watchPosition(onFix, onFixError, { enableHighAccuracy:true, maximumAge:15000, timeout:20000 });
+}
+function onFix(pos){
+  const first = !state.me;
+  state.me = { lat: pos.coords.latitude, lng: pos.coords.longitude, acc: pos.coords.accuracy };
+  if (first) setStatus('내 위치를 찾았어요. 위치는 이 화면에서 거리 계산에만 써요.', false);
+  if (map) {
+    const ll = new naver.maps.LatLng(state.me.lat, state.me.lng);
+    if (!meMarker) {
+      meMarker = new naver.maps.Marker({ map, position: ll, zIndex: 400, clickable: false,
+        icon: { content: '<div class="me-dot" aria-label="내 위치"></div>', anchor: new naver.maps.Point(9, 9) } });
+      meCircle = new naver.maps.Circle({ map, center: ll, radius: Math.min(state.me.acc, 500),
+        fillColor:'#1F5EFF', fillOpacity:.1, strokeColor:'#1F5EFF', strokeOpacity:.35, strokeWeight:1, clickable:false });
+    } else { meMarker.setPosition(ll); meCircle.setCenter(ll); meCircle.setRadius(Math.min(state.me.acc, 500)); }
+    if (first && panOnFix) map.panTo(ll);
+  }
+  renderAll();
+}
+function onFixError(err){
+  navigator.geolocation.clearWatch(watchId); watchId = null; state.sortNear = false;
+  const msg = err && err.code === 1
+    ? '위치 권한이 꺼져 있어요. 브라우저 주소창의 자물쇠 아이콘에서 위치를 허용한 뒤 다시 눌러 주세요.'
+    : '내 위치를 찾지 못했어요. 잠시 뒤 다시 시도해 주세요.';
+  setStatus(msg, true); renderAll();
+}
+
 function renderAll(){
-  const vis = state.places.filter(matches);
+  let vis = state.places.filter(matches);
+  if (state.sortNear && state.me) vis = vis.map(p => [distM(state.me, p), p]).sort((a, b) => a[0] - b[0]).map(x => x[1]);
+  $('btnSort').setAttribute('aria-pressed', String(state.sortNear && !!state.me));
+  $('zloc').setAttribute('aria-pressed', String(!!state.me));
   renderList(vis); renderMap(vis); renderLegend(); renderDetail();
 }
 
@@ -617,6 +716,11 @@ $('btnClear').addEventListener('click', () => {
 $('zin').addEventListener('click', () => { if (map) map.setZoom(map.getZoom() + 1, true); });
 $('zout').addEventListener('click', () => { if (map) map.setZoom(map.getZoom() - 1, true); });
 $('zfit').addEventListener('click', fitAll);
+$('zloc').addEventListener('click', () => locate(false));
+$('btnSort').addEventListener('click', () => {
+  if (state.sortNear && state.me) { state.sortNear = false; renderAll(); }
+  else locate(true);
+});
 loadInitial();
 loadNaver();
 })();
