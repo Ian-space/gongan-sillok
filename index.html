@@ -87,7 +87,7 @@ button,input{font:inherit;color:inherit}
 .notes li{margin:3px 0}
 
 .mapwrap{position:relative;min-height:0;overflow:hidden}
-#map{width:100%;height:100%;background:var(--paper)}
+#map{width:100%;height:100%;background:var(--paper);isolation:isolate} /* 네이버 지도 내부 요소(로고, 축척)가 상세 패널 위로 올라오지 않게 가둔다 */
 .mapctl{position:absolute;top:14px;right:14px;display:flex;flex-direction:column;gap:6px;z-index:10}
 .mapctl button{width:38px;height:38px;border:1px solid var(--line);background:var(--panel);border-radius:6px;cursor:pointer;font-size:18px}
 .mapctl .wide{width:auto;padding:0 10px;font-size:13px}
@@ -115,6 +115,7 @@ button,input{font:inherit;color:inherit}
 
 .d-route{margin-top:16px;display:flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:11px 14px;border-radius:8px;background:var(--route);color:var(--route-ink);font-weight:700;font-size:15px;text-decoration:none}
 .d-route:hover{filter:brightness(1.06)}
+.d-route.ghost{margin-top:8px;background:transparent;color:var(--ink);border:1px solid var(--line);font-weight:600;font-size:14px;padding:9px 14px}
 .d-route-note{margin:6px 0 0;font-size:12px;color:var(--muted);text-align:center}
 
 .detail{position:absolute;left:16px;bottom:16px;width:min(360px,calc(100% - 32px));max-height:calc(100% - 80px);overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:18px 18px 16px;box-shadow:0 10px 30px rgba(20,30,35,.18);z-index:10}
@@ -561,20 +562,23 @@ function renderDetail(){
   if (p.note) { const b = el('div','d-block'); b.append(el('div','d-label','한 줄 기록'), el('p','d-note',p.note)); d.appendChild(b); }
   if (p.date) d.appendChild(el('div','d-date', `방문일 ${p.date}`));
 
+  // 길찾기는 어떤 경우에도 이 창을 다른 페이지로 바꾸지 않는다. 앱은 앱으로, 웹은 새 탭으로 연다.
   const links = routeLinks(p);
-  const route = el('a','d-route','네이버 지도로 길찾기');
-  route.href = links.web; route.target = '_blank'; route.rel = 'noopener';
-  if (IS_MOBILE) route.addEventListener('click', e => {
-    e.preventDefault();
-    location.href = links.app;
-    // 앱이 열리면 페이지가 가려진다. 1.5초 뒤에도 그대로면 앱이 없다고 보고 웹으로 연다.
-    setTimeout(() => { if (!document.hidden) location.href = links.web; }, 1500);
-  });
-  d.append(route, el('p','d-route-note', IS_MOBILE ? '네이버 지도 앱이 있으면 앱으로, 없으면 웹으로 열려요.' : '새 탭에서 네이버 지도가 열려요. 출발지를 입력하면 경로가 나와요.'));
+  if (IS_MOBILE) {
+    const app = el('a','d-route','네이버 지도 앱으로 길찾기'); app.href = links.app;
+    const web = el('a','d-route ghost','앱이 없으면 웹에서 보기'); web.href = links.web; web.target = '_blank'; web.rel = 'noopener';
+    d.append(app, web, el('p','d-route-note','길찾기를 마치고 돌아오면 이 화면이 그대로 남아 있어요.'));
+  } else {
+    const web = el('a','d-route','네이버 지도로 길찾기'); web.href = links.web; web.target = '_blank'; web.rel = 'noopener';
+    d.append(web, el('p','d-route-note','새 탭에서 네이버 지도가 열려요. 출발지를 입력하면 경로가 나와요.'));
+  }
   d.hidden = false;
 }
+const SEL_KEY = 'gongan-sillok:sel';
 function select(id, center){
   state.sel = id;
+  // 다른 앱에 다녀오는 사이 사파리가 탭을 새로고침해도 보던 장소를 다시 열 수 있게 기억한다
+  try { id ? sessionStorage.setItem(SEL_KEY, id) : sessionStorage.removeItem(SEL_KEY); } catch {}
   if (id && center && map) {
     const p = state.places.find(x => x.id === id);
     if (p) { const ll = new naver.maps.LatLng(p.lat, p.lng); if (!map.getBounds().hasLatLng(ll)) map.panTo(ll); }
@@ -722,6 +726,7 @@ $('btnSort').addEventListener('click', () => {
   else locate(true);
 });
 loadInitial();
+try { const id = sessionStorage.getItem(SEL_KEY); if (id && state.places.some(p => p.id === id)) { state.sel = id; renderAll(); } } catch {}
 loadNaver();
 })();
 </script>
