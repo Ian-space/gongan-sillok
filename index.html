@@ -115,6 +115,9 @@ button,input{font:inherit;color:inherit}
 
 .d-route{margin-top:16px;display:flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:11px 14px;border-radius:8px;background:var(--route);color:var(--route-ink);font-weight:700;font-size:15px;text-decoration:none}
 .d-route:hover{filter:brightness(1.06)}
+.d-loc{margin-top:16px;width:100%;padding:10px 14px;border-radius:8px;border:1.5px solid var(--blue);background:transparent;color:var(--blue);font-weight:700;font-size:14px;cursor:pointer}
+.d-loc:disabled{opacity:.6;cursor:default}
+.d-loc + .d-route{margin-top:8px}
 .inapp{position:sticky;top:env(safe-area-inset-top,0px);z-index:50;display:flex;align-items:center;gap:10px;padding:10px 16px;background:var(--ink);color:var(--panel);font-size:13px;line-height:1.4}
 .inapp[hidden]{display:none}
 .inapp span{flex:1;min-width:0}
@@ -139,15 +142,24 @@ button,input{font:inherit;color:inherit}
 .d-note{font-family:var(--sans);font-size:16px;line-height:1.7;margin:4px 0 0}
 .d-date{font-size:12px;color:var(--muted);margin-top:12px}
 
+.sheet-handle{display:none}
+/* 휴대폰: 지도는 화면 전체, 목록·필터는 아래에서 올라오는 패널. 손잡이를 끌어 높이를 바꾼다 */
 @media (max-width:899px){
-  body{height:auto}
-  .app{display:flex;flex-direction:column;height:auto}
-  .side{border-right:0;order:2}
-  .mapwrap{order:1;height:52vh;min-height:320px;border-bottom:1px solid var(--line)}
-  .scroll{overflow:visible}
-  .side-head{order:0}
+  html,body{height:100%;overflow:hidden;overscroll-behavior:none}
+  .app{display:block;height:100%}
+  .mapwrap{position:fixed;inset:0}
+  .side{position:fixed;left:0;right:0;bottom:0;z-index:15;height:var(--sheet-h,50dvh);border-right:0;border-radius:16px 16px 0 0;box-shadow:0 -6px 24px rgba(15,20,40,.18);padding-bottom:env(safe-area-inset-bottom,0px)}
+  .side.anim{transition:height .22s ease-out}
+  body.has-detail .side{display:none} /* 장소를 고르면 상세 패널이 목록 패널 자리를 대신한다 */
+  .sheet-handle{display:flex;justify-content:center;align-items:center;flex:none;height:26px;touch-action:none;cursor:grab}
+  .sheet-handle span{width:40px;height:5px;border-radius:999px;background:var(--line)}
+  .side-head{padding:2px 20px 10px;touch-action:none}
+  .scroll{overscroll-behavior:contain}
   .detail{position:fixed;left:0;right:0;bottom:0;width:auto;max-height:70vh;border-radius:14px 14px 0 0;padding-bottom:calc(16px + env(safe-area-inset-bottom,0px));z-index:20}
-  .brand{font-size:28px}
+  .brand{font-size:24px}
+  .tagline{font-size:13px;margin-top:2px}
+  .actions{margin-top:10px}
+  .btn{padding:6px 12px;font-size:13px}
 }
 @media (prefers-reduced-motion:no-preference){
   .detail:not([hidden]){animation:rise .18s ease-out}
@@ -161,7 +173,8 @@ button,input{font:inherit;color:inherit}
   <a class="inapp-btn" id="inappBtn" href="#">사파리로 열기</a>
 </div>
 <div class="app">
-  <aside class="side">
+  <aside class="side" id="side">
+    <div class="sheet-handle" id="sheetHandle" role="button" tabindex="0" aria-label="목록 패널 높이 바꾸기"><span></span></div>
     <div class="side-head">
       <h1 class="brand">공간실록</h1>
       <p class="tagline">평점 대신 공간의 사실을 기록합니다. 성수동 시제품.</p>
@@ -539,6 +552,7 @@ function renderList(vis){
 }
 function renderDetail(){
   const d = $('detail'); const p = state.places.find(x => x.id === state.sel);
+  document.body.classList.toggle('has-detail', !!p);
   if (!p) { d.hidden = true; d.replaceChildren(); return; }
   d.replaceChildren();
   const head = el('div','d-head'); const t = el('div');
@@ -579,6 +593,13 @@ function renderDetail(){
 
   // 길찾기는 어떤 경우에도 이 창을 다른 페이지로 바꾸지 않는다. 앱은 앱으로, 웹은 새 탭으로 연다.
   const links = routeLinks(p, state.me);
+  // 위치를 아직 모르면 길찾기 버튼 위에 눈에 띄게 먼저 권한다
+  if (!state.me) {
+    const loc = el('button','d-loc', watchId !== null ? '내 위치를 찾는 중이에요…' : '내 위치 켜고 출발지 자동으로 넣기'); loc.type = 'button';
+    loc.disabled = watchId !== null;
+    loc.addEventListener('click', () => locate(false, true));
+    d.appendChild(loc);
+  }
   if (IS_MOBILE) {
     const app = el('a','d-route','네이버 지도 앱으로 길찾기'); app.href = links.app;
     const web = el('a','d-route ghost','앱이 없으면 웹에서 보기'); web.href = links.web; web.target = '_blank'; web.rel = 'noopener';
@@ -587,14 +608,9 @@ function renderDetail(){
     const web = el('a','d-route','네이버 지도로 길찾기'); web.href = links.web; web.target = '_blank'; web.rel = 'noopener';
     d.appendChild(web);
   }
-  const note = el('p','d-route-note');
-  if (state.me) note.textContent = '출발지에 내 위치가 들어가 있어요.' + (IS_MOBILE ? ' 길찾기를 마치고 돌아오면 이 화면이 그대로 남아 있어요.' : '');
-  else {
-    const btn = el('button','linkbtn','내 위치 켜기'); btn.type = 'button';
-    btn.addEventListener('click', () => locate(false, true));
-    note.append(btn, '를 누르면 출발지가 자동으로 들어가요.');
-  }
-  d.appendChild(note);
+  d.appendChild(el('p','d-route-note', state.me
+    ? '출발지에 내 위치가 들어가 있어요.' + (IS_MOBILE ? ' 길찾기를 마치고 돌아오면 이 화면이 그대로 남아 있어요.' : '')
+    : '위치를 켜지 않으면 네이버 지도에서 출발지를 직접 입력해야 해요.'));
   d.hidden = false;
 }
 const SEL_KEY = 'gongan-sillok:sel';
@@ -602,11 +618,18 @@ function select(id, center){
   state.sel = id;
   // 다른 앱에 다녀오는 사이 사파리가 탭을 새로고침해도 보던 장소를 다시 열 수 있게 기억한다
   try { id ? sessionStorage.setItem(SEL_KEY, id) : sessionStorage.removeItem(SEL_KEY); } catch {}
-  if (id && center && map) {
+  if (id && center && map && !isPhone()) {
     const p = state.places.find(x => x.id === id);
     if (p) { const ll = new naver.maps.LatLng(p.lat, p.lng); if (!map.getBounds().hasLatLng(ll)) map.panTo(ll); }
   }
   renderAll();
+  if (id && map && isPhone()) centerAboveDetail(id);
+}
+// 휴대폰: 상세 패널이 화면 아래를 덮으므로, 고른 장소를 그 위쪽 지도 영역 가운데로 옮긴다
+function centerAboveDetail(id){
+  const p = state.places.find(x => x.id === id); if (!p) return;
+  map.setCenter(new naver.maps.LatLng(p.lat, p.lng));
+  map.panBy(new naver.maps.Point(0, Math.round($('detail').offsetHeight / 2)));
 }
 
 /* ---------- 네이버 지도 ---------- */
@@ -632,13 +655,14 @@ function initMap(){
   });
   naver.maps.Event.addListener(map, 'zoom_changed', () => renderMap(state.places.filter(matches)));
   syncMarkers(); fitAll(); renderAll();
+  if (state.sel && isPhone()) centerAboveDetail(state.sel); // 새로고침 뒤 다시 열린 장소
   // 지도 영역 크기가 바뀌면 지도에 알려 준다. 크기가 0이던 상태(숨겨진 탭 등)에서 처음 보이면 범위도 다시 맞춘다.
   const box = $('map'); let wasEmpty = !box.clientWidth || !box.clientHeight;
   new ResizeObserver(() => {
     const w = box.clientWidth, h = box.clientHeight;
     if (!w || !h) { wasEmpty = true; return; }
     map.setSize(new naver.maps.Size(w, h));
-    if (wasEmpty) { wasEmpty = false; fitAll(); }
+    if (wasEmpty) { wasEmpty = false; if (state.sel && isPhone()) centerAboveDetail(state.sel); else fitAll(); }
   }).observe(box);
 }
 function syncMarkers(){
@@ -657,7 +681,58 @@ function fitAll(){
   if (state.places.length === 1) { map.setCenter(first); map.setZoom(16); return; }
   const b = new naver.maps.LatLngBounds(first, first);
   for (const p of state.places) b.extend(new naver.maps.LatLng(p.lat, p.lng));
-  map.fitBounds(b, { top: 60, right: 70, bottom: 60, left: 60 });
+  // 휴대폰에서는 아래 패널에 가려지는 만큼 아래 여백을 더 준다
+  const bottom = isPhone() ? $('side').getBoundingClientRect().height + 30 : 60;
+  map.fitBounds(b, { top: isPhone() ? 80 : 60, right: 70, bottom, left: 30 });
+}
+
+/* ---------- 휴대폰 아래 패널 끌기 ---------- */
+const isPhone = () => matchMedia('(max-width:899px)').matches;
+const sheetSnaps = () => [130, Math.round(innerHeight * 0.5), Math.round(innerHeight * 0.88)]; // 접힘, 반, 거의 전체
+let sheetH = null;
+function setSheet(px, animate){
+  const side = $('side');
+  side.classList.toggle('anim', !!animate);
+  sheetH = px; side.style.setProperty('--sheet-h', px + 'px');
+}
+function cycleSheet(){ // 손잡이를 탭하면 다음 높이로
+  const s = sheetSnaps(), h = sheetH ?? $('side').getBoundingClientRect().height;
+  const i = s.findIndex(x => Math.abs(x - h) < 24);
+  setSheet(s[(i + 1) % s.length], true);
+}
+function bindSheet(){
+  const side = $('side'); let drag = null;
+  const down = e => {
+    if (!isPhone() || e.target.closest('button:not(.sheet-handle), a, input')) return;
+    drag = { y: e.clientY, h: sheetH ?? side.getBoundingClientRect().height, lastY: e.clientY, lastT: e.timeStamp, v: 0, moved: false, el: e.currentTarget };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+  const move = e => {
+    if (!drag) return;
+    const dy = drag.y - e.clientY; if (Math.abs(dy) > 5) drag.moved = true;
+    const s = sheetSnaps(); setSheet(Math.min(s[2], Math.max(s[0] - 40, drag.h + dy)), false);
+    // 손가락 속도(위로 끌면 양수). 제자리 이벤트는 속도를 0으로 덮어쓰지 않게 건너뛴다
+    const dt = e.timeStamp - drag.lastT;
+    if (dt > 0 && e.clientY !== drag.lastY) { drag.v = (drag.lastY - e.clientY) / dt; drag.lastY = e.clientY; drag.lastT = e.timeStamp; }
+    else if (dt > 120) drag.v = 0; // 오래 멈춰 있었다면 휙 넘긴 게 아니다
+  };
+  const up = e => {
+    if (!drag) return; const d = drag; drag = null;
+    if (e.timeStamp - d.lastT > 120) d.v = 0; // 멈췄다가 손을 뗀 경우
+    if (!d.moved) { if (d.el.id === 'sheetHandle') cycleSheet(); return; }
+    const s = sheetSnaps(), h = sheetH;
+    let target;
+    if (Math.abs(d.v) > 0.4) target = d.v > 0 ? (s.find(x => x > h + 10) ?? s[2]) : ([...s].reverse().find(x => x < h - 10) ?? s[0]); // 휙 넘기면 그 방향 다음 칸
+    else target = s.reduce((a, b) => Math.abs(b - h) < Math.abs(a - h) ? b : a); // 아니면 가장 가까운 칸
+    setSheet(target, true);
+  };
+  for (const el of [$('sheetHandle'), side.querySelector('.side-head')]) {
+    el.addEventListener('pointerdown', down); el.addEventListener('pointermove', move);
+    el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up);
+  }
+  $('sheetHandle').addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); cycleSheet(); } });
+  addEventListener('resize', () => { if (isPhone() && sheetH) setSheet(Math.min(sheetH, sheetSnaps()[2]), false); });
+  if (isPhone()) setSheet(sheetSnaps()[1], false);
 }
 function renderMap(vis){
   if (!map) return;
@@ -693,6 +768,7 @@ function locate(thenSort, noPan){
   setStatus('내 위치를 찾는 중이에요…', false);
   panOnFix = !thenSort && !noPan;
   watchId = navigator.geolocation.watchPosition(onFix, onFixError, { enableHighAccuracy:true, maximumAge:15000, timeout:20000 });
+  renderDetail(); // "찾는 중" 표시
 }
 function onFix(pos){
   const first = !state.me;
@@ -729,7 +805,7 @@ function renderAll(){
 }
 
 /* ---------- 시작 ---------- */
-buildFilters();
+buildFilters(); bindSheet();
 $('btnLoad').addEventListener('click', () => $('file').click());
 $('file').addEventListener('change', e => { const f = e.target.files && e.target.files[0]; if (f) handleFile(f); e.target.value = ''; });
 $('btnReset').addEventListener('click', () => {
