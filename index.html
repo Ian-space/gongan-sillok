@@ -288,13 +288,20 @@ const category = p => CATEGORIES.find(c => c.test.test(p.type || '')) || CATEGOR
 
 // 길찾기: 휴대폰은 네이버 지도 앱을 열고, 앱이 없거나 컴퓨터면 네이버 지도 웹으로 간다
 const IS_MOBILE = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-function routeLinks(p){
-  const name = encodeURIComponent(p.name);
+const IS_ANDROID = /Android/i.test(navigator.userAgent);
+// 내 위치를 알고 있으면 출발지로 함께 넘긴다
+function routeLinks(p, me){
+  const name = encodeURIComponent(p.name), here = encodeURIComponent('내 위치');
+  const lat = me && me.lat.toFixed(6), lng = me && me.lng.toFixed(6);
+  const q = `${me ? `slat=${lat}&slng=${lng}&sname=${here}&` : ''}dlat=${p.lat}&dlng=${p.lng}&dname=${name}&appname=${encodeURIComponent(location.origin)}`;
   return {
-    app: `nmap://route/public?dlat=${p.lat}&dlng=${p.lng}&dname=${name}&appname=${encodeURIComponent(location.origin)}`,
+    // 안드로이드는 intent 방식: 앱이 없으면 플레이스토어의 네이버 지도로 보낸다
+    app: IS_ANDROID
+      ? `intent://route/public?${q}#Intent;scheme=nmap;action=android.intent.action.VIEW;category=android.intent.category.BROWSABLE;package=com.nhn.android.nmap;end`
+      : `nmap://route/public?${q}`,
     web: IS_MOBILE
-      ? `https://m.map.naver.com/route.nhn?menu=route&ename=${name}&ex=${p.lng}&ey=${p.lat}&pathType=1&showMap=true`
-      : `https://map.naver.com/index.nhn?elng=${p.lng}&elat=${p.lat}&etext=${name}&menu=route&pathType=1`
+      ? `https://m.map.naver.com/route.nhn?menu=route${me ? `&sname=${here}&sx=${lng}&sy=${lat}` : ''}&ename=${name}&ex=${p.lng}&ey=${p.lat}&pathType=1&showMap=true`
+      : `https://map.naver.com/index.nhn?${me ? `slng=${lng}&slat=${lat}&stext=${here}&` : ''}elng=${p.lng}&elat=${p.lat}&etext=${name}&menu=route&pathType=1`
   };
 }
 
@@ -563,15 +570,23 @@ function renderDetail(){
   if (p.date) d.appendChild(el('div','d-date', `방문일 ${p.date}`));
 
   // 길찾기는 어떤 경우에도 이 창을 다른 페이지로 바꾸지 않는다. 앱은 앱으로, 웹은 새 탭으로 연다.
-  const links = routeLinks(p);
+  const links = routeLinks(p, state.me);
   if (IS_MOBILE) {
     const app = el('a','d-route','네이버 지도 앱으로 길찾기'); app.href = links.app;
     const web = el('a','d-route ghost','앱이 없으면 웹에서 보기'); web.href = links.web; web.target = '_blank'; web.rel = 'noopener';
-    d.append(app, web, el('p','d-route-note','길찾기를 마치고 돌아오면 이 화면이 그대로 남아 있어요.'));
+    d.append(app, web);
   } else {
     const web = el('a','d-route','네이버 지도로 길찾기'); web.href = links.web; web.target = '_blank'; web.rel = 'noopener';
-    d.append(web, el('p','d-route-note','새 탭에서 네이버 지도가 열려요. 출발지를 입력하면 경로가 나와요.'));
+    d.appendChild(web);
   }
+  const note = el('p','d-route-note');
+  if (state.me) note.textContent = '출발지에 내 위치가 들어가 있어요.' + (IS_MOBILE ? ' 길찾기를 마치고 돌아오면 이 화면이 그대로 남아 있어요.' : '');
+  else {
+    const btn = el('button','linkbtn','내 위치 켜기'); btn.type = 'button';
+    btn.addEventListener('click', () => locate(false, true));
+    note.append(btn, '를 누르면 출발지가 자동으로 들어가요.');
+  }
+  d.appendChild(note);
   d.hidden = false;
 }
 const SEL_KEY = 'gongan-sillok:sel';
@@ -662,18 +677,20 @@ function renderLegend(){
 /* ---------- 내 위치 ---------- */
 let watchId = null, meMarker = null, meCircle = null, panOnFix = false;
 
-function locate(thenSort){
+function locate(thenSort, noPan){
   if (thenSort) state.sortNear = true;
-  if (state.me) { if (map) map.panTo(new naver.maps.LatLng(state.me.lat, state.me.lng)); renderAll(); return; }
+  if (state.me) { if (map && !noPan) map.panTo(new naver.maps.LatLng(state.me.lat, state.me.lng)); renderAll(); return; }
   if (!('geolocation' in navigator)) { setStatus('이 브라우저는 위치 확인을 지원하지 않아요.', true); state.sortNear = false; renderAll(); return; }
   if (watchId !== null) return; // 이미 위치를 찾는 중
   setStatus('내 위치를 찾는 중이에요…', false);
-  panOnFix = !thenSort;
+  panOnFix = !thenSort && !noPan;
   watchId = navigator.geolocation.watchPosition(onFix, onFixError, { enableHighAccuracy:true, maximumAge:15000, timeout:20000 });
 }
 function onFix(pos){
   const first = !state.me;
-  state.me = { lat: pos.coords.latitude, lng: pos.coords.longitude, acc: pos.coords.accuracy };
+  const next = { lat: pos.coords.latitude, lng: pos.coords.longitude, acc: pos.coords.accuracy };
+  if (!first && distM(state.me, next) < 20) return; // 20m 미만 움직임은 화면을 다시 그리지 않는다
+  state.me = next;
   if (first) setStatus('내 위치를 찾았어요. 위치는 이 화면에서 거리 계산에만 써요.', false);
   if (map) {
     const ll = new naver.maps.LatLng(state.me.lat, state.me.lng);
@@ -728,6 +745,10 @@ $('btnSort').addEventListener('click', () => {
 loadInitial();
 try { const id = sessionStorage.getItem(SEL_KEY); if (id && state.places.some(p => p.id === id)) { state.sel = id; renderAll(); } } catch {}
 loadNaver();
+// 예전에 위치 권한을 허용했다면 묻지 않고 미리 위치를 찾아 둔다 (지도는 움직이지 않음)
+if (navigator.permissions && navigator.permissions.query) {
+  navigator.permissions.query({ name: 'geolocation' }).then(s => { if (s.state === 'granted') locate(false, true); }).catch(() => {});
+}
 })();
 </script>
 </body>
