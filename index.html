@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>공간실록 시제품</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&family=IBM+Plex+Sans+KR:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#EEF1EE; --panel:#FFFFFF; --ink:#1E2A2F; --muted:#5E6B6A; --line:#C9D1CE;
+  --blue:#2B4C8C; --mark:#F2DC4A; --mark-ink:#1E2A2F; --faint:.35;
+  --serif:'Gowun Batang','Nanum Myeongjo','AppleMyungjo',serif;
+  --sans:'IBM Plex Sans KR','Apple SD Gothic Neo','Malgun Gothic',system-ui,sans-serif;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --paper:#141A1D; --panel:#1A2125; --ink:#E4E8E5; --muted:#9AA6A4; --line:#2E3A3E;
+    --blue:#8FB0F0; --mark:#E8D44D; --mark-ink:#141A1D; --faint:.4;
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#141A1D; --panel:#1A2125; --ink:#E4E8E5; --muted:#9AA6A4; --line:#2E3A3E;
+  --blue:#8FB0F0; --mark:#E8D44D; --mark-ink:#141A1D; --faint:.4;
+}
+*,*::before,*::after{box-sizing:inherit}
+html{height:100%;scroll-padding-top:env(safe-area-inset-top,0px)}
+body{height:100%;margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.55}
+button,input{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+
+.app{display:grid;grid-template-columns:380px 1fr;height:100%}
+.side{background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
+.side-head{padding:22px 22px 14px}
+.brand{font-family:var(--serif);font-weight:700;font-size:34px;line-height:1.1;margin:0;letter-spacing:-.01em}
+.tagline{margin:6px 0 0;color:var(--muted);font-size:14px}
+.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}
+.btn{border:1px solid var(--ink);background:var(--ink);color:var(--panel);padding:8px 14px;border-radius:6px;cursor:pointer;font-size:14px;font-weight:500}
+.btn.ghost{background:transparent;color:var(--ink);border-color:var(--line)}
+.btn:hover{filter:brightness(1.1)}
+.status{margin:12px 0 0;font-size:13px;color:var(--muted);min-height:1.2em}
+.status.err{color:#C0392B}
+:root[data-theme="dark"] .status.err{color:#F08A7E}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .status.err{color:#F08A7E}}
+.source{font-size:12px;color:var(--muted);margin-top:4px}
+
+.scroll{overflow:auto;flex:1;min-height:0;border-top:1px solid var(--line)}
+.filters{padding:14px 22px 6px}
+.search{width:100%;padding:9px 12px;border:1px solid var(--line);border-radius:6px;background:var(--paper)}
+.fgroup{margin-top:12px}
+.fgroup-name{font-size:13px;color:var(--muted);margin-bottom:5px}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{border:1px solid var(--line);background:transparent;border-radius:999px;padding:4px 11px;font-size:13px;cursor:pointer}
+.chip[aria-pressed="true"]{background:var(--mark);color:var(--mark-ink);border-color:var(--mark);font-weight:600}
+.count-row{display:flex;justify-content:space-between;align-items:baseline;padding:14px 22px 8px}
+.count{font-size:13px;color:var(--muted)}
+.linkbtn{background:none;border:0;color:var(--blue);cursor:pointer;font-size:13px;padding:0}
+
+.list{list-style:none;margin:0;padding:0 12px 12px}
+.item{width:100%;text-align:left;background:transparent;border:0;border-radius:6px;padding:10px;cursor:pointer;display:block}
+.item:hover{background:var(--paper)}
+.item[aria-current="true"]{background:var(--paper);box-shadow:inset 3px 0 0 var(--mark)}
+.item-name{font-family:var(--serif);font-weight:700;font-size:17px}
+.item-sub{font-size:13px;color:var(--muted)}
+.empty{padding:18px 22px;color:var(--muted);font-size:14px}
+
+.notes{padding:6px 22px 24px;font-size:13px;color:var(--muted)}
+.notes details{border-top:1px solid var(--line);padding:10px 0}
+.notes summary{cursor:pointer;color:var(--ink);font-weight:500}
+.notes ul{margin:8px 0 0;padding-left:18px}
+.notes li{margin:3px 0}
+
+.mapwrap{position:relative;min-height:0;overflow:hidden}
+#map{width:100%;height:100%;background:var(--paper)}
+.mapctl{position:absolute;top:14px;right:14px;display:flex;flex-direction:column;gap:6px;z-index:10}
+.mapctl button{width:38px;height:38px;border:1px solid var(--line);background:var(--panel);border-radius:6px;cursor:pointer;font-size:18px}
+.mapctl .wide{width:auto;padding:0 10px;font-size:13px}
+.mapmsg{position:absolute;inset:0;display:grid;place-items:center;padding:24px;text-align:center;color:var(--muted);font-size:14px;background:var(--paper);z-index:5}
+.mapmsg[hidden]{display:none}
+.mapmsg p{max-width:34em;margin:0}
+
+/* 네이버 지도 위 장소 표시 */
+.pin{position:relative;width:20px;height:20px;display:grid;place-items:center;cursor:pointer}
+.pin.faint{opacity:var(--faint);cursor:default}
+.pin-dot{width:16px;height:16px;border-radius:50%;background:var(--panel);border:2.5px solid var(--blue);display:grid;place-items:center;box-shadow:0 1px 3px rgba(20,30,35,.35)}
+.pin-dot::after{content:"";width:5px;height:5px;border-radius:50%;background:var(--blue)}
+.pin.sel .pin-dot{width:20px;height:20px;box-shadow:0 0 0 7px var(--mark),0 2px 6px rgba(20,30,35,.35)}
+.pin-label{position:absolute;left:24px;top:50%;transform:translateY(-50%);white-space:nowrap;font-family:var(--serif);font-size:12px;color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:1px 6px}
+.pin.sel .pin-label{font-weight:700;font-size:14px;left:30px}
+
+.detail{position:absolute;left:16px;bottom:16px;width:min(360px,calc(100% - 32px));max-height:calc(100% - 80px);overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:18px 18px 16px;box-shadow:0 10px 30px rgba(20,30,35,.18);z-index:10}
+.detail[hidden]{display:none}
+.d-head{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
+.d-name{font-family:var(--serif);font-weight:700;font-size:24px;line-height:1.2;margin:0}
+.d-meta{font-size:13px;color:var(--muted);margin:4px 0 0}
+.d-close{border:0;background:transparent;font-size:22px;line-height:1;cursor:pointer;color:var(--muted);padding:2px 4px}
+.scale{margin:14px 0 0;display:grid;grid-template-columns:72px 1fr;row-gap:7px;font-size:13px}
+.scale dt{color:var(--muted)}
+.scale dd{margin:0;display:flex;gap:4px;flex-wrap:wrap}
+.opt{padding:1px 7px;border-radius:4px;color:var(--muted)}
+.opt.on{background:var(--mark);color:var(--mark-ink);font-weight:600}
+.opt.none{font-style:italic}
+.d-block{margin-top:14px;font-size:14px}
+.d-label{font-size:12px;color:var(--muted)}
+.d-note{font-family:var(--serif);font-size:16px;line-height:1.7;margin:4px 0 0}
+.d-date{font-size:12px;color:var(--muted);margin-top:12px}
+
+@media (max-width:899px){
+  body{height:auto}
+  .app{display:flex;flex-direction:column;height:auto}
+  .side{border-right:0;order:2}
+  .mapwrap{order:1;height:52vh;min-height:320px;border-bottom:1px solid var(--line)}
+  .scroll{overflow:visible}
+  .side-head{order:0}
+  .detail{position:fixed;left:0;right:0;bottom:0;width:auto;max-height:70vh;border-radius:14px 14px 0 0;padding-bottom:calc(16px + env(safe-area-inset-bottom,0px));z-index:20}
+  .brand{font-size:28px}
+}
+@media (prefers-reduced-motion:no-preference){
+  .detail:not([hidden]){animation:rise .18s ease-out}
+  @keyframes rise{from{transform:translateY(8px);opacity:0}to{transform:none;opacity:1}}
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="side">
+    <div class="side-head">
+      <h1 class="brand">공간실록</h1>
+      <p class="tagline">평점 대신 공간의 사실을 기록합니다. 성수동 시제품.</p>
+      <div class="actions">
+        <button class="btn" id="btnLoad" type="button">엑셀 파일 불러오기</button>
+        <button class="btn ghost" id="btnReset" type="button">예시 데이터로 되돌리기</button>
+        <input type="file" id="file" accept=".xlsx,.csv" hidden>
+      </div>
+      <p class="status" id="status" role="status" aria-live="polite"></p>
+      <div class="source" id="source"></div>
+    </div>
+    <div class="scroll">
+      <div class="filters">
+        <input class="search" id="q" type="search" placeholder="이름, 자재, 가구로 찾기" aria-label="이름, 자재, 가구로 찾기" maxlength="40">
+        <div id="fgroups"></div>
+      </div>
+      <div class="count-row">
+        <span class="count" id="count"></span>
+        <button class="linkbtn" id="btnClear" type="button">필터 지우기</button>
+      </div>
+      <ul class="list" id="list"></ul>
+      <div class="notes">
+        <details>
+          <summary>엑셀 양식 안내</summary>
+          <ul>
+            <li>필수 열: 이름, 위도, 경도</li>
+            <li>선택 열: 유형, 주소, 소음, 좌석간격, 채광, 콘센트, 체류, 주요자재, 가구, 한줄기록, 방문일</li>
+            <li>소음: 조용함, 보통, 시끄러움 / 좌석간격: 넓음, 보통, 좁음 / 채광: 밝음, 보통, 어두움 / 콘센트: 많음, 일부, 없음 / 체류: 장시간 가능, 2시간 내외, 회전 빠름</li>
+            <li>.xlsx 또는 .csv, 최대 2MB, 1,000곳까지</li>
+            <li>이름이 "(예시)"로 시작하는 줄은 건너뜁니다</li>
+          </ul>
+        </details>
+        <details>
+          <summary>이 페이지의 보안 처리</summary>
+          <ul>
+            <li>불러온 파일은 이 브라우저 안에서만 읽고, 어떤 서버로도 보내지 않습니다.</li>
+            <li>엑셀 칸의 내용은 모두 글자로만 표시해서, 칸에 숨겨진 코드가 실행되지 않습니다.</li>
+            <li>확장자와 실제 파일 내용이 맞는지, 크기와 줄 수가 한도 안인지 먼저 확인합니다.</li>
+            <li>압축을 풀었을 때 지나치게 커지는 파일은 거부합니다.</li>
+            <li>좌표는 국내 범위, 상태 값은 정해진 목록만 받아들입니다.</li>
+            <li>수식, 매크로, 링크는 읽지 않고 값만 가져옵니다.</li>
+          </ul>
+        </details>
+      </div>
+    </div>
+  </aside>
+
+  <main class="mapwrap">
+    <div id="map" role="region" aria-label="성수동 지도와 기록된 공간 위치"></div>
+    <div class="mapmsg" id="mapmsg" hidden><p id="mapmsgText"></p></div>
+    <div class="mapctl">
+      <button type="button" id="zin" aria-label="확대">+</button>
+      <button type="button" id="zout" aria-label="축소">−</button>
+      <button type="button" class="wide" id="zfit">전체 보기</button>
+    </div>
+    <section class="detail" id="detail" hidden aria-live="polite"></section>
+  </main>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script>
+/* ===== 설정: 네이버 클라우드 플랫폼에서 발급받은 Client ID를 따옴표 안에 넣으세요 ===== */
+const NAVER_CLIENT_ID = 'ffqv2bmvwg';
+/* ===================================================================================== */
+
+(() => {
+'use strict';
+const MAX_ROWS = 1000, MAX_BYTES = 2 * 1024 * 1024, MAX_UNZIP = 20 * 1024 * 1024;
+const STORE_KEY = 'gongan-sillok:data:v1';
+
+const ENUMS = {
+  noise:   { label:'소음',      col:'소음',     values:['조용함','보통','시끄러움'] },
+  spacing: { label:'좌석 간격', col:'좌석간격', values:['넓음','보통','좁음'] },
+  light:   { label:'채광',      col:'채광',     values:['밝음','보통','어두움'] },
+  outlet:  { label:'콘센트',    col:'콘센트',   values:['많음','일부','없음'] },
+  stay:    { label:'머무르기',  col:'체류',     values:['장시간 가능','2시간 내외','회전 빠름'] }
+};
+const TEXTS = { name:['이름',40], type:['유형',20], addr:['주소',60], materials:['주요자재',80], furniture:['가구',80], note:['한줄기록',200], date:['방문일',20] };
+const HEADER_MAP = new Map([['이름','name'],['유형','type'],['주소','addr'],['위도','lat'],['경도','lng'],['소음','noise'],['좌석간격','spacing'],['채광','light'],['콘센트','outlet'],['체류','stay'],['주요자재','materials'],['가구','furniture'],['한줄기록','note'],['방문일','date']]);
+
+// 예시 데이터: 가상의 장소입니다.
+const SAMPLE = [
+ ['모래시계 커피','카페','성수동2가 일대',37.5452,127.0531,'조용함','넓음','밝음','많음','장시간 가능','노출 콘크리트, 원목 바닥','원목 대형 테이블','창가 바 좌석은 오후 3시 이후 볕이 깊게 든다','2026-09-12'],
+ ['결 로스터리','카페','성수동2가 일대',37.5468,127.0562,'보통','보통','보통','일부','2시간 내외','적벽돌, 철제 프레임','철제 스툴, 벤치','오전에는 로스팅 기계 소음이 있다','2026-09-12'],
+ ['철공소 2층','카페','성수동2가 일대',37.5439,127.0578,'시끄러움','좁음','밝음','없음','회전 빠름','철판, 유리 블록','빈티지 학교 의자','주말 오후 대기 30분, 사진 찍는 손님 위주','2026-09-13'],
+ ['흰 벽 서재','북카페','성수동1가 일대',37.5462,127.0478,'조용함','넓음','보통','많음','장시간 가능','회벽 미장, 오크 합판','1인용 라운지 체어','대화 자제 안내가 있어 작업하기 좋다','2026-09-14'],
+ ['오래된 방앗간','카페','성수동2가 일대',37.5483,127.0541,'보통','넓음','어두움','일부','2시간 내외','고재 목구조, 황토','좌식 평상과 의자석 혼합','천장이 높아 소리가 덜 울린다','2026-09-14'],
+ ['계단집','베이커리 카페','성수동2가 일대',37.5425,127.0549,'시끄러움','좁음','밝음','없음','회전 빠름','테라조, 스테인리스','스탠딩 테이블','빵 나오는 11시 전후가 가장 붐빈다','2026-09-15'],
+ ['온실 테이블','카페','성수동1가 일대',37.5446,127.0462,'보통','넓음','밝음','일부','2시간 내외','유리 온실, 철골','라탄 의자','여름엔 덥고 가을이 가장 좋다','2026-09-15'],
+ ['목공소 커피','카페','성수동2가 일대',37.5474,127.0598,'조용함','보통','보통','많음','장시간 가능','원목 루버, 콘크리트 바닥','직접 제작한 원목 가구','가구 일부는 구매할 수 있다고 한다','2026-09-19'],
+ ['회색 창고','복합문화공간','성수동2가 일대',37.5432,127.0605,'시끄러움','넓음','어두움','일부','2시간 내외','노출 콘크리트, 철제 트러스','모듈 소파','전시 기간에는 좌석이 줄어든다','2026-09-19'],
+ ['느린 오후','찻집','성수동2가 일대',37.5491,127.0574,'조용함','넓음','보통','없음','장시간 가능','한지 창호, 원목','낮은 좌식 테이블','노트북보다는 대화나 독서에 맞는 곳','2026-09-20'],
+ ['판석','카페','성수동2가 일대',37.5418,127.0587,'보통','보통','밝음','일부','2시간 내외','화강석 판석, 아연 강판','석재 테이블','콘센트는 바 좌석에만 있다','2026-09-20'],
+ ['물결 베이커리','베이커리 카페','성수동1가 일대',37.5455,127.0492,'시끄러움','보통','밝음','없음','회전 빠름','타일, 곡면 합판','벤치형 좌석','포장 손님이 많아 입구 쪽이 번잡하다','2026-09-21'],
+ ['바람길 카페','카페','성수동2가 일대',37.5498,127.0612,'보통','넓음','밝음','일부','장시간 가능','폴딩 도어, 원목 데크','야외 테라스 좌석','날씨 좋은 날엔 문을 전면 개방한다','2026-09-21'],
+ ['지하 음반실','카페','성수동2가 일대',37.5437,127.0520,'보통','좁음','어두움','많음','2시간 내외','흡음 패널, 카펫 타일','리스닝 소파','음악 감상 위주라 대화는 작게','2026-09-26']
+];
+const SAMPLE_ROWS = [['이름','유형','주소','위도','경도','소음','좌석간격','채광','콘센트','체류','주요자재','가구','한줄기록','방문일'], ...SAMPLE];
+
+/* ---------- 입력 정리(보안) ---------- */
+const BAD_CHARS = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F​-‏‪-‮⁦-⁩﻿]/g;
+function cleanText(v, max){ return String(v == null ? '' : v).replace(BAD_CHARS,'').replace(/\s+/g,' ').trim().slice(0, max); }
+function cleanEnum(v, key){
+  const s = cleanText(v, 20).replace(/\s/g,'');
+  return ENUMS[key].values.find(x => x.replace(/\s/g,'') === s) || '';
+}
+function toNum(v){ const s = cleanText(v, 30).replace(/,/g,''); return /^-?\d+(\.\d+)?$/.test(s) ? Number(s) : NaN; }
+function normDate(v){
+  const s = cleanText(v, 20);
+  if (/^\d{5}(\.\d+)?$/.test(s)) { const n = Math.floor(+s); if (n > 20000 && n < 80000) return new Date(Date.UTC(1899,11,30) + n*86400000).toISOString().slice(0,10); }
+  return s;
+}
+// 지도 표시는 HTML 문자열로 만들어지므로, 장소 이름은 반드시 이스케이프한다
+function esc(s){ return String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' })[c]); }
+
+function rowsToPlaces(rows){
+  const issues = [];
+  if (!rows.length) throw new Error('파일이 비어 있어요.');
+  const header = rows[0].map(h => cleanText(h, 20).replace(/\s/g,''));
+  const idx = Object.create(null);
+  header.forEach((h, i) => { const k = HEADER_MAP.get(h); if (k && !(k in idx)) idx[k] = i; });
+  const missing = ['이름','위도','경도'].filter(h => !(HEADER_MAP.get(h) in idx));
+  if (missing.length) throw new Error(`첫 줄에 ${missing.join(', ')} 열이 필요해요.`);
+  const places = []; let examples = 0;
+  for (let r = 1; r < rows.length; r++) {
+    const row = rows[r] || [];
+    const get = k => (k in idx) ? row[idx[k]] : '';
+    if (!row.some(c => cleanText(c, 5))) continue;
+    const name = cleanText(get('name'), TEXTS.name[1]);
+    if (name.startsWith('(예시)')) { examples++; continue; }
+    const line = `${r + 1}행`;
+    if (!name) { issues.push(`${line}: 이름이 비어 있음`); continue; }
+    const lat = toNum(get('lat')), lng = toNum(get('lng'));
+    if (!(lat >= 33 && lat <= 39 && lng >= 124 && lng <= 132)) { issues.push(`${line}: 위도·경도가 비었거나 국내 범위를 벗어남`); continue; }
+    if (places.length >= MAX_ROWS) { issues.push(`${MAX_ROWS}곳을 넘는 줄은 건너뜀`); break; }
+    const p = { id:'p' + places.length, name, lat, lng };
+    for (const k of ['type','addr','materials','furniture','note']) p[k] = cleanText(get(k), TEXTS[k][1]);
+    p.date = normDate(get('date'));
+    for (const k of Object.keys(ENUMS)) {
+      const raw = cleanText(get(k), 20);
+      p[k] = cleanEnum(raw, k);
+      if (raw && !p[k]) issues.push(`${line}: ${ENUMS[k].col} 값 "${raw}"는 목록에 없어 비워둠`);
+    }
+    places.push(p);
+  }
+  if (!places.length && examples) issues.unshift('예시 줄만 있어요. 3행부터 실제 공간을 입력해 주세요');
+  return { places, issues };
+}
+
+/* ---------- 파일 읽기 ---------- */
+function colIndex(ref){ let n = 0; for (const ch of ref.replace(/\d+/g,'')) n = n*26 + (ch.charCodeAt(0) - 64); return n - 1; }
+function textOf(el){ // 서식이 섞인 글자(r/t)만 모으고 발음 표기(rPh)는 제외
+  let s = '';
+  for (const c of el.children) {
+    if (c.localName === 't') s += c.textContent;
+    else if (c.localName === 'r') for (const t of c.children) if (t.localName === 't') s += t.textContent;
+  }
+  return s;
+}
+async function parseXlsx(buf){
+  if (typeof JSZip === 'undefined') throw new Error('엑셀 해석 도구를 불러오지 못했어요. 인터넷 연결을 확인하거나 .csv로 저장해 불러오세요.');
+  const zip = await JSZip.loadAsync(buf);
+  let total = 0;
+  zip.forEach((_, f) => { total += (f._data && f._data.uncompressedSize) || 0; });
+  if (total > MAX_UNZIP) throw new Error('압축을 풀면 너무 커지는 파일이라 열지 않았어요.');
+  const read = async p => { const f = zip.file(p); return f ? f.async('string') : null; };
+  const dp = new DOMParser(), X = s => dp.parseFromString(s, 'application/xml');
+  const wbStr = await read('xl/workbook.xml');
+  if (!wbStr) throw new Error('엑셀(.xlsx) 구조가 아니에요.');
+  const sheets = [...X(wbStr).getElementsByTagName('sheet')];
+  if (!sheets.length) throw new Error('시트를 찾지 못했어요.');
+  const sh = sheets.find(s => s.getAttribute('name') === '공간기록') || sheets[0];
+  const rid = sh.getAttributeNS('http://schemas.openxmlformats.org/officeDocument/2006/relationships','id') || sh.getAttribute('r:id');
+  let target = 'worksheets/sheet1.xml';
+  const relStr = await read('xl/_rels/workbook.xml.rels');
+  if (relStr) { const rel = [...X(relStr).getElementsByTagName('Relationship')].find(r => r.getAttribute('Id') === rid); if (rel) target = rel.getAttribute('Target'); }
+  const path = target.startsWith('/') ? target.slice(1) : 'xl/' + target.replace(/^\.\//,'');
+  if (!/^xl\/worksheets\/[\w.-]+\.xml$/.test(path)) throw new Error('시트 위치가 올바르지 않아요.');
+  const shared = [];
+  const ssStr = await read('xl/sharedStrings.xml');
+  if (ssStr) for (const si of X(ssStr).getElementsByTagName('si')) shared.push(textOf(si));
+  const wsStr = await read(path);
+  if (!wsStr) throw new Error('시트 내용을 읽지 못했어요.');
+  const rows = [];
+  for (const r of X(wsStr).getElementsByTagName('row')) {
+    if (rows.length > MAX_ROWS + 1) break;
+    const arr = [];
+    for (const c of r.getElementsByTagName('c')) {
+      const ref = c.getAttribute('r'); const col = ref ? colIndex(ref) : arr.length;
+      if (col < 0 || col > 50) continue;
+      const t = c.getAttribute('t'); const v = c.getElementsByTagName('v')[0];
+      let val = '';
+      if (t === 's') val = v ? (shared[+v.textContent] ?? '') : '';
+      else if (t === 'inlineStr') { const is = c.getElementsByTagName('is')[0]; val = is ? textOf(is) : ''; }
+      else val = v ? v.textContent : ''; // 수식(f)은 무시하고 저장된 값만 사용
+      arr[col] = val;
+    }
+    rows.push(arr);
+  }
+  return rows;
+}
+function parseCsv(buf){
+  let text;
+  try { text = new TextDecoder('utf-8', { fatal:true }).decode(buf); }
+  catch { text = new TextDecoder('euc-kr').decode(buf); } // 한글 엑셀의 CSV 저장 대응
+  text = text.replace(/^﻿/, '');
+  const rows = []; let row = [], f = '', q = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (q) { if (c === '"') { if (text[i+1] === '"') { f += '"'; i++; } else q = false; } else f += c; }
+    else if (c === '"') q = true;
+    else if (c === ',') { row.push(f); f = ''; }
+    else if (c === '\n') { row.push(f); rows.push(row); row = []; f = ''; if (rows.length > MAX_ROWS + 1) break; }
+    else if (c !== '\r') f += c;
+  }
+  if (f !== '' || row.length) { row.push(f); rows.push(row); }
+  return rows;
+}
+async function handleFile(file){
+  const name = cleanText(file.name, 80);
+  const ext = (name.split('.').pop() || '').toLowerCase();
+  try {
+    if (!['xlsx','csv'].includes(ext)) throw new Error('.xlsx 또는 .csv 파일만 불러올 수 있어요. .xls 파일은 엑셀에서 .xlsx로 다시 저장해 주세요.');
+    if (file.size > MAX_BYTES) throw new Error('2MB 이하의 파일만 불러올 수 있어요.');
+    const buf = await file.arrayBuffer(); const b = new Uint8Array(buf);
+    let rows;
+    if (ext === 'xlsx') {
+      if (!(b[0] === 0x50 && b[1] === 0x4B && b[2] === 0x03 && b[3] === 0x04)) throw new Error('확장자는 .xlsx인데 내용이 엑셀 형식이 아니에요.');
+      rows = await parseXlsx(buf);
+    } else {
+      if (b.subarray(0, 2048).includes(0)) throw new Error('확장자는 .csv인데 내용이 글자 파일이 아니에요.');
+      rows = parseCsv(buf);
+    }
+    const { places, issues } = rowsToPlaces(rows);
+    if (!places.length) throw new Error('불러올 수 있는 장소가 없어요.' + (issues.length ? ' ' + issues.slice(0,3).join(', ') : ''));
+    setData(places, `불러온 파일: ${name} (${places.length}곳)`, true);
+    let msg = `${places.length}곳을 불러왔어요.`;
+    if (issues.length) msg += ` 확인할 점 ${issues.length}건: ${issues.slice(0,4).join(' / ')}${issues.length > 4 ? ' 외' : ''}`;
+    setStatus(msg, false);
+  } catch (e) {
+    setStatus('불러오지 못했어요. ' + cleanText(e && e.message, 200), true);
+  }
+}
+
+/* ---------- 상태 ---------- */
+const state = { places:[], filters:{}, q:'', sel:null };
+for (const k of Object.keys(ENUMS)) state.filters[k] = new Set();
+const $ = id => document.getElementById(id);
+function el(tag, cls, text){ const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+function setStatus(msg, err){ const s = $('status'); s.textContent = msg; s.classList.toggle('err', !!err); }
+
+function setData(places, sourceLabel, persist){
+  state.places = places; state.sel = null;
+  $('source').textContent = sourceLabel;
+  if (persist) { try { localStorage.setItem(STORE_KEY, JSON.stringify({ source: sourceLabel, rows: placesToRows(places) })); } catch {} }
+  syncMarkers(); fitAll(); renderAll();
+}
+function placesToRows(places){
+  return [SAMPLE_ROWS[0], ...places.map(p => [p.name,p.type,p.addr,p.lat,p.lng,p.noise,p.spacing,p.light,p.outlet,p.stay,p.materials,p.furniture,p.note,p.date])];
+}
+function loadInitial(){
+  try {
+    const raw = localStorage.getItem(STORE_KEY);
+    if (raw) {
+      const saved = JSON.parse(raw);
+      if (saved && Array.isArray(saved.rows)) { // 저장된 데이터도 다시 검증
+        const { places } = rowsToPlaces(saved.rows.slice(0, MAX_ROWS + 1).map(r => Array.isArray(r) ? r.slice(0, 20) : []));
+        if (places.length) return setData(places, cleanText(saved.source, 120) || '저장된 데이터', false);
+      }
+    }
+  } catch {}
+  setData(rowsToPlaces(SAMPLE_ROWS).places, '예시 데이터 (가상의 장소 14곳)', false);
+}
+
+function matches(p){
+  for (const k of Object.keys(ENUMS)) { const f = state.filters[k]; if (f.size && !f.has(p[k])) return false; }
+  if (state.q) { const hay = (p.name + ' ' + p.materials + ' ' + p.furniture + ' ' + p.type).toLowerCase(); if (!hay.includes(state.q)) return false; }
+  return true;
+}
+
+/* ---------- 필터 / 목록 ---------- */
+function buildFilters(){
+  const wrap = $('fgroups');
+  for (const [k, def] of Object.entries(ENUMS)) {
+    const g = el('div','fgroup'); g.appendChild(el('div','fgroup-name', def.label));
+    const chips = el('div','chips'); chips.setAttribute('role','group'); chips.setAttribute('aria-label', def.label);
+    for (const v of def.values) {
+      const b = el('button','chip', v); b.type = 'button'; b.setAttribute('aria-pressed','false');
+      b.addEventListener('click', () => {
+        const s = state.filters[k]; s.has(v) ? s.delete(v) : s.add(v);
+        b.setAttribute('aria-pressed', String(s.has(v))); renderAll();
+      });
+      chips.appendChild(b);
+    }
+    g.appendChild(chips); wrap.appendChild(g);
+  }
+}
+function renderList(vis){
+  const list = $('list'); list.replaceChildren();
+  $('count').textContent = `${state.places.length}곳 중 ${vis.length}곳`;
+  if (!vis.length) { const li = el('li','empty','조건에 맞는 공간이 없어요. 필터를 하나씩 풀어보세요.'); list.appendChild(li); return; }
+  for (const p of vis) {
+    const li = el('li'); const b = el('button','item'); b.type = 'button';
+    if (state.sel === p.id) b.setAttribute('aria-current','true');
+    b.appendChild(el('div','item-name', p.name));
+    const sub = [p.type, p.noise && `소음 ${p.noise}`, p.outlet && `콘센트 ${p.outlet}`, p.stay].filter(Boolean).join(', ');
+    b.appendChild(el('div','item-sub', sub || '기록된 속성 없음'));
+    b.addEventListener('click', () => select(p.id, true));
+    li.appendChild(b); list.appendChild(li);
+  }
+}
+function renderDetail(){
+  const d = $('detail'); const p = state.places.find(x => x.id === state.sel);
+  if (!p) { d.hidden = true; d.replaceChildren(); return; }
+  d.replaceChildren();
+  const head = el('div','d-head'); const t = el('div');
+  t.appendChild(el('h2','d-name', p.name));
+  const meta = [p.type, p.addr].filter(Boolean).join(', ');
+  if (meta) t.appendChild(el('p','d-meta', meta));
+  const close = el('button','d-close','×'); close.type = 'button'; close.setAttribute('aria-label','닫기');
+  close.addEventListener('click', () => select(null));
+  head.append(t, close); d.appendChild(head);
+  const dl = el('dl','scale');
+  for (const [k, def] of Object.entries(ENUMS)) {
+    dl.appendChild(el('dt', null, def.label));
+    const dd = el('dd');
+    if (!p[k]) dd.appendChild(el('span','opt none','기록 없음'));
+    else for (const v of def.values) dd.appendChild(el('span', 'opt' + (v === p[k] ? ' on' : ''), v));
+    dl.appendChild(dd);
+  }
+  d.appendChild(dl);
+  if (p.materials) { const b = el('div','d-block'); b.append(el('div','d-label','주요 자재'), el('div',null,p.materials)); d.appendChild(b); }
+  if (p.furniture) { const b = el('div','d-block'); b.append(el('div','d-label','가구'), el('div',null,p.furniture)); d.appendChild(b); }
+  if (p.note) { const b = el('div','d-block'); b.append(el('div','d-label','한 줄 기록'), el('p','d-note',p.note)); d.appendChild(b); }
+  if (p.date) d.appendChild(el('div','d-date', `방문일 ${p.date}`));
+  d.hidden = false;
+}
+function select(id, center){
+  state.sel = id;
+  if (id && center && map) {
+    const p = state.places.find(x => x.id === id);
+    if (p) { const ll = new naver.maps.LatLng(p.lat, p.lng); if (!map.getBounds().hasLatLng(ll)) map.panTo(ll); }
+  }
+  renderAll();
+}
+
+/* ---------- 네이버 지도 ---------- */
+let map = null;
+const markers = new Map();
+
+function mapMessage(text){ $('mapmsgText').textContent = text; $('mapmsg').hidden = false; }
+
+function loadNaver(){
+  if (!NAVER_CLIENT_ID) { mapMessage('네이버 지도 Client ID가 비어 있어요. index.html 파일 위쪽의 NAVER_CLIENT_ID 따옴표 안에 발급받은 Client ID를 넣어 주세요.'); return; }
+  // 네이버가 인증에 실패하면 이 함수를 부른다
+  window.navermap_authFailure = () => mapMessage('네이버 지도 인증에 실패했어요. Client ID가 맞는지, 이 페이지 주소가 네이버 클라우드 콘솔의 Web 서비스 URL에 등록되어 있는지 확인해 주세요.');
+  const s = document.createElement('script');
+  s.src = 'https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=' + encodeURIComponent(NAVER_CLIENT_ID);
+  s.onload = initMap;
+  s.onerror = () => mapMessage('네이버 지도를 불러오지 못했어요. 인터넷 연결을 확인해 주세요.');
+  document.head.appendChild(s);
+}
+function initMap(){
+  map = new naver.maps.Map('map', {
+    center: new naver.maps.LatLng(37.5450, 127.0540), zoom: 15,
+    zoomControl: false, mapDataControl: false, scaleControl: true, logoControl: true
+  });
+  naver.maps.Event.addListener(map, 'zoom_changed', () => renderMap(state.places.filter(matches)));
+  syncMarkers(); fitAll(); renderAll();
+}
+function syncMarkers(){
+  if (!map) return;
+  for (const mk of markers.values()) mk.setMap(null);
+  markers.clear();
+  for (const p of state.places) {
+    const mk = new naver.maps.Marker({ map, position: new naver.maps.LatLng(p.lat, p.lng), title: p.name });
+    naver.maps.Event.addListener(mk, 'click', () => { if (matches(p)) select(p.id); });
+    markers.set(p.id, mk);
+  }
+}
+function fitAll(){
+  if (!map || !state.places.length) return;
+  const first = new naver.maps.LatLng(state.places[0].lat, state.places[0].lng);
+  if (state.places.length === 1) { map.setCenter(first); map.setZoom(16); return; }
+  const b = new naver.maps.LatLngBounds(first, first);
+  for (const p of state.places) b.extend(new naver.maps.LatLng(p.lat, p.lng));
+  map.fitBounds(b, { top: 60, right: 70, bottom: 60, left: 60 });
+}
+function renderMap(vis){
+  if (!map) return;
+  const visSet = new Set(vis.map(p => p.id));
+  const showLabels = vis.length <= 8 || map.getZoom() >= 17;
+  for (const p of state.places) {
+    const mk = markers.get(p.id); if (!mk) continue;
+    const on = visSet.has(p.id), sel = p.id === state.sel;
+    const cls = 'pin' + (sel ? ' sel' : '') + (on ? '' : ' faint');
+    const label = (sel || (on && showLabels)) ? `<span class="pin-label">${esc(p.name)}</span>` : '';
+    mk.setIcon({ content: `<div class="${cls}"><span class="pin-dot"></span>${label}</div>`, anchor: new naver.maps.Point(10, 10) });
+    mk.setZIndex(sel ? 300 : on ? 200 : 100);
+  }
+}
+function renderAll(){
+  const vis = state.places.filter(matches);
+  renderList(vis); renderMap(vis); renderDetail();
+}
+
+/* ---------- 시작 ---------- */
+buildFilters();
+$('btnLoad').addEventListener('click', () => $('file').click());
+$('file').addEventListener('change', e => { const f = e.target.files && e.target.files[0]; if (f) handleFile(f); e.target.value = ''; });
+$('btnReset').addEventListener('click', () => {
+  try { localStorage.removeItem(STORE_KEY); } catch {}
+  setData(rowsToPlaces(SAMPLE_ROWS).places, '예시 데이터 (가상의 장소 14곳)', false); setStatus('예시 데이터로 되돌렸어요.', false);
+});
+$('q').addEventListener('input', e => { state.q = cleanText(e.target.value, 40).toLowerCase(); renderAll(); });
+$('btnClear').addEventListener('click', () => {
+  for (const s of Object.values(state.filters)) s.clear();
+  document.querySelectorAll('.chip').forEach(c => c.setAttribute('aria-pressed','false'));
+  $('q').value = ''; state.q = ''; renderAll();
+});
+$('zin').addEventListener('click', () => { if (map) map.setZoom(map.getZoom() + 1, true); });
+$('zout').addEventListener('click', () => { if (map) map.setZoom(map.getZoom() - 1, true); });
+$('zfit').addEventListener('click', fitAll);
+loadInitial();
+loadNaver();
+})();
+</script>
+</body>
+</html>
