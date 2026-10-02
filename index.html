@@ -271,8 +271,8 @@ button,input{font:inherit;color:inherit}
 <script>
 /* ===== 설정: 네이버 클라우드 플랫폼에서 발급받은 Client ID를 따옴표 안에 넣으세요 ===== */
 const NAVER_CLIENT_ID = 'ffqv2bmvwg';
-/* ===== 설정: SK open API에서 발급받은 TMAP 앱 키를 따옴표 안에 넣으세요 (대중교통·도보 경로, 기본) ===== */
-const TMAP_APP_KEY = 'GNvvkFAO7raKrRanWEDxX4ekt0aiQUh530gf8Ilr';
+/* ===== 설정: TMAP 경로 중계 서버 주소 (TMAP 키는 이 서버의 비밀 변수에만 있다, 코드는 worker/worker.js) ===== */
+const ROUTE_PROXY = 'https://gongan-sillok-route.spddlqj20.workers.dev';
 /* ===== 설정: ODsay LAB에서 발급받은 API Key (TMAP이 안 될 때 쓰는 예비 경로) ===== */
 const ODSAY_API_KEY = 'vpfLJcZCiAwV7L5fibSQjA';
 /* ===================================================================================== */
@@ -865,11 +865,10 @@ function fromTmap(it){
   });
   return { source: 'tmap', minutes: Math.round((it.totalTime || 0) / 60), fare: Number((it.fare && it.fare.regular && it.fare.regular.totalFare) || 0), transfers: it.transferCount || 0, segs };
 }
+// TMAP은 키를 숨기려고 중계 서버(Cloudflare Worker, 코드는 worker/worker.js)를 거쳐 부른다
+const proxyPost = (path, body) => fetch(ROUTE_PROXY + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
 async function tmapTransit(p){
-  const r = await fetch('https://apis.openapi.sk.com/transit/routes', {
-    method: 'POST', headers: { 'appKey': TMAP_APP_KEY, 'Content-Type': 'application/json', 'Accept': 'application/json' },
-    body: JSON.stringify({ startX: String(state.me.lng), startY: String(state.me.lat), endX: String(p.lng), endY: String(p.lat), lang: 0, format: 'json', count: 10, searchDttm: seoulNow().stamp })
-  });
+  const r = await proxyPost('/transit', { startX: String(state.me.lng), startY: String(state.me.lat), endX: String(p.lng), endY: String(p.lat), searchDttm: seoulNow().stamp });
   if (!r.ok) return null; // 키 오류, 한도 초과 등 → ODsay로
   const j = await r.json();
   const status = j && j.result && j.result.status;
@@ -879,10 +878,7 @@ async function tmapTransit(p){
   return { status: 'ok', source: 'tmap', routes: its.map(fromTmap) };
 }
 async function tmapWalk(p){
-  const r = await fetch('https://apis.openapi.sk.com/tmap/routes/pedestrian?version=1&format=json', {
-    method: 'POST', headers: { 'appKey': TMAP_APP_KEY, 'Content-Type': 'application/json', 'Accept': 'application/json' },
-    body: JSON.stringify({ startX: String(state.me.lng), startY: String(state.me.lat), endX: String(p.lng), endY: String(p.lat), startName: encodeURIComponent('내 위치'), endName: encodeURIComponent(p.name) })
-  });
+  const r = await proxyPost('/walk', { startX: String(state.me.lng), startY: String(state.me.lat), endX: String(p.lng), endY: String(p.lat) });
   if (!r.ok) throw new Error('walk ' + r.status);
   const j = await r.json(); const fs = (j && j.features) || [];
   const props = (fs[0] && fs[0].properties) || {};
@@ -944,10 +940,10 @@ async function findTransit(p){
   if (!result) {
     state.transit = { placeId: p.id, status: 'loading' }; renderDetail();
     result = null;
-    if (TMAP_APP_KEY) { try { result = await tmapTransit(p); } catch (e) { result = null; } }
+    if (ROUTE_PROXY) { try { result = await tmapTransit(p); } catch (e) { result = null; } }
     if (!result && ODSAY_API_KEY) { try { result = await odsayTransit(p); } catch (e) { result = null; } }
-    if (!result) result = { status: 'error', msg: !TMAP_APP_KEY && !ODSAY_API_KEY
-      ? '경로 키가 비어 있어요. index.html 위쪽의 TMAP_APP_KEY에 키를 넣어 주세요.'
+    if (!result) result = { status: 'error', msg: !ROUTE_PROXY && !ODSAY_API_KEY
+      ? '경로 설정이 비어 있어요. index.html 위쪽의 ROUTE_PROXY 주소나 ODSAY_API_KEY를 확인해 주세요.'
       : '경로를 불러오지 못했어요. 인터넷 연결을 확인하고 다시 시도해 주세요.' };
     if (result.status !== 'error') transitCache.set(key, result);
   }
@@ -958,7 +954,7 @@ async function findTransit(p){
 }
 // 도보 탭: TMAP 보행자 경로를 처음 열 때 한 번만 부른다. 안 되면 직선거리로 어림한다.
 async function loadWalk(p){
-  const t = state.transit; if (!t || t.walk || !TMAP_APP_KEY) return;
+  const t = state.transit; if (!t || t.walk || !ROUTE_PROXY) return;
   t.walk = { status: 'loading' }; renderDetail();
   let w;
   try { w = await tmapWalk(p); } catch (e) { w = { status: 'error' }; }
