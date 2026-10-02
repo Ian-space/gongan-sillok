@@ -83,6 +83,7 @@ button.stat[aria-pressed="true"] span{color:#FFFFFF}
 
 /* 목적별 추천 Top5 */
 .psort{display:flex;gap:6px;margin-top:10px;align-items:center}
+#picks .chips{align-items:center}
 /* 물음표가 정가운데 오도록 기본 여백을 없애고 격자로 가운데 정렬, 오른쪽 끝에서 2px 안쪽 */
 .help-btn{flex:none;margin:0 2px 0 auto;width:20px;height:20px;padding:0;display:inline-grid;place-items:center;border-radius:50%;border:1px solid var(--line);background:var(--panel);color:var(--muted);font-size:12px;font-weight:700;line-height:1;cursor:pointer}
 .help-btn:hover,.help-btn[aria-expanded="true"]{border-color:var(--blue);color:var(--blue)}
@@ -992,6 +993,7 @@ function renderPicks(vis){
   for (const pu of PURPOSES) {
     const b = el('button','chip', pu.label); b.type = 'button'; b.setAttribute('aria-pressed', String(state.purpose === pu.id));
     b.addEventListener('click', () => {
+      if (isPhone()) state.pickHelp = false; // 휴대폰은 좁아서 목적을 바꾸면 설명을 접는다
       if (state.purpose === pu.id) { state.purpose = null; renderAll(); return; } // 다시 누르면 끈다
       state.purpose = pu.id; setBadges(purposeBadges(pu));
     });
@@ -999,7 +1001,17 @@ function renderPicks(vis){
   }
   box.appendChild(chips);
   const pu = PURPOSES.find(x => x.id === state.purpose);
-  if (!pu) { box.appendChild(el('p','near-line muted','목적을 고르면 잘 맞는 곳 5곳을 골라 드려요. 위의 조건 필터도 함께 적용돼요.')); return; }
+  if (!pu) {
+    const intro = '목적을 고르면 잘 맞는 곳 5곳을 골라 드려요. 위의 조건 필터도 함께 적용돼요.';
+    if (!isPhone()) { box.appendChild(el('p','near-line muted', intro)); return; }
+    // 휴대폰: 안내 문구는 숨기고, 목적 버튼 줄 끝의 ? 를 눌렀을 때만 보여 준다
+    const help = el('button','help-btn','?'); help.type = 'button';
+    help.setAttribute('aria-expanded', String(state.pickHelp)); help.setAttribute('aria-label', '목적별 추천 설명');
+    help.addEventListener('click', () => { state.pickHelp = !state.pickHelp; renderAll(); });
+    chips.appendChild(help);
+    if (state.pickHelp) box.appendChild(el('p','near-line muted', intro));
+    return;
+  }
 
   const sort = el('div','psort');
   for (const [id, label] of [['fit', '잘 맞는 순'], ['near', '가까운 순']]) {
