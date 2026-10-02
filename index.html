@@ -120,6 +120,13 @@ button,input{font:inherit;color:inherit}
 .d-loc + .d-route{margin-top:8px}
 .d-transit{margin-top:16px;display:grid;gap:8px}
 .d-tnote{margin:0;font-size:13px;color:var(--muted)}
+.d-ttabs{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;margin:0 -2px;padding:0 2px 2px}
+.d-ttabs::-webkit-scrollbar{display:none}
+.d-ttab{flex:none;display:inline-flex;align-items:center;gap:5px;border:1px solid var(--line);background:transparent;border-radius:999px;padding:5px 11px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap}
+.d-ttab .n{font-size:11px;font-weight:700;color:var(--muted);font-variant-numeric:tabular-nums}
+.d-ttab[aria-selected="true"]{background:var(--ink);border-color:var(--ink);color:var(--panel)}
+.d-ttab[aria-selected="true"] .n{color:var(--mark)}
+.d-ttab:disabled{opacity:.4;cursor:default}
 .d-tnote.err{color:#C0392B}
 .d-tbtn{padding:9px 14px;border-radius:8px;border:1px solid var(--line);background:var(--paper);font-weight:600;font-size:14px;cursor:pointer}
 .d-topt{display:grid;gap:6px;text-align:left;width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--line);background:transparent;cursor:pointer}
@@ -814,9 +821,14 @@ const WALK_COLOR = '#5B6475';
 const rideColor = s => s.trafficType === 1
   ? (SUBWAY_COLORS[s.lane && s.lane[0] && s.lane[0].subwayCode] || '#5B6475')
   : (BUS_COLORS[s.lane && s.lane[0] && s.lane[0].type] || '#1F5EFF');
-const rideName = s => s.trafficType === 1
-  ? cleanText((s.lane && s.lane[0] && s.lane[0].name) || '지하철', 20).replace(/^수도권\s*/, '')
-  : cleanText((s.lane && s.lane[0] && s.lane[0].busNo) || '버스', 20) + '번';
+const rideName = s => {
+  if (s.trafficType === 1) return cleanText((s.lane && s.lane[0] && s.lane[0].name) || '지하철', 20).replace(/^수도권\s*/, '');
+  // "8146(새벽맞춤버스.평일운행)" 같은 긴 설명은 떼고, 심야·새벽 버스는 짧게 표시한다
+  const raw = cleanText((s.lane && s.lane[0] && s.lane[0].busNo) || '버스', 40);
+  const no = raw.replace(/\(.*\)/, '').trim();
+  const tag = /^N\d/i.test(no) ? ' 심야' : /새벽/.test(raw) ? ' 새벽' : '';
+  return no + '번' + tag;
+};
 
 state.transit = null; // { placeId, status: loading|ok|near|error, paths, chosen, msg }
 const transitCache = new Map();
@@ -841,7 +853,7 @@ async function findTransit(p){
       const err = odsayError(j);
       if (err) result = err.code === '-98' ? { status: 'near' } : { status: 'error', msg: '경로를 찾지 못했어요. ' + err.msg };
       else {
-        const paths = ((j.result && j.result.path) || []).slice(0, 3);
+        const paths = (j.result && j.result.path) || []; // 탭으로 나눠 보여 주므로 전부 보관한다
         result = paths.length ? { status: 'ok', paths } : { status: 'error', msg: '이 구간의 대중교통 경로가 없어요.' };
       }
     } catch (e) {
@@ -854,24 +866,93 @@ async function findTransit(p){
   renderDetail(); drawTransit();
 }
 
+// 경로를 교통수단별 탭으로 나눈다. ODsay의 pathType 대신 실제 구간을 보고 판단한다.
+const TRANSIT_TABS = [
+  { id:'all',    label:'전체' },
+  { id:'subway', label:'지하철' },
+  { id:'bus',    label:'버스' },
+  { id:'mixed',  label:'지하철+버스' },
+  { id:'walk',   label:'도보' }
+];
+const MAX_OPTIONS = 5; // 탭마다 빠른 순으로 이만큼만 보여 준다
+function pathKind(path){
+  const sp = path.subPath || [];
+  const sub = sp.some(s => s.trafficType === 1), bus = sp.some(s => s.trafficType === 2);
+  return sub && bus ? 'mixed' : sub ? 'subway' : bus ? 'bus' : 'walk';
+}
+// 지금 운행하지 않는 경로는 뺀다. ODsay 경로 응답에는 첫차·막차가 없어서 노선 종류로 판단한다(한국 시간 기준).
+function seoulNow(){
+  const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Seoul', hour: 'numeric', minute: 'numeric', weekday: 'short', hourCycle: 'h23' }).formatToParts(new Date());
+  const get = type => (parts.find(x => x.type === type) || {}).value;
+  return { min: (+get('hour') % 24) * 60 + +get('minute'), weekday: ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].indexOf(get('weekday')) };
+}
+function rideRunning(s, now){
+  const between = (from, to) => from <= to ? now.min >= from && now.min < to : now.min >= from || now.min < to;
+  if (s.trafficType === 1) return !between(60, 5 * 60 + 20); // 지하철: 새벽 1시~5시 20분은 운행 종료 시간대
+  const raw = String((s.lane && s.lane[0] && s.lane[0].busNo) || '');
+  if (/평일/.test(raw) && (now.weekday === 0 || now.weekday === 6)) return false;
+  if (/^N\d/i.test(raw.trim())) return between(23 * 60, 6 * 60);          // 심야버스
+  if (/새벽/.test(raw)) return between(3 * 60 + 30, 7 * 60);               // 새벽 버스
+  return !between(90, 4 * 60); // 일반 버스: 막차~첫차 사이(새벽 1시 30분~4시)는 뺀다. 노선마다 달라 대략적인 값이다
+}
+function runningPaths(t){
+  const now = seoulNow();
+  return t.paths.filter(path => (path.subPath || []).every(s => s.trafficType === 3 || rideRunning(s, now)));
+}
+const tabCount = (t, tab) => { if (tab === 'walk') return 1; if (t.status !== 'ok') return 0; const list = runningPaths(t); return tab === 'all' ? list.length : list.filter(x => pathKind(x) === tab).length; };
+function tabPaths(t, tab){
+  if (t.status !== 'ok' || tab === 'walk') return [];
+  const run = runningPaths(t);
+  const list = tab === 'all' ? run : run.filter(x => pathKind(x) === tab);
+  const time = x => (x.info && x.info.totalTime) || 999;
+  return [...list].sort((a, b) => time(a) - time(b)).slice(0, MAX_OPTIONS);
+}
+
 function renderTransit(d, p){
   const box = el('div','d-transit');
-  box.appendChild(el('div','d-label','대중교통으로 가기'));
+  box.appendChild(el('div','d-label','어떻게 갈까요'));
   const t = state.transit && state.transit.placeId === p.id ? state.transit : null;
-  if (!state.me) box.appendChild(el('p','d-tnote','내 위치를 켜면 지금 있는 곳에서 가는 대중교통 경로를 볼 수 있어요.'));
+  if (!state.me) box.appendChild(el('p','d-tnote','내 위치를 켜면 지금 있는 곳에서 가는 경로를 볼 수 있어요.'));
   else if (!t) {
-    const b = el('button','d-tbtn','대중교통 경로 찾기'); b.type = 'button';
+    const b = el('button','d-tbtn','경로 찾기 (대중교통·도보)'); b.type = 'button';
     b.addEventListener('click', () => findTransit(p)); box.appendChild(b);
   }
   else if (t.status === 'loading') box.appendChild(el('p','d-tnote','경로를 찾는 중이에요…'));
-  else if (t.status === 'near') box.appendChild(el('p','d-tnote', `700m 안쪽이라 대중교통보다 걷는 게 빨라요. 걸어서 약 ${walkMin(distM(state.me, p))}분이에요.`));
   else if (t.status === 'error') {
     box.appendChild(el('p','d-tnote err', t.msg));
     const b = el('button','d-tbtn','다시 시도'); b.type = 'button';
     b.addEventListener('click', () => { state.transit = null; findTransit(p); }); box.appendChild(b);
   }
-  else t.paths.forEach((path, i) => box.appendChild(transitOption(path, i, t)));
+  else {
+    // 지금 탈 수 있는 경로가 하나도 없으면 도보 탭으로 연다
+    const hidden = t.status === 'ok' ? t.paths.length - runningPaths(t).length : 0;
+    if (!t.tab || (t.tab !== 'walk' && !tabCount(t, t.tab))) t.tab = t.status === 'near' || !tabCount(t, 'all') ? 'walk' : 'all';
+    const tabs = el('div','d-ttabs'); tabs.setAttribute('role','tablist'); tabs.setAttribute('aria-label','교통수단');
+    for (const tb of TRANSIT_TABS) {
+      const n = tabCount(t, tb.id);
+      const b = el('button','d-ttab', tb.label); b.type = 'button'; b.setAttribute('role','tab');
+      b.setAttribute('aria-selected', String(t.tab === tb.id)); b.disabled = !n;
+      if (tb.id !== 'walk') b.appendChild(el('span','n', String(n)));
+      b.addEventListener('click', () => { t.tab = tb.id; t.chosen = 0; renderDetail(); drawTransit(); });
+      tabs.appendChild(b);
+    }
+    box.appendChild(tabs);
+    if (t.tab === 'walk') box.appendChild(walkOption(p));
+    else tabPaths(t, t.tab).forEach((path, i) => box.appendChild(transitOption(path, i, t)));
+    if (t.status === 'near') box.appendChild(el('p','d-tnote','700m 안쪽이라 대중교통 경로는 없어요. 걷는 게 가장 빨라요.'));
+    else if (hidden && !tabCount(t, 'all')) box.appendChild(el('p','d-tnote','지금은 운행하는 대중교통이 없어요.'));
+    if (hidden) box.appendChild(el('p','d-tnote', `지금 시간에 운행하지 않는 경로 ${hidden}개는 뺐어요.`));
+  }
   d.appendChild(box);
+}
+function walkOption(p){
+  const m = distM(state.me, p);
+  const opt = el('div','d-topt'); opt.setAttribute('aria-pressed','true');
+  const head = el('div','d-thead');
+  head.append(el('b', null, `${walkMin(m)}분`), ` · 약 ${fmtDist(m * 1.3)} · 무료`);
+  const bar = el('div','d-tbar'); bar.appendChild(el('span','walk', `도보 ${walkMin(m)}분`));
+  opt.append(head, bar, el('p','d-tnote','직선거리로 계산한 대략적인 시간이에요. 실제로 걷는 길은 아래 네이버 지도 길찾기에서 확인해 주세요.'));
+  return opt;
 }
 function transitOption(path, i, t){
   const info = path.info || {}, on = i === t.chosen;
@@ -912,9 +993,10 @@ function drawTransit(){
   const line = (path, color, walk) => routeOverlays.push(new naver.maps.Polyline({
     map, path, clickable: false, strokeColor: color, strokeWeight: walk ? 4 : 7, strokeOpacity: walk ? .85 : .9,
     strokeStyle: walk ? 'shortdot' : 'solid', strokeLineCap: 'round', strokeLineJoin: 'round' }));
-  if (t.status === 'near') line([me, dest], WALK_COLOR, true);
+  const chosen = tabPaths(t, t.tab || 'all')[t.chosen];
+  if (t.tab === 'walk' || !chosen) line([me, dest], WALK_COLOR, true);
   else {
-    const rides = (t.paths[t.chosen].subPath || []).filter(s => s.trafficType !== 3);
+    const rides = (chosen.subPath || []).filter(s => s.trafficType !== 3);
     let from = me;
     for (const s of rides) {
       const start = LL(+s.startY, +s.startX), end = LL(+s.endY, +s.endX);
@@ -926,9 +1008,9 @@ function drawTransit(){
     }
     line([from, dest], WALK_COLOR, true);
   }
-  // 경로 전체가 보이게 맞춘다. 휴대폰은 상세 패널이 가리는 만큼 아래 여백을 준다
-  const b = new naver.maps.LatLngBounds(me, me); all.forEach(x => b.extend(x));
+  // 경로 전체가 보이게 맞춘다. 휴대폰은 상세 패널이 가리는 만큼 아래 여백을,
   // 컴퓨터는 상세 패널이 왼쪽을 가리는 만큼 왼쪽 여백을 준다
+  const b = new naver.maps.LatLngBounds(me, me); all.forEach(x => b.extend(x));
   map.fitBounds(b, isPhone()
     ? { top: 70, right: 50, left: 40, bottom: detailHeight() + 30 }
     : { top: 70, right: 80, bottom: 50, left: $('detail').offsetWidth + 50 });
