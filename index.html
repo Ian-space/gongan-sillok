@@ -9,7 +9,7 @@
 :root{
   --paper:#EEF1EE; --panel:#FFFFFF; --ink:#1E2A2F; --muted:#5E6B6A; --line:#C9D1CE;
   --blue:#1F5EFF; --mark:#FFD43B; --mark-ink:#1E2A2F; --faint:.35;
-  --route:#00B85C; --route-ink:#FFFFFF;
+  --route:#00B85C; --route-ink:#FFFFFF; --blue-soft:#DCE6FF;
   --sans:'Pretendard Variable',Pretendard,'Apple SD Gothic Neo','Malgun Gothic',system-ui,sans-serif;
   box-sizing:border-box;
   padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
@@ -18,13 +18,13 @@
   :root:not([data-theme="light"]){
     --paper:#141A1D; --panel:#1A2125; --ink:#E4E8E5; --muted:#9AA6A4; --line:#2E3A3E;
     --blue:#6E9BFF; --mark:#FFD43B; --mark-ink:#141A1D; --faint:.4;
-    --route:#1FCB72; --route-ink:#0B1F14;
+    --route:#1FCB72; --route-ink:#0B1F14; --blue-soft:#22355E;
   }
 }
 :root[data-theme="dark"]{
   --paper:#141A1D; --panel:#1A2125; --ink:#E4E8E5; --muted:#9AA6A4; --line:#2E3A3E;
   --blue:#6E9BFF; --mark:#FFD43B; --mark-ink:#141A1D; --faint:.4;
-  --route:#1FCB72; --route-ink:#0B1F14;
+  --route:#1FCB72; --route-ink:#0B1F14; --blue-soft:#22355E;
 }
 *,*::before,*::after{box-sizing:inherit}
 html{height:100%;scroll-padding-top:env(safe-area-inset-top,0px)}
@@ -109,6 +109,26 @@ button,input{font:inherit;color:inherit}
 
 .legend{position:absolute;left:14px;top:14px;z-index:10;display:flex;flex-wrap:wrap;gap:6px 12px;max-width:calc(100% - 140px);background:var(--panel);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:500;box-shadow:0 1px 6px rgba(15,20,40,.18)}
 .legend[hidden]{display:none}
+.legend b{font-weight:700}
+.legend i.lv0{background:var(--blue)}
+.legend i.lv1{background:var(--blue-soft);box-shadow:inset 0 0 0 1px var(--blue)}
+.legend i.lv2{background:var(--line)}
+
+/* 지도에 표시: 고른 속성은 진하게, 나머지 메뉴는 흐리게 */
+.quick{position:absolute;right:14px;top:196px;z-index:10;display:flex;flex-direction:column;gap:2px;width:118px;background:var(--panel);border-radius:10px;padding:8px 6px;box-shadow:0 1px 6px rgba(15,20,40,.18)}
+.quick[hidden]{display:none}
+.quick-title{font-size:11px;font-weight:600;color:var(--muted);padding:0 6px 4px}
+.quick-btn{display:flex;justify-content:space-between;align-items:baseline;gap:6px;border:0;border-radius:6px;padding:6px 8px;background:transparent;color:var(--muted);font-size:13px;font-weight:500;cursor:pointer;opacity:.7;white-space:nowrap}
+.quick-btn:hover{opacity:1;background:var(--paper)}
+.quick-btn[aria-pressed="true"]{opacity:1;background:var(--ink);color:var(--panel);font-weight:700}
+.quick-n{font-size:11px;font-variant-numeric:tabular-nums}
+
+/* 핀 옆 속성 배지: 좋은 값일수록 진하게 */
+.pin.dim{opacity:.55}
+.pin-badge{position:absolute;left:28px;top:3px;white-space:nowrap;font-size:11px;font-weight:700;border-radius:999px;padding:2px 7px;box-shadow:0 1px 3px rgba(15,20,40,.22)}
+.pin-badge.lv0{background:var(--blue);color:#FFFFFF}
+.pin-badge.lv1{background:var(--blue-soft);color:var(--blue)}
+.pin-badge.lv2,.pin-badge.lvx{background:var(--panel);color:var(--muted);font-weight:500}
 .legend span{display:inline-flex;align-items:center;gap:5px}
 .legend i,.item-name i{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--c);flex:none}
 .item-name{display:flex;align-items:center;gap:8px}
@@ -183,6 +203,13 @@ button,input{font:inherit;color:inherit}
   .d-handle{display:flex;justify-content:center;align-items:center;position:sticky;top:0;z-index:2;height:26px;margin:0 -18px 4px;background:var(--panel);touch-action:none;cursor:grab}
   .d-handle span{width:40px;height:5px;border-radius:999px;background:var(--line)}
   .d-head{touch-action:none}
+  /* 휴대폰: 세로 공간이 부족해서 '지도에 표시'를 지도 위쪽 가로 줄로, 색 안내는 그 아래로 */
+  .quick{top:14px;left:14px;right:100px;width:auto;flex-direction:row;align-items:center;gap:4px;padding:5px 6px;overflow-x:auto;scrollbar-width:none}
+  .quick::-webkit-scrollbar{display:none}
+  .quick-title{display:none}
+  .quick-btn{flex:none;padding:5px 9px}
+  .quick-n{display:none}
+  .legend{top:60px;max-width:calc(100% - 128px)}
   .brand{font-size:24px}
   .tagline{font-size:13px;margin-top:2px}
   .actions{margin-top:10px}
@@ -263,6 +290,7 @@ button,input{font:inherit;color:inherit}
       <button type="button" class="wide" id="zfit">전체 보기</button>
       <button type="button" class="wide loc" id="zloc" aria-pressed="false">내 위치</button>
     </div>
+    <nav class="quick" id="quick" hidden aria-label="지도에 표시할 정보"></nav>
     <section class="detail" id="detail" hidden aria-live="polite"></section>
   </main>
 </div>
@@ -796,18 +824,48 @@ function bindSheets(){
 function renderMap(vis){
   if (!map) return;
   const visSet = new Set(vis.map(p => p.id));
-  const showLabels = vis.length <= 8 || map.getZoom() >= 17;
+  const k = state.badge;
+  const showLabels = !k && (vis.length <= 8 || map.getZoom() >= 17);
   for (const p of state.places) {
     const mk = markers.get(p.id); if (!mk) continue;
     const on = visSet.has(p.id), sel = p.id === state.sel;
-    const cls = 'pin' + (sel ? ' sel' : '') + (on ? '' : ' faint');
-    const label = (sel || (on && showLabels)) ? `<span class="pin-label">${esc(p.name)}</span>` : '';
+    const lv = k ? level(p, k) : 0; // 0 좋음, 1 보통, 2 아쉬움, -1 기록 없음
+    const cls = 'pin' + (sel ? ' sel' : '') + (on ? '' : ' faint') + (k && on && (lv === 2 || lv < 0) ? ' dim' : '');
+    // 고른 속성이 있으면 핀마다 배지를 붙이고, 고른 장소는 이름을 보여 준다
+    const label = sel || (on && showLabels) ? `<span class="pin-label">${esc(p.name)}</span>`
+      : k && on ? `<span class="pin-badge lv${lv < 0 ? 'x' : lv}">${lv < 0 ? '기록 없음' : SHORT[k][lv]}</span>` : '';
     mk.setIcon({ content: `<div class="${cls}" style="--c:${category(p).color}"><span class="pin-head"></span>${label}</div>`, anchor: new naver.maps.Point(14, 29) });
-    mk.setZIndex(sel ? 300 : on ? 200 : 100);
+    mk.setZIndex(sel ? 300 : on ? 200 + (k && lv >= 0 ? (2 - lv) * 10 : 0) : 100); // 좋은 곳이 위로 올라오게
   }
+}
+
+/* ---------- 지도에 표시 (자주 찾는 메뉴) ---------- */
+// 고른 속성을 핀 옆 배지로 보여 준다. ENUMS 값은 좋은 것부터 아쉬운 것 순서라, 그 순서가 곧 진하기다.
+const SHORT = { noise:['조용','보통','시끄러움'], spacing:['넓음','보통','좁음'], light:['밝음','보통','어두움'], outlet:['많음','일부','없음'], stay:['장시간','2시간','회전 빠름'] };
+const BADGE_KEY = 'gongan-sillok:badge';
+state.badge = (() => { try { const v = localStorage.getItem(BADGE_KEY); return v && ENUMS[v] ? v : ''; } catch { return ''; } })();
+const level = (p, k) => ENUMS[k].values.indexOf(p[k]);
+function renderQuick(){
+  const q = $('quick'); q.replaceChildren();
+  q.appendChild(el('div','quick-title','지도에 표시'));
+  for (const [k, label] of [['', '유형'], ...Object.keys(ENUMS).map(x => [x, ENUMS[x].label])]) {
+    const b = el('button','quick-btn'); b.type = 'button'; b.setAttribute('aria-pressed', String(state.badge === k));
+    b.appendChild(el('span','quick-name', label));
+    if (k) b.appendChild(el('span','quick-n', `${SHORT[k][0]} ${state.places.filter(p => level(p, k) === 0).length}`)); // 좋은 값인 곳 수
+    b.addEventListener('click', () => { state.badge = k; try { localStorage.setItem(BADGE_KEY, k); } catch {} renderAll(); });
+    q.appendChild(b);
+  }
+  q.hidden = !map;
 }
 function renderLegend(){
   const lg = $('legend'); lg.replaceChildren();
+  if (state.badge) { // 속성을 고르면 안내도 진하기 기준으로 바뀐다
+    const k = state.badge; lg.setAttribute('aria-label', `${ENUMS[k].label} 표시 안내`);
+    lg.appendChild(el('b', null, ENUMS[k].label));
+    SHORT[k].forEach((t, i) => { const s = el('span'); s.append(el('i', 'lv' + i), t); lg.appendChild(s); });
+    lg.hidden = !map; return;
+  }
+  lg.setAttribute('aria-label', '장소 유형별 색');
   const used = new Set(state.places.map(p => category(p).name));
   for (const c of CATEGORIES) {
     if (!used.has(c.name)) continue;
@@ -1154,7 +1212,7 @@ function renderAll(){
   if (state.sortNear && state.me) vis = vis.map(p => [distM(state.me, p), p]).sort((a, b) => a[0] - b[0]).map(x => x[1]);
   $('btnSort').setAttribute('aria-pressed', String(state.sortNear && !!state.me));
   $('zloc').setAttribute('aria-pressed', String(!!state.me));
-  renderList(vis); renderMap(vis); renderLegend(); renderDetail();
+  renderList(vis); renderMap(vis); renderLegend(); renderQuick(); renderDetail();
 }
 
 /* ---------- 시작 ---------- */
