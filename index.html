@@ -118,6 +118,21 @@ button,input{font:inherit;color:inherit}
 .d-loc{margin-top:16px;width:100%;padding:10px 14px;border-radius:8px;border:1.5px solid var(--blue);background:transparent;color:var(--blue);font-weight:700;font-size:14px;cursor:pointer}
 .d-loc:disabled{opacity:.6;cursor:default}
 .d-loc + .d-route{margin-top:8px}
+.d-transit{margin-top:16px;display:grid;gap:8px}
+.d-tnote{margin:0;font-size:13px;color:var(--muted)}
+.d-tnote.err{color:#C0392B}
+.d-tbtn{padding:9px 14px;border-radius:8px;border:1px solid var(--line);background:var(--paper);font-weight:600;font-size:14px;cursor:pointer}
+.d-topt{display:grid;gap:6px;text-align:left;width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--line);background:transparent;cursor:pointer}
+.d-topt[aria-pressed="true"]{border:1.5px solid var(--blue);background:var(--paper)}
+.d-thead{font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums}
+.d-thead b{font-size:17px;color:var(--ink);margin-right:2px}
+.d-tbar{display:flex;flex-wrap:wrap;gap:4px;align-items:center}
+.d-tbar span{font-size:11px;font-weight:700;border-radius:999px;padding:2px 8px;white-space:nowrap}
+.d-tbar .walk{background:var(--paper);color:var(--muted);font-weight:500}
+.d-tbar .ride{background:var(--c);color:#FFFFFF}
+.d-tsteps{margin:2px 0 0;padding:0;list-style:none;display:grid;gap:6px;font-size:13px}
+.d-tsteps li{padding-left:10px;border-left:3px solid var(--c)}
+.d-tsteps .muted{color:var(--muted);font-size:12px}
 .inapp{position:sticky;top:env(safe-area-inset-top,0px);z-index:50;display:flex;align-items:center;gap:10px;padding:10px 16px;background:var(--ink);color:var(--panel);font-size:13px;line-height:1.4}
 .inapp[hidden]{display:none}
 .inapp span{flex:1;min-width:0}
@@ -244,6 +259,8 @@ button,input{font:inherit;color:inherit}
 <script>
 /* ===== 설정: 네이버 클라우드 플랫폼에서 발급받은 Client ID를 따옴표 안에 넣으세요 ===== */
 const NAVER_CLIENT_ID = 'ffqv2bmvwg';
+/* ===== 설정: ODsay LAB에서 발급받은 API Key를 따옴표 안에 넣으세요 (대중교통 경로) ===== */
+const ODSAY_API_KEY = 'vpfLJcZCiAwV7L5fibSQjA';
 /* ===================================================================================== */
 
 (() => {
@@ -345,7 +362,7 @@ function distM(a, b){ // 두 좌표 사이 직선거리(m)
 }
 // 실제 길은 직선보다 돌아가므로 1.3배로 잡고, 분당 75m를 걷는다고 본다
 const walkMin = m => Math.max(1, Math.round(m * 1.3 / 75));
-const fmtDist = m => m < 1000 ? `${Math.max(10, Math.round(m / 10) * 10)}m` : `${(m / 1000).toFixed(1)}km`;
+const fmtDist = m => m < 995 ?`${Math.max(10, Math.round(m / 10) * 10)}m` : `${(m / 1000).toFixed(1)}km`;
 function nearestStation(p){
   let best = null;
   for (const s of STATIONS) { const m = distM(p, s); if (!best || m < best.m) best = { ...s, m }; }
@@ -577,6 +594,7 @@ function renderDetail(){
     w.appendChild(el('div','muted','직선거리로 계산한 대략적인 값이에요.'));
     d.appendChild(w);
   }
+  renderTransit(d, p);
   const dl = el('dl','scale');
   for (const [k, def] of Object.entries(ENUMS)) {
     dl.appendChild(el('dt', null, def.label));
@@ -616,6 +634,7 @@ function renderDetail(){
 const SEL_KEY = 'gongan-sillok:sel';
 function select(id, center){
   state.sel = id;
+  if (state.transit && state.transit.placeId !== id) { state.transit = null; clearRoute(); } // 다른 장소면 경로를 지운다
   // 다른 앱에 다녀오는 사이 사파리가 탭을 새로고침해도 보던 장소를 다시 열 수 있게 기억한다
   try { id ? sessionStorage.setItem(SEL_KEY, id) : sessionStorage.removeItem(SEL_KEY); } catch {}
   if (id && center && map && !isPhone()) {
@@ -757,6 +776,134 @@ function renderLegend(){
   }
   lg.hidden = !map || !used.size;
 }
+/* ---------- 대중교통 경로 (ODsay) ---------- */
+// 수도권 노선 색 (ODsay subwayCode 기준)
+const SUBWAY_COLORS = { 1:'#0052A4', 2:'#00A84D', 3:'#EF7C1C', 4:'#00A5DE', 5:'#996CAC', 6:'#CD7C2F', 7:'#747F00', 8:'#E6186C', 9:'#BDB092', 101:'#0090D2', 104:'#77C4A3', 109:'#D4003B', 116:'#F5A200' };
+const BUS_COLORS = { 11:'#0068B7', 12:'#53B332', 13:'#F2B70A', 14:'#E60012', 3:'#53B332' }; // 간선, 지선, 순환, 광역, 마을
+const WALK_COLOR = '#5B6475';
+const rideColor = s => s.trafficType === 1
+  ? (SUBWAY_COLORS[s.lane && s.lane[0] && s.lane[0].subwayCode] || '#5B6475')
+  : (BUS_COLORS[s.lane && s.lane[0] && s.lane[0].type] || '#1F5EFF');
+const rideName = s => s.trafficType === 1
+  ? cleanText((s.lane && s.lane[0] && s.lane[0].name) || '지하철', 20).replace(/^수도권\s*/, '')
+  : cleanText((s.lane && s.lane[0] && s.lane[0].busNo) || '버스', 20) + '번';
+
+state.transit = null; // { placeId, status: loading|ok|near|error, paths, chosen, msg }
+const transitCache = new Map();
+let routeOverlays = [];
+
+function odsayError(j){
+  const e = j && j.error; if (!e) return null;
+  const x = Array.isArray(e) ? e[0] : e;
+  return { code: String(x.code), msg: cleanText(x.msg || x.message || '', 120) };
+}
+async function findTransit(p){
+  if (!state.me) return;
+  // 같은 장소, 비슷한 위치(약 100m 안)면 다시 부르지 않는다. 호출 횟수를 아끼기 위해서다.
+  const key = `${p.id}|${state.me.lat.toFixed(3)},${state.me.lng.toFixed(3)}`;
+  let result = transitCache.get(key);
+  if (!result) {
+    state.transit = { placeId: p.id, status: 'loading' }; renderDetail();
+    try {
+      if (!ODSAY_API_KEY) throw Object.assign(new Error(), { nokey: true });
+      const q = new URLSearchParams({ SX: state.me.lng, SY: state.me.lat, EX: p.lng, EY: p.lat });
+      const j = await fetch(`https://api.odsay.com/v1/api/searchPubTransPathT?${q}&apiKey=${encodeURIComponent(ODSAY_API_KEY)}`).then(r => r.json());
+      const err = odsayError(j);
+      if (err) result = err.code === '-98' ? { status: 'near' } : { status: 'error', msg: '경로를 찾지 못했어요. ' + err.msg };
+      else {
+        const paths = ((j.result && j.result.path) || []).slice(0, 3);
+        result = paths.length ? { status: 'ok', paths } : { status: 'error', msg: '이 구간의 대중교통 경로가 없어요.' };
+      }
+    } catch (e) {
+      result = { status: 'error', msg: e.nokey ? 'ODsay 키가 비어 있어요. index.html 위쪽의 ODSAY_API_KEY에 키를 넣어 주세요.' : '대중교통 경로를 불러오지 못했어요. 인터넷 연결을 확인하고 다시 시도해 주세요.' };
+    }
+    if (result.status !== 'error') transitCache.set(key, result);
+  }
+  if (state.sel !== p.id) return; // 기다리는 사이 다른 장소를 골랐다면 버린다
+  state.transit = { placeId: p.id, ...result, chosen: 0 };
+  renderDetail(); drawTransit();
+}
+
+function renderTransit(d, p){
+  const box = el('div','d-transit');
+  box.appendChild(el('div','d-label','대중교통으로 가기'));
+  const t = state.transit && state.transit.placeId === p.id ? state.transit : null;
+  if (!state.me) box.appendChild(el('p','d-tnote','내 위치를 켜면 지금 있는 곳에서 가는 대중교통 경로를 볼 수 있어요.'));
+  else if (!t) {
+    const b = el('button','d-tbtn','대중교통 경로 찾기'); b.type = 'button';
+    b.addEventListener('click', () => findTransit(p)); box.appendChild(b);
+  }
+  else if (t.status === 'loading') box.appendChild(el('p','d-tnote','경로를 찾는 중이에요…'));
+  else if (t.status === 'near') box.appendChild(el('p','d-tnote', `700m 안쪽이라 대중교통보다 걷는 게 빨라요. 걸어서 약 ${walkMin(distM(state.me, p))}분이에요.`));
+  else if (t.status === 'error') {
+    box.appendChild(el('p','d-tnote err', t.msg));
+    const b = el('button','d-tbtn','다시 시도'); b.type = 'button';
+    b.addEventListener('click', () => { state.transit = null; findTransit(p); }); box.appendChild(b);
+  }
+  else t.paths.forEach((path, i) => box.appendChild(transitOption(path, i, t)));
+  d.appendChild(box);
+}
+function transitOption(path, i, t){
+  const info = path.info || {}, on = i === t.chosen;
+  const opt = el('button','d-topt'); opt.type = 'button'; opt.setAttribute('aria-pressed', String(on));
+  opt.addEventListener('click', () => { t.chosen = i; renderDetail(); drawTransit(); });
+  const transfers = Math.max(0, (info.busTransitCount || 0) + (info.subwayTransitCount || 0) - 1);
+  const head = el('div','d-thead');
+  head.append(el('b', null, `${info.totalTime || '?'}분`), ` · ${Number(info.payment || 0).toLocaleString('ko-KR')}원 · 환승 ${transfers}회`);
+  opt.appendChild(head);
+  // 구간을 색 띠로 한 줄에 보여 준다
+  const bar = el('div','d-tbar');
+  for (const s of path.subPath || []) {
+    if (s.trafficType === 3) { if (s.sectionTime > 0) bar.appendChild(el('span','walk', `도보 ${s.sectionTime}분`)); continue; }
+    const pill = el('span','ride', rideName(s)); pill.style.setProperty('--c', rideColor(s)); bar.appendChild(pill);
+  }
+  opt.appendChild(bar);
+  if (on) { // 고른 경로는 어디서 타고 내리는지까지 보여 준다
+    const ol = el('ol','d-tsteps');
+    for (const s of path.subPath || []) {
+      if (s.trafficType === 3) continue;
+      const li = el('li'); li.style.setProperty('--c', rideColor(s));
+      li.append(el('b', null, rideName(s)), ` ${cleanText(s.startName, 30)} 승차 → ${cleanText(s.endName, 30)} 하차`, el('span','muted', ` ${s.stationCount || 0}개 ${s.trafficType === 1 ? '역' : '정류장'}, ${s.sectionTime || 0}분`));
+      ol.appendChild(li);
+    }
+    opt.appendChild(ol);
+  }
+  return opt;
+}
+
+function clearRoute(){ for (const o of routeOverlays) o.setMap(null); routeOverlays = []; }
+function drawTransit(){
+  clearRoute();
+  const t = state.transit; if (!map || !t || !state.me || (t.status !== 'ok' && t.status !== 'near')) return;
+  const p = state.places.find(x => x.id === t.placeId); if (!p) return;
+  const LL = (lat, lng) => new naver.maps.LatLng(lat, lng);
+  const me = LL(state.me.lat, state.me.lng), dest = LL(p.lat, p.lng);
+  const all = [me, dest];
+  const line = (path, color, walk) => routeOverlays.push(new naver.maps.Polyline({
+    map, path, clickable: false, strokeColor: color, strokeWeight: walk ? 4 : 7, strokeOpacity: walk ? .85 : .9,
+    strokeStyle: walk ? 'shortdot' : 'solid', strokeLineCap: 'round', strokeLineJoin: 'round' }));
+  if (t.status === 'near') line([me, dest], WALK_COLOR, true);
+  else {
+    const rides = (t.paths[t.chosen].subPath || []).filter(s => s.trafficType !== 3);
+    let from = me;
+    for (const s of rides) {
+      const start = LL(+s.startY, +s.startX), end = LL(+s.endY, +s.endX);
+      line([from, start], WALK_COLOR, true); // 걷는 구간: 점선
+      const stops = (s.passStopList && s.passStopList.stations) || [];
+      const pts = stops.length >= 2 ? stops.map(x => LL(+x.y, +x.x)) : [start, end];
+      line(pts, rideColor(s), false); all.push(...pts);
+      from = end;
+    }
+    line([from, dest], WALK_COLOR, true);
+  }
+  // 경로 전체가 보이게 맞춘다. 휴대폰은 상세 패널이 가리는 만큼 아래 여백을 준다
+  const b = new naver.maps.LatLngBounds(me, me); all.forEach(x => b.extend(x));
+  // 컴퓨터는 상세 패널이 왼쪽을 가리는 만큼 왼쪽 여백을 준다
+  map.fitBounds(b, isPhone()
+    ? { top: 70, right: 50, left: 40, bottom: $('detail').offsetHeight + 30 }
+    : { top: 70, right: 80, bottom: 50, left: $('detail').offsetWidth + 50 });
+}
+
 /* ---------- 내 위치 ---------- */
 let watchId = null, meMarker = null, meCircle = null, panOnFix = false;
 
