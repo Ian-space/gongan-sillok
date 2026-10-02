@@ -157,7 +157,7 @@ button,input{font:inherit;color:inherit}
 .d-note{font-family:var(--sans);font-size:16px;line-height:1.7;margin:4px 0 0}
 .d-date{font-size:12px;color:var(--muted);margin-top:12px}
 
-.sheet-handle{display:none}
+.sheet-handle,.d-handle{display:none}
 /* 휴대폰: 지도는 화면 전체, 목록·필터는 아래에서 올라오는 패널. 손잡이를 끌어 높이를 바꾼다 */
 @media (max-width:899px){
   html,body{height:100%;overflow:hidden;overscroll-behavior:none}
@@ -170,7 +170,11 @@ button,input{font:inherit;color:inherit}
   .sheet-handle span{width:40px;height:5px;border-radius:999px;background:var(--line)}
   .side-head{padding:2px 20px 10px;touch-action:none}
   .scroll{overscroll-behavior:contain}
-  .detail{position:fixed;left:0;right:0;bottom:0;width:auto;max-height:70vh;border-radius:14px 14px 0 0;padding-bottom:calc(16px + env(safe-area-inset-bottom,0px));z-index:20}
+  .detail{position:fixed;left:0;right:0;bottom:0;width:auto;height:var(--detail-h,55dvh);max-height:none;border-radius:16px 16px 0 0;padding-top:0;padding-bottom:calc(16px + env(safe-area-inset-bottom,0px));z-index:20;overscroll-behavior:contain}
+  .detail.anim{transition:height .22s ease-out}
+  .d-handle{display:flex;justify-content:center;align-items:center;position:sticky;top:0;z-index:2;height:26px;margin:0 -18px 4px;background:var(--panel);touch-action:none;cursor:grab}
+  .d-handle span{width:40px;height:5px;border-radius:999px;background:var(--line)}
+  .d-head{touch-action:none}
   .brand{font-size:24px}
   .tagline{font-size:13px;margin-top:2px}
   .actions{margin-top:10px}
@@ -189,7 +193,7 @@ button,input{font:inherit;color:inherit}
 </div>
 <div class="app">
   <aside class="side" id="side">
-    <div class="sheet-handle" id="sheetHandle" role="button" tabindex="0" aria-label="목록 패널 높이 바꾸기"><span></span></div>
+    <div class="sheet-handle grab" id="sheetHandle" role="button" tabindex="0" aria-label="목록 패널 높이 바꾸기"><span></span></div>
     <div class="side-head">
       <h1 class="brand">공간실록</h1>
       <p class="tagline">평점 대신 공간의 사실을 기록합니다. 성수동 시제품.</p>
@@ -571,7 +575,13 @@ function renderDetail(){
   const d = $('detail'); const p = state.places.find(x => x.id === state.sel);
   document.body.classList.toggle('has-detail', !!p);
   if (!p) { d.hidden = true; d.replaceChildren(); return; }
+  // 휴대폰: 새 장소를 열 때는 상세 패널을 '반' 높이에서 시작한다
+  if (d.hidden || d.dataset.place !== p.id) { if (detailSheet && isPhone()) detailSheet.set(detailSheet.snaps()[1], false); d.scrollTop = 0; }
+  d.dataset.place = p.id;
   d.replaceChildren();
+  const grab = el('div','d-handle grab'); grab.setAttribute('role','button'); grab.tabIndex = 0;
+  grab.setAttribute('aria-label','상세 패널 높이 바꾸기'); grab.appendChild(el('span'));
+  d.appendChild(grab);
   const head = el('div','d-head'); const t = el('div');
   t.appendChild(el('h2','d-name', p.name));
   const meta = [p.type, p.addr].filter(Boolean).join(', ');
@@ -617,6 +627,7 @@ function renderDetail(){
     loc.disabled = watchId !== null;
     loc.addEventListener('click', () => locate(false, true));
     d.appendChild(loc);
+    if (state.locError) d.appendChild(el('p','d-tnote err', state.locError));
   }
   if (IS_MOBILE) {
     const app = el('a','d-route','네이버 지도 앱으로 길찾기'); app.href = links.app;
@@ -648,7 +659,7 @@ function select(id, center){
 function centerAboveDetail(id){
   const p = state.places.find(x => x.id === id); if (!p) return;
   map.setCenter(new naver.maps.LatLng(p.lat, p.lng));
-  map.panBy(new naver.maps.Point(0, Math.round($('detail').offsetHeight / 2)));
+  map.panBy(new naver.maps.Point(0, Math.round(detailHeight() / 2)));
 }
 
 /* ---------- 네이버 지도 ---------- */
@@ -706,52 +717,71 @@ function fitAll(){
 }
 
 /* ---------- 휴대폰 아래 패널 끌기 ---------- */
+// 목록 패널과 상세 패널이 같은 방식으로 움직인다.
+// 손잡이(또는 머리 부분)를 끌어 높이를 바꾸고, 손을 떼면 정해진 높이 중 하나에 붙는다.
 const isPhone = () => matchMedia('(max-width:899px)').matches;
-const sheetSnaps = () => [130, Math.round(innerHeight * 0.5), Math.round(innerHeight * 0.88)]; // 접힘, 반, 거의 전체
-let sheetH = null;
-function setSheet(px, animate){
-  const side = $('side');
-  side.classList.toggle('anim', !!animate);
-  sheetH = px; side.style.setProperty('--sheet-h', px + 'px');
-}
-function cycleSheet(){ // 손잡이를 탭하면 다음 높이로
-  const s = sheetSnaps(), h = sheetH ?? $('side').getBoundingClientRect().height;
-  const i = s.findIndex(x => Math.abs(x - h) < 24);
-  setSheet(s[(i + 1) % s.length], true);
-}
-function bindSheet(){
-  const side = $('side'); let drag = null;
-  const down = e => {
-    if (!isPhone() || e.target.closest('button:not(.sheet-handle), a, input')) return;
-    drag = { y: e.clientY, h: sheetH ?? side.getBoundingClientRect().height, lastY: e.clientY, lastT: e.timeStamp, v: 0, moved: false, el: e.currentTarget };
-    e.currentTarget.setPointerCapture(e.pointerId);
+const vh = f => Math.round(innerHeight * f);
+function makeSheet({ panel, varName, snaps, isGrab, onSettle, onDismiss }){
+  let h = null, drag = null;
+  const set = (px, animate) => { panel.classList.toggle('anim', !!animate); h = px; panel.style.setProperty(varName, px + 'px'); };
+  const settle = px => { set(px, true); if (onSettle) onSettle(px); };
+  const cycle = () => { // 손잡이를 탭하면 다음 높이로
+    const s = snaps(), cur = h ?? panel.getBoundingClientRect().height;
+    const i = s.findIndex(x => Math.abs(x - cur) < 24);
+    settle(s[(i + 1) % s.length]);
   };
-  const move = e => {
+  panel.addEventListener('pointerdown', e => {
+    if (!isPhone() || !isGrab(e.target) || e.target.closest('button:not(.grab), a, input')) return;
+    drag = { y: e.clientY, h: h ?? panel.getBoundingClientRect().height, lastY: e.clientY, lastT: e.timeStamp, v: 0, moved: false, onHandle: !!e.target.closest('.grab') };
+    try { panel.setPointerCapture(e.pointerId); } catch {}
+  });
+  panel.addEventListener('pointermove', e => {
     if (!drag) return;
     const dy = drag.y - e.clientY; if (Math.abs(dy) > 5) drag.moved = true;
-    const s = sheetSnaps(); setSheet(Math.min(s[2], Math.max(s[0] - 40, drag.h + dy)), false);
+    const s = snaps(), floor = s[0] - (onDismiss ? 220 : 40); // 닫을 수 있는 패널은 더 아래까지 끌린다
+    set(Math.min(s[2], Math.max(floor, drag.h + dy)), false);
     // 손가락 속도(위로 끌면 양수). 제자리 이벤트는 속도를 0으로 덮어쓰지 않게 건너뛴다
     const dt = e.timeStamp - drag.lastT;
     if (dt > 0 && e.clientY !== drag.lastY) { drag.v = (drag.lastY - e.clientY) / dt; drag.lastY = e.clientY; drag.lastT = e.timeStamp; }
     else if (dt > 120) drag.v = 0; // 오래 멈춰 있었다면 휙 넘긴 게 아니다
-  };
+  });
   const up = e => {
     if (!drag) return; const d = drag; drag = null;
     if (e.timeStamp - d.lastT > 120) d.v = 0; // 멈췄다가 손을 뗀 경우
-    if (!d.moved) { if (d.el.id === 'sheetHandle') cycleSheet(); return; }
-    const s = sheetSnaps(), h = sheetH;
+    if (!d.moved) { if (d.onHandle) cycle(); return; }
+    const s = snaps();
+    // 가장 낮은 높이보다 한참 아래로 끌었거나, 낮은 높이에서 아래로 휙 내리면 닫는다
+    if (onDismiss && (h < s[0] - 60 || (d.v < -0.4 && h < s[0] + 10))) { onDismiss(); return; }
     let target;
     if (Math.abs(d.v) > 0.4) target = d.v > 0 ? (s.find(x => x > h + 10) ?? s[2]) : ([...s].reverse().find(x => x < h - 10) ?? s[0]); // 휙 넘기면 그 방향 다음 칸
     else target = s.reduce((a, b) => Math.abs(b - h) < Math.abs(a - h) ? b : a); // 아니면 가장 가까운 칸
-    setSheet(target, true);
+    settle(target);
   };
-  for (const el of [$('sheetHandle'), side.querySelector('.side-head')]) {
-    el.addEventListener('pointerdown', down); el.addEventListener('pointermove', move);
-    el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up);
-  }
-  $('sheetHandle').addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); cycleSheet(); } });
-  addEventListener('resize', () => { if (isPhone() && sheetH) setSheet(Math.min(sheetH, sheetSnaps()[2]), false); });
-  if (isPhone()) setSheet(sheetSnaps()[1], false);
+  panel.addEventListener('pointerup', up); panel.addEventListener('pointercancel', up);
+  addEventListener('resize', () => { if (isPhone() && h) set(Math.min(h, snaps()[2]), false); });
+  return { set, cycle, snaps, get height(){ return h; } };
+}
+
+let listSheet = null, detailSheet = null;
+// 상세 패널이 지금(또는 움직임이 끝나면) 차지하는 높이
+const detailHeight = () => (isPhone() && detailSheet && detailSheet.height) || $('detail').offsetHeight;
+function bindSheets(){
+  listSheet = makeSheet({
+    panel: $('side'), varName: '--sheet-h',
+    snaps: () => [130, vh(0.5), vh(0.88)], // 접힘, 반, 거의 전체
+    isGrab: t => !!t.closest('.sheet-handle, .side-head')
+  });
+  detailSheet = makeSheet({
+    panel: $('detail'), varName: '--detail-h',
+    snaps: () => [170, vh(0.55), vh(0.88)], // 이름만, 반, 거의 전체
+    isGrab: t => !!t.closest('.d-handle, .d-head'),
+    // 높이를 바꾼 뒤에도 고른 장소(또는 경로)가 보이도록 다시 맞춘다
+    onSettle: () => { if (state.transit && (state.transit.status === 'ok' || state.transit.status === 'near')) drawTransit(); else if (state.sel && map) centerAboveDetail(state.sel); },
+    onDismiss: () => select(null)
+  });
+  $('sheetHandle').addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); listSheet.cycle(); } });
+  $('detail').addEventListener('keydown', e => { if ((e.key === 'Enter' || e.key === ' ') && e.target.closest('.d-handle')) { e.preventDefault(); detailSheet.cycle(); } });
+  if (isPhone()) listSheet.set(vh(0.5), false);
 }
 function renderMap(vis){
   if (!map) return;
@@ -900,7 +930,7 @@ function drawTransit(){
   const b = new naver.maps.LatLngBounds(me, me); all.forEach(x => b.extend(x));
   // 컴퓨터는 상세 패널이 왼쪽을 가리는 만큼 왼쪽 여백을 준다
   map.fitBounds(b, isPhone()
-    ? { top: 70, right: 50, left: 40, bottom: $('detail').offsetHeight + 30 }
+    ? { top: 70, right: 50, left: 40, bottom: detailHeight() + 30 }
     : { top: 70, right: 80, bottom: 50, left: $('detail').offsetWidth + 50 });
 }
 
@@ -913,6 +943,7 @@ function locate(thenSort, noPan){
   if (!('geolocation' in navigator)) { setStatus('이 브라우저는 위치 확인을 지원하지 않아요.', true); state.sortNear = false; renderAll(); return; }
   if (watchId !== null) return; // 이미 위치를 찾는 중
   setStatus('내 위치를 찾는 중이에요…', false);
+  state.locError = null;
   panOnFix = !thenSort && !noPan;
   watchId = navigator.geolocation.watchPosition(onFix, onFixError, { enableHighAccuracy:true, maximumAge:15000, timeout:20000 });
   renderDetail(); // "찾는 중" 표시
@@ -935,11 +966,16 @@ function onFix(pos){
   }
   renderAll();
 }
+const IS_IOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
 function onFixError(err){
   navigator.geolocation.clearWatch(watchId); watchId = null; state.sortNear = false;
   const msg = err && err.code === 1
-    ? '위치 권한이 꺼져 있어요. 브라우저 주소창의 자물쇠 아이콘에서 위치를 허용한 뒤 다시 눌러 주세요.'
-    : '내 위치를 찾지 못했어요. 잠시 뒤 다시 시도해 주세요.';
+    ? (IS_IOS
+        ? '위치 권한이 막혀 있어요. 아이폰 설정 → 개인정보 보호 및 보안 → 위치 서비스 → Safari 웹사이트를 "앱을 사용하는 동안"으로 바꾸고, 사파리 주소창 왼쪽 메뉴의 웹 사이트 설정에서 위치를 허용한 뒤 다시 눌러 주세요.'
+        : '위치 권한이 막혀 있어요. 브라우저 주소창 왼쪽의 아이콘에서 위치를 허용한 뒤 다시 눌러 주세요.')
+    : '내 위치를 찾지 못했어요. 실내라면 창가에서, 또는 잠시 뒤 다시 시도해 주세요.';
+  // 휴대폰에서는 상세 패널이 목록 패널(상태 문구 자리)을 가리므로 상세 패널 안에도 보여 준다
+  state.locError = msg;
   setStatus(msg, true); renderAll();
 }
 
@@ -952,7 +988,7 @@ function renderAll(){
 }
 
 /* ---------- 시작 ---------- */
-buildFilters(); bindSheet();
+buildFilters(); bindSheets();
 $('btnLoad').addEventListener('click', () => $('file').click());
 $('file').addEventListener('change', e => { const f = e.target.files && e.target.files[0]; if (f) handleFile(f); e.target.value = ''; });
 $('btnReset').addEventListener('click', () => {
