@@ -59,6 +59,51 @@ button,input{font:inherit;color:inherit}
 .count{font-size:13px;color:var(--muted)}
 .linkbtn{background:none;border:0;color:var(--blue);cursor:pointer;font-size:13px;padding:0}
 .count-tools{display:flex;align-items:baseline;gap:14px}
+
+/* 구역 제목: 목록 패널과 상세 패널이 같은 형식을 쓴다 (굵은 제목 + 밑줄) */
+.sec{padding:16px 22px 4px}
+.sec-title{margin:0 0 10px;padding-bottom:6px;border-bottom:2px solid var(--ink);font-size:14px;font-weight:700;letter-spacing:-.01em;text-wrap:balance}
+.sec-pad{margin:18px 22px 0}
+.detail .sec-title{margin:20px 0 10px;font-size:13px;border-bottom-width:1.5px}
+.d-transit .sec-title{margin:4px 0 2px}
+.filters{padding-top:10px}
+.count-row{padding-top:8px}
+
+/* 한눈에 보기 */
+.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
+.stat{display:grid;gap:2px;align-content:start;text-align:left;padding:8px 10px;border-radius:8px;background:var(--paper);border:0;color:inherit}
+.stat b{font-size:22px;font-weight:800;line-height:1.1;font-variant-numeric:tabular-nums}
+.stat span{font-size:11px;color:var(--muted);line-height:1.3}
+button.stat{cursor:pointer}
+button.stat:hover{box-shadow:inset 0 0 0 1px var(--blue)}
+button.stat[aria-pressed="true"]{background:var(--blue);color:#FFFFFF}
+button.stat[aria-pressed="true"] span{color:#FFFFFF}
+.near-line{margin:10px 0 0;font-size:13px}
+.near-line.muted{color:var(--muted)}
+
+/* 목적별 추천 Top5 */
+.psort{display:flex;gap:6px;margin-top:10px;align-items:center}
+/* 물음표가 정가운데 오도록 기본 여백을 없애고 격자로 가운데 정렬, 오른쪽 끝에서 2px 안쪽 */
+.help-btn{flex:none;margin:0 2px 0 auto;width:20px;height:20px;padding:0;display:inline-grid;place-items:center;border-radius:50%;border:1px solid var(--line);background:var(--panel);color:var(--muted);font-size:12px;font-weight:700;line-height:1;cursor:pointer}
+.help-btn:hover,.help-btn[aria-expanded="true"]{border-color:var(--blue);color:var(--blue)}
+.phelp{margin-top:10px;padding:12px 14px;border-radius:8px;background:var(--paper);font-size:13px}
+.phelp-lead{margin:0 0 8px;font-weight:600}
+.phelp ul{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.phelp-head{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.phelp-why{display:block;color:var(--muted);font-size:12px;margin-top:1px}
+.imp{flex:none;font-size:11px;font-weight:700;border-radius:999px;padding:1px 7px}
+.imp3{background:var(--blue);color:#FFFFFF}
+.imp2{background:var(--blue-soft);color:var(--blue)}
+.imp1{background:var(--panel);color:var(--muted);font-weight:500}
+.phelp-foot{margin:10px 0 0;font-size:11px;color:var(--muted)}
+.plist{list-style:none;margin:6px 0 0;padding:0;display:grid}
+.pitem{width:100%;display:grid;grid-template-columns:22px minmax(0,1fr) auto;gap:10px;align-items:center;text-align:left;padding:8px 6px;border:0;border-bottom:1px solid var(--line);background:transparent;cursor:pointer}
+.plist li:last-child .pitem{border-bottom:0}
+.pitem:hover,.pitem[aria-current="true"]{background:var(--paper)}
+.prank{font-size:16px;font-weight:800;color:var(--blue);text-align:center;font-variant-numeric:tabular-nums}
+.pname{font-weight:700;font-size:15px}
+.pwhy{font-size:12px;color:var(--muted)}
+.pscore{font-size:14px;font-weight:700;font-variant-numeric:tabular-nums}
 .sortbtn{border:1px solid var(--line);background:transparent;border-radius:999px;padding:2px 10px;font-size:12px;font-weight:600;cursor:pointer;color:var(--muted)}
 .sortbtn[aria-pressed="true"]{background:var(--blue);border-color:var(--blue);color:#FFFFFF}
 .item-dist{font-size:12px;font-weight:600;color:var(--blue);margin-top:2px;font-variant-numeric:tabular-nums}
@@ -241,10 +286,14 @@ button,input{font:inherit;color:inherit}
       <div class="source" id="source"></div>
     </div>
     <div class="scroll">
+      <section class="sec" id="summary" aria-label="한눈에 보기"></section>
+      <section class="sec" id="picks" aria-label="목적별 추천"></section>
+      <h3 class="sec-title sec-pad">조건으로 찾기</h3>
       <div class="filters">
         <input class="search" id="q" type="search" placeholder="이름, 자재, 가구로 찾기" aria-label="이름, 자재, 가구로 찾기" maxlength="40">
         <div id="fgroups"></div>
       </div>
+      <h3 class="sec-title sec-pad">전체 목록</h3>
       <div class="count-row">
         <span class="count" id="count"></span>
         <span class="count-tools">
@@ -630,6 +679,7 @@ function renderDetail(){
 
   const st = nearestStation(p);
   if (state.me || st) {
+    d.appendChild(el('h3','sec-title','위치'));
     const w = el('div','d-where');
     if (state.me) {
       const m = distM(state.me, p); const line = el('div');
@@ -643,6 +693,7 @@ function renderDetail(){
     d.appendChild(w);
   }
   renderTransit(d, p);
+  d.appendChild(el('h3','sec-title','공간 정보'));
   const dl = el('dl','scale');
   for (const [k, def] of Object.entries(ENUMS)) {
     dl.appendChild(el('dt', null, def.label));
@@ -659,6 +710,7 @@ function renderDetail(){
 
   // 길찾기는 어떤 경우에도 이 창을 다른 페이지로 바꾸지 않는다. 앱은 앱으로, 웹은 새 탭으로 연다.
   const links = routeLinks(p, state.me);
+  d.appendChild(el('h3','sec-title','길찾기'));
   // 위치를 아직 모르면 길찾기 버튼 위에 눈에 띄게 먼저 권한다
   if (!state.me) {
     const loc = el('button','d-loc', watchId !== null ? '내 위치를 찾는 중이에요…' : '내 위치 켜고 출발지 자동으로 넣기'); loc.type = 'button';
@@ -824,45 +876,192 @@ function bindSheets(){
 function renderMap(vis){
   if (!map) return;
   const visSet = new Set(vis.map(p => p.id));
-  const k = state.badge;
-  const showLabels = !k && (vis.length <= 8 || map.getZoom() >= 17);
+  const ks = state.badges;
+  const showLabels = !ks.length && (vis.length <= 8 || map.getZoom() >= 17);
   for (const p of state.places) {
     const mk = markers.get(p.id); if (!mk) continue;
     const on = visSet.has(p.id), sel = p.id === state.sel;
-    const lv = k ? level(p, k) : 0; // 0 좋음, 1 보통, 2 아쉬움, -1 기록 없음
-    const cls = 'pin' + (sel ? ' sel' : '') + (on ? '' : ' faint') + (k && on && (lv === 2 || lv < 0) ? ' dim' : '');
-    // 고른 속성이 있으면 핀마다 배지를 붙이고, 고른 장소는 이름을 보여 준다
+    const lv = ks.length ? badgeLevel(p) : 0; // 0 진함, 1 연함, 2 흐림, -1 기록 없음
+    const cls = 'pin' + (sel ? ' sel' : '') + (on ? '' : ' faint') + (ks.length && on && (lv === 2 || lv < 0) ? ' dim' : '');
+    // 고른 조건이 있으면 핀마다 값을 이어 붙인 배지 하나를 달고, 고른 장소는 이름을 보여 준다
+    const text = ks.map(k => { const l = level(p, k); return l < 0 ? '?' : SHORT[k][l]; }).join(' · ');
     const label = sel || (on && showLabels) ? `<span class="pin-label">${esc(p.name)}</span>`
-      : k && on ? `<span class="pin-badge lv${lv < 0 ? 'x' : lv}">${lv < 0 ? '기록 없음' : SHORT[k][lv]}</span>` : '';
+      : ks.length && on ? `<span class="pin-badge lv${lv < 0 ? 'x' : lv}">${lv < 0 ? '기록 없음' : esc(text)}</span>` : '';
     mk.setIcon({ content: `<div class="${cls}" style="--c:${category(p).color}"><span class="pin-head"></span>${label}</div>`, anchor: new naver.maps.Point(14, 29) });
-    mk.setZIndex(sel ? 300 : on ? 200 + (k && lv >= 0 ? (2 - lv) * 10 : 0) : 100); // 좋은 곳이 위로 올라오게
+    mk.setZIndex(sel ? 300 : on ? 200 + (ks.length && lv >= 0 ? (2 - lv) * 10 : 0) : 100); // 좋은 곳이 위로 올라오게
   }
 }
 
 /* ---------- 지도에 표시 (자주 찾는 메뉴) ---------- */
 // 고른 속성을 핀 옆 배지로 보여 준다. ENUMS 값은 좋은 것부터 아쉬운 것 순서라, 그 순서가 곧 진하기다.
 const SHORT = { noise:['조용','보통','시끄러움'], spacing:['넓음','보통','좁음'], light:['밝음','보통','어두움'], outlet:['많음','일부','없음'], stay:['장시간','2시간','회전 빠름'] };
-const BADGE_KEY = 'gongan-sillok:badge';
-state.badge = (() => { try { const v = localStorage.getItem(BADGE_KEY); return v && ENUMS[v] ? v : ''; } catch { return ''; } })();
-const level = (p, k) => ENUMS[k].values.indexOf(p[k]);
+const BADGE_KEY = 'gongan-sillok:badges';
+// 여러 조건을 함께 고를 수 있다. 저장은 이 브라우저에만 한다
+state.badges = (() => { try { const v = JSON.parse(localStorage.getItem(BADGE_KEY) || '[]'); return Array.isArray(v) ? v.filter(k => ENUMS[k]) : []; } catch { return []; } })();
+const level = (p, k) => ENUMS[k].values.indexOf(p[k]); // 0 좋음, 1 보통, 2 아쉬움, -1 기록 없음
+// 배지 진하기: 조건이 하나면 그 값 그대로, 여럿이면 '모두 좋음 / 일부 좋음 / 하나도 없음'
+function badgeLevel(p){
+  const ks = state.badges, ls = ks.map(k => level(p, k));
+  if (ls.every(l => l < 0)) return -1;
+  if (ks.length === 1) return ls[0];
+  const good = ls.filter(l => l === 0).length;
+  return good === ks.length ? 0 : good > 0 ? 1 : 2;
+}
+const allGood = p => state.badges.length && state.badges.every(k => level(p, k) === 0);
+// 지도 배지 조건을 바꾸는 곳은 여기 하나다(자주 찾는 메뉴, 한눈에 보기, 목적별 추천이 함께 쓴다)
+function setBadges(list){
+  state.badges = list.filter((k, i) => ENUMS[k] && list.indexOf(k) === i);
+  try { localStorage.setItem(BADGE_KEY, JSON.stringify(state.badges)); } catch {}
+  renderAll();
+}
 function renderQuick(){
   const q = $('quick'); q.replaceChildren();
-  q.appendChild(el('div','quick-title','지도에 표시'));
-  for (const [k, label] of [['', '유형'], ...Object.keys(ENUMS).map(x => [x, ENUMS[x].label])]) {
-    const b = el('button','quick-btn'); b.type = 'button'; b.setAttribute('aria-pressed', String(state.badge === k));
-    b.appendChild(el('span','quick-name', label));
-    if (k) b.appendChild(el('span','quick-n', `${SHORT[k][0]} ${state.places.filter(p => level(p, k) === 0).length}`)); // 좋은 값인 곳 수
-    b.addEventListener('click', () => { state.badge = k; try { localStorage.setItem(BADGE_KEY, k); } catch {} renderAll(); });
+  q.appendChild(el('div','quick-title','지도에 표시 · 여러 개')); // 메뉴 폭이 좁아 짧게
+  const base = el('button','quick-btn'); base.type = 'button'; base.setAttribute('aria-pressed', String(!state.badges.length));
+  base.appendChild(el('span','quick-name','유형'));
+  base.addEventListener('click', () => { state.purpose = null; setBadges([]); }); // 조건을 모두 풀고 유형 색으로
+  q.appendChild(base);
+  for (const k of Object.keys(ENUMS)) {
+    const on = state.badges.includes(k);
+    const b = el('button','quick-btn'); b.type = 'button'; b.setAttribute('aria-pressed', String(on));
+    b.append(el('span','quick-name', ENUMS[k].label), el('span','quick-n', `${SHORT[k][0]} ${state.places.filter(p => level(p, k) === 0).length}`)); // 좋은 값인 곳 수
+    b.addEventListener('click', () => setBadges(on ? state.badges.filter(x => x !== k) : [...state.badges, k]));
     q.appendChild(b);
   }
   q.hidden = !map;
 }
+
+/* ---------- 한눈에 보기 (요약) ---------- */
+// 숫자를 누르면 지도 배지가 그 조건으로 바뀐다
+function renderSummary(){
+  const box = $('summary'); box.replaceChildren();
+  box.appendChild(el('h3','sec-title','한눈에 보기'));
+  const stats = el('div','stats');
+  const good = k => state.places.filter(p => level(p, k) === 0).length;
+  const stat = (num, label, k) => {
+    const b = el(k ? 'button' : 'div', 'stat');
+    if (k) {
+      b.type = 'button'; b.setAttribute('aria-pressed', String(state.badges.length === 1 && state.badges[0] === k));
+      b.setAttribute('aria-label', `${label} ${num}곳, 지도에 표시`);
+      b.addEventListener('click', () => { state.purpose = null; setBadges([k]); });
+    }
+    b.append(el('b', null, String(num)), el('span', null, label));
+    return b;
+  };
+  stats.append(stat(state.places.length, '기록한 곳'), stat(good('noise'), '조용한 곳', 'noise'), stat(good('outlet'), '콘센트 많은 곳', 'outlet'), stat(good('stay'), '오래 머물 곳', 'stay'));
+  box.appendChild(stats);
+  const line = el('p','near-line');
+  if (state.me) {
+    const best = state.places.filter(p => level(p, 'noise') === 0).map(p => [distM(state.me, p), p]).sort((a, b) => a[0] - b[0])[0];
+    if (best) {
+      const go = el('button','linkbtn', best[1].name); go.type = 'button'; go.addEventListener('click', () => select(best[1].id, true));
+      line.append('가장 가까운 조용한 곳: ', go, ` · 걸어서 약 ${walkMin(best[0])}분`);
+    } else line.textContent = '조용함으로 기록된 곳이 아직 없어요.';
+  } else {
+    const on = el('button','linkbtn','내 위치를 켜면'); on.type = 'button'; on.addEventListener('click', () => locate(false, true));
+    line.append(on, ' 가장 가까운 조용한 곳을 알려 드려요.');
+  }
+  box.appendChild(line);
+}
+
+/* ---------- 목적별 추천 Top5 ---------- */
+// 목적마다 속성 값별 점수(좋음, 보통, 아쉬움 순)를 정해 두고, 점수 합으로 잘 맞는 정도를 매긴다
+// why: ? 버튼을 누르면 보여 주는 설명 (조건마다 왜 그 값이 좋은지)
+const PURPOSES = [
+  { id: 'work', label: '작업하기', w: { noise: [3, 1, 0], outlet: [3, 1, 0], stay: [2, 1, 0], spacing: [1, .5, 0] },
+    why: { noise: '집중하려면 주변 대화 소리가 적어야 해요.', outlet: '노트북을 오래 쓰려면 충전할 곳이 꼭 필요해요.', stay: '눈치 보지 않고 오래 앉아 있을 수 있어야 해요.', spacing: '노트북과 짐을 펼칠 자리가 있으면 편해요.' } },
+  { id: 'read', label: '책 읽기',  w: { noise: [3, 1, 0], light: [2, 1, 0], stay: [2, 1, 0], spacing: [1, .5, 0] },
+    why: { noise: '글에 빠져들려면 조용해야 해요.', light: '밝아야 오래 읽어도 눈이 덜 피로해요.', stay: '한 권을 읽으려면 시간이 넉넉해야 해요.', spacing: '옆 사람과 거리가 있으면 덜 신경 쓰여요.' } },
+  { id: 'talk', label: '대화하기', w: { noise: [1, 2, 0], spacing: [2, 1, 0], stay: [1.5, 1.5, 0], light: [1, .5, 0] }, // 대화는 너무 조용한 곳보다 보통이 낫다
+    why: { noise: '너무 조용하면 목소리가 튀고, 시끄러우면 말이 안 들려요. 보통이 가장 편해요.', spacing: '옆 테이블에 이야기가 덜 들려요.', stay: '천천히 이야기 나누려면 2시간 이상이면 충분해요.', light: '밝은 곳이 분위기가 편안한 편이에요.' } }
+];
+state.purpose = null; state.pickSort = 'fit'; state.pickHelp = false;
+const importance = pts => { const m = Math.max(...pts); return m >= 3 ? '가장 중요' : m >= 2 ? '중요' : '참고'; };
+const bestValues = (k, pts) => ENUMS[k].values.filter((v, i) => pts[i] === Math.max(...pts)).join(', ');
+function fitScore(p, pu){
+  let got = 0, max = 0;
+  for (const [k, pts] of Object.entries(pu.w)) { max += Math.max(...pts); const l = level(p, k); if (l >= 0) got += pts[l]; }
+  return max ? got / max : 0;
+}
+// 목적을 고르면 그 목적에서 '좋음'이 가장 중요한 조건들로 지도 배지를 바꾼다
+const purposeBadges = pu => Object.entries(pu.w).filter(([, pts]) => pts[0] === Math.max(...pts) && pts[0] >= 1.5).map(([k]) => k);
+function renderPicks(vis){
+  const box = $('picks'); box.replaceChildren();
+  box.appendChild(el('h3','sec-title','목적별 추천 Top5'));
+  const chips = el('div','chips'); chips.setAttribute('role','group'); chips.setAttribute('aria-label','목적');
+  for (const pu of PURPOSES) {
+    const b = el('button','chip', pu.label); b.type = 'button'; b.setAttribute('aria-pressed', String(state.purpose === pu.id));
+    b.addEventListener('click', () => {
+      if (state.purpose === pu.id) { state.purpose = null; renderAll(); return; } // 다시 누르면 끈다
+      state.purpose = pu.id; setBadges(purposeBadges(pu));
+    });
+    chips.appendChild(b);
+  }
+  box.appendChild(chips);
+  const pu = PURPOSES.find(x => x.id === state.purpose);
+  if (!pu) { box.appendChild(el('p','near-line muted','목적을 고르면 잘 맞는 곳 5곳을 골라 드려요. 위의 조건 필터도 함께 적용돼요.')); return; }
+
+  const sort = el('div','psort');
+  for (const [id, label] of [['fit', '잘 맞는 순'], ['near', '가까운 순']]) {
+    const b = el('button','sortbtn', label); b.type = 'button'; b.setAttribute('aria-pressed', String(state.pickSort === id));
+    b.addEventListener('click', () => { state.pickSort = id; if (id === 'near' && !state.me) locate(false, true); renderAll(); });
+    sort.appendChild(b);
+  }
+  // ? 버튼: 마우스를 올리면 요약(title), 누르면 자세한 설명이 펼쳐진다(휴대폰은 누르기만 된다)
+  const help = el('button','help-btn','?'); help.type = 'button';
+  help.setAttribute('aria-expanded', String(state.pickHelp)); help.setAttribute('aria-controls', 'pickHelp');
+  help.setAttribute('aria-label', `${pu.label} 추천 기준 설명`);
+  help.title = `${pu.label} 기준: ` + Object.entries(pu.w).map(([k, pts]) => `${ENUMS[k].label} ${bestValues(k, pts)}`).join(', ') + ' (눌러서 자세히 보기)';
+  help.addEventListener('click', () => { state.pickHelp = !state.pickHelp; renderAll(); });
+  sort.appendChild(help);
+  box.appendChild(sort);
+  if (state.pickHelp) {
+    const hb = el('div','phelp'); hb.id = 'pickHelp';
+    hb.appendChild(el('p','phelp-lead', `${pu.label}에 맞는 곳은 이런 기준으로 골라요.`));
+    const ul = el('ul');
+    for (const [k, pts] of Object.entries(pu.w)) {
+      const li = el('li');
+      const head = el('div','phelp-head');
+      head.append(el('b', null, `${ENUMS[k].label}: ${bestValues(k, pts)}`), el('span', 'imp imp' + (Math.max(...pts) >= 3 ? 3 : Math.max(...pts) >= 2 ? 2 : 1), importance(pts)));
+      li.append(head, el('span','phelp-why', pu.why[k]));
+      ul.appendChild(li);
+    }
+    hb.append(ul, el('p','phelp-foot','조건마다 점수를 매겨 더한 뒤 만점 대비 %로 보여 줘요. 중요한 조건일수록 점수가 크고, 기록이 없는 항목은 0점이에요.'));
+    box.appendChild(hb);
+  }
+  let ranked = vis.map(p => ({ p, s: fitScore(p, pu), m: state.me ? distM(state.me, p) : null }));
+  // 가까운 순은 잘 맞는 곳(60% 이상) 중에서 거리로 고른다. 위치를 모르면 잘 맞는 순으로 보여 준다
+  const near = state.pickSort === 'near' && state.me;
+  ranked = near ? ranked.filter(x => x.s >= .6).sort((a, b) => a.m - b.m) : ranked.sort((a, b) => b.s - a.s || (a.m ?? 0) - (b.m ?? 0));
+  ranked = ranked.filter(x => x.s > 0).slice(0, 5);
+  if (state.pickSort === 'near' && !state.me) box.appendChild(el('p','near-line muted', '내 위치를 찾으면 가까운 순으로 바뀌어요.'));
+  if (!ranked.length) { box.appendChild(el('p','near-line muted','조건에 맞는 곳이 없어요. 조건 필터를 줄여 보세요.')); return; }
+  const ol = el('ol','plist');
+  ranked.forEach((x, i) => {
+    const li = el('li'), b = el('button','pitem'); b.type = 'button';
+    if (state.sel === x.p.id) b.setAttribute('aria-current','true');
+    // 추천 이유: 이 목적에서 만점을 받은 값 (대화하기는 '조용'보다 '보통'이 만점)
+    const why = Object.entries(pu.w).map(([k, pts]) => { const l = level(x.p, k); return l >= 0 && pts[l] === Math.max(...pts) ? (SHORT[k][l] === '보통' ? `${ENUMS[k].label} 보통` : SHORT[k][l]) : null; }).filter(Boolean).join(' · ') || '딱 맞는 조건은 없어요';
+    const body = el('div'); body.append(el('div','pname', x.p.name), el('div','pwhy', why + (x.m != null ? ` · ${fmtDist(x.m)}` : '')));
+    b.append(el('span','prank', String(i + 1)), body, el('span','pscore', `${Math.round(x.s * 100)}%`));
+    b.addEventListener('click', () => select(x.p.id, true));
+    li.appendChild(b); ol.appendChild(li);
+  });
+  box.appendChild(ol);
+}
 function renderLegend(){
   const lg = $('legend'); lg.replaceChildren();
-  if (state.badge) { // 속성을 고르면 안내도 진하기 기준으로 바뀐다
-    const k = state.badge; lg.setAttribute('aria-label', `${ENUMS[k].label} 표시 안내`);
+  const ks = state.badges;
+  if (ks.length === 1) { // 조건 하나: 그 값 기준 진하기
+    const k = ks[0]; lg.setAttribute('aria-label', `${ENUMS[k].label} 표시 안내`);
     lg.appendChild(el('b', null, ENUMS[k].label));
     SHORT[k].forEach((t, i) => { const s = el('span'); s.append(el('i', 'lv' + i), t); lg.appendChild(s); });
+    lg.hidden = !map; return;
+  }
+  if (ks.length > 1) { // 조건 여럿: 모두 만족하는 곳이 몇 곳인지 함께
+    lg.setAttribute('aria-label', '고른 조건 표시 안내');
+    lg.appendChild(el('b', null, `${ks.map(k => SHORT[k][0]).join(' + ')} 모두 만족 ${state.places.filter(allGood).length}곳`));
+    ['모두', '일부', '없음'].forEach((t, i) => { const s = el('span'); s.append(el('i', 'lv' + i), t); lg.appendChild(s); });
     lg.hidden = !map; return;
   }
   lg.setAttribute('aria-label', '장소 유형별 색');
@@ -1046,7 +1245,7 @@ function tabRoutes(t, tab){
 
 function renderTransit(d, p){
   const box = el('div','d-transit');
-  box.appendChild(el('div','d-label','어떻게 갈까요'));
+  box.appendChild(el('h3','sec-title','어떻게 갈까요'));
   const t = state.transit && state.transit.placeId === p.id ? state.transit : null;
   if (!state.me) box.appendChild(el('p','d-tnote','내 위치를 켜면 지금 있는 곳에서 가는 경로를 볼 수 있어요.'));
   else if (!t) {
@@ -1212,7 +1411,7 @@ function renderAll(){
   if (state.sortNear && state.me) vis = vis.map(p => [distM(state.me, p), p]).sort((a, b) => a[0] - b[0]).map(x => x[1]);
   $('btnSort').setAttribute('aria-pressed', String(state.sortNear && !!state.me));
   $('zloc').setAttribute('aria-pressed', String(!!state.me));
-  renderList(vis); renderMap(vis); renderLegend(); renderQuick(); renderDetail();
+  renderSummary(); renderPicks(vis); renderList(vis); renderMap(vis); renderLegend(); renderQuick(); renderDetail();
 }
 
 /* ---------- 시작 ---------- */
