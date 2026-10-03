@@ -6,7 +6,7 @@
 --                   이유는 광고·홍보 / 욕설·불쾌한 내용 / 개인정보 노출 / 기타. ('사실과 다름'은 신고 대신 내 기록을 더해 바로잡는다)
 --   자동 숨김      : 처리 전 신고가 설정값(처음 5건) 이상 쌓이면 그 기록을 일단 숨긴다. 관리자가 되돌릴 수 있다.
 --   관리자         : 기록 숨기기·되돌리기, 신고 무시하기, 신고 목록 보기
---   공개 기록      : 작성자 닉네임과 함께 보여 준다(누가 썼는지 알 수 있는 다른 정보는 내보내지 않는다)
+--   공개 기록      : 작성자는 보여 주지 않는다(익명). 관리자에게만 닉네임을 함께 준다
 
 -- 설정 (자동 숨김 기준 등). 사용자는 읽거나 바꿀 수 없고, 대시보드나 SQL로만 바꾼다
 create table public.app_settings (
@@ -95,14 +95,15 @@ $$;
 revoke execute on function public.admin_reports() from public, anon;
 grant execute on function public.admin_reports() to authenticated;
 
--- 공개 기록 + 작성자 닉네임 (로그인하지 않아도 볼 수 있다). 사용자 번호는 내보내지 않고 '내 기록인지'만 알려 준다
+-- 공개 기록 (로그인하지 않아도 볼 수 있다). 작성자는 익명이다:
+-- 사용자 번호는 내보내지 않고 '내 기록인지'만 알려 주며, 닉네임은 관리자에게만 준다(그 외에는 빈 값)
 create function public.public_records() returns table (
   id bigint, place_id bigint, nickname text, mine boolean,
   noise text, spacing text, light text, outlet text, stay text, materials text, furniture text, note text,
   visited_on date, created_at timestamptz,
   kakao_id text, place_name text, place_type text, place_address text, lat double precision, lng double precision)
 language sql stable security definer set search_path = '' as $$
-  select r.id, r.place_id, coalesce(pf.nickname, '기록자'), r.user_id = auth.uid(),
+  select r.id, r.place_id, case when public.is_admin() then coalesce(pf.nickname, '기록자') end, r.user_id = auth.uid(),
          r.noise, r.spacing, r.light, r.outlet, r.stay, r.materials, r.furniture, r.note, r.visited_on, r.created_at,
          pl.kakao_id, pl.name, pl.type, pl.address, pl.lat, pl.lng
   from public.records r

@@ -841,7 +841,7 @@ async function loadPublic(){
     const { places: [p] } = rowsToPlaces([SAMPLE_ROWS[0], [r.place_name, r.place_type, r.place_address, r.lat, r.lng, r.noise, r.spacing, r.light, r.outlet, r.stay, r.materials, r.furniture, r.note, r.visited_on]]);
     if (!p) continue;
     if (!groups.has(r.place_id)) groups.set(r.place_id, { pid: r.place_id, kid: r.kakao_id || '', name: p.name, type: p.type, addr: p.addr, lat: p.lat, lng: p.lng, recs: [] });
-    groups.get(r.place_id).recs.push({ ...p, rid: r.id, nickname: cleanText(r.nickname, 30) || '기록자', mineRec: !!r.mine });
+    groups.get(r.place_id).recs.push({ ...p, rid: r.id, nickname: cleanText(r.nickname, 30), mineRec: !!r.mine }); // 닉네임은 관리자에게만 온다
   }
   const first = !state.pub.length;
   state.pub = [...groups.values()];
@@ -1000,7 +1000,8 @@ function renderDetail(){
     const list = el('ol','rec-list');
     for (const r of (p.recs || []).slice(0, 20)) {
       const li = el('li');
-      const head = el('div','rec-head'); head.append(el('b', null, r.nickname || '기록자'), el('span','muted', r.date ? ` · ${r.date}` : ''));
+      // 작성자는 익명으로 보여 준다. 관리자에게만 닉네임이 온다
+      const head = el('div','rec-head'); head.append(el('b', null, r.nickname ? `${r.nickname}` : '익명 기록'), el('span','muted', (r.nickname ? ' · 관리자에게만 보임' : '') + (r.date ? ` · ${r.date}` : '')));
       const vals = Object.keys(ENUMS).map(k => r[k] ? (r[k] === '보통' ? `${ENUMS[k].label} 보통` : r[k]) : '').filter(Boolean).join(' · ');
       li.appendChild(head);
       if (vals) li.appendChild(el('div','rec-vals', vals));
@@ -1935,7 +1936,7 @@ function renderAdd(){
     const w = el('label','add-pub'); pubI = el('input'); pubI.type = 'checkbox'; pubI.id = 'add-pub';
     pubI.checked = !!(addState.server && addState.server.pub);
     w.append(pubI, el('span', null, '다른 사람에게도 공개하기'));
-    body.append(w, el('p','add-src add-left','공개하면 다른 사람도 이 장소의 기록으로 볼 수 있어요. 작성자는 닉네임만 보여요. 켜지 않으면 나만 볼 수 있어요.'));
+    body.append(w, el('p','add-src add-left','공개하면 다른 사람도 이 장소의 기록으로 볼 수 있어요. 누가 썼는지는 보이지 않아요(익명). 켜지 않으면 나만 볼 수 있어요.'));
     if (editing) { nameI.readOnly = typeI.readOnly = true; nameI.title = typeI.title = '장소 이름과 유형은 여러 사람이 함께 쓰는 정보라 여기서 바꿀 수 없어요'; }
   }
   const act = el('div','add-actions');
