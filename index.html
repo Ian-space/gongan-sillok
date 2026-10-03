@@ -141,6 +141,13 @@ button.stat[aria-pressed="true"] span{color:#FFFFFF}
 .crit dt.lv1{background:var(--blue-soft);color:var(--blue)}
 .crit dt.lv2{background:var(--panel);color:var(--muted)}
 .crit dd{margin:0;font-size:12px;line-height:1.5}
+/* 지도에서 고른 조건의 기준 (색 안내 아래에 펼침) */
+.legend .lg-help{margin-left:2px}
+.quick-title.with-help{display:flex;align-items:center;justify-content:space-between;gap:6px}
+.legend-help{position:absolute;left:14px;z-index:12;width:min(380px,calc(100% - 170px));max-height:calc(100% - 140px);overflow:auto;overscroll-behavior:contain;display:grid;gap:8px;padding:12px;border-radius:10px;background:var(--panel);box-shadow:0 6px 24px rgba(15,20,40,.22)}
+.legend-help[hidden]{display:none}
+.lh-head{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:14px}
+.legend-help .crit{padding:10px 12px}
 .crit-row{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px;font-weight:600;color:var(--muted)}
 .phelp{margin-top:10px;padding:12px 14px;border-radius:8px;background:var(--paper);font-size:13px}
 .phelp-lead{margin:0 0 8px;font-weight:600}
@@ -371,6 +378,8 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
   .quick-btn{flex:none;padding:5px 9px}
   .quick-n{display:none}
   .legend{top:60px;max-width:calc(100% - 128px)}
+  .legend-help{left:14px;right:14px;width:auto;max-height:42dvh}
+  .quick-title.with-help{display:none} /* 휴대폰은 메뉴 제목을 숨긴다(? 는 색 안내 쪽에 있다) */
   .brand{font-size:24px}
   .tagline{font-size:13px;margin-top:2px}
   .actions{margin-top:10px}
@@ -460,6 +469,7 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
       <button type="button" class="wide loc" id="zloc" aria-pressed="false">내 위치</button>
     </div>
     <nav class="quick" id="quick" hidden aria-label="지도에 표시할 정보"></nav>
+    <div class="legend-help" id="legendHelp" hidden aria-label="지도에 표시한 조건의 기준"></div>
     <section class="detail" id="detail" hidden aria-live="polite"></section>
   </main>
 </div>
@@ -521,10 +531,12 @@ const CRITERIA = {
                  '이용 시간 안내가 있거나, 2시간 안팎이 자연스러운 분위기예요.',
                  '자리가 적고 기다리는 사람이 많아 1시간 안쪽이 자연스러워요.'] }
 };
-function critPanel(){
+// keys를 주면 그 항목만 보여 준다(지도에서 고른 조건의 기준만 볼 때)
+function critPanel(keys, lead){
   const box = el('div','crit');
-  box.appendChild(el('p','crit-lead','기록할 때 이 기준으로 골라 주세요. 여러 사람의 기록을 모아도 같은 뜻이 되도록 정한 기준이에요.'));
+  box.appendChild(el('p','crit-lead', lead || '기록할 때 이 기준으로 골라 주세요. 여러 사람의 기록을 모아도 같은 뜻이 되도록 정한 기준이에요.'));
   for (const [k, def] of Object.entries(ENUMS)) {
+    if (keys && !keys.includes(k)) continue;
     const c = CRITERIA[k], sec = el('section','crit-item');
     sec.append(el('h4', null, def.label), el('p','crit-how', c.how));
     const dl = el('dl');
@@ -1203,7 +1215,8 @@ function bindSheets(){
   listSheet = makeSheet({
     panel: $('side'), varName: '--sheet-h',
     snaps: () => [130, vh(0.5), vh(0.88)], // 접힘, 반, 거의 전체
-    isGrab: t => !!t.closest('.sheet-handle, .side-head')
+    isGrab: t => !!t.closest('.sheet-handle, .side-head'),
+    onSettle: () => renderLegendHelp() // 패널 높이가 바뀌면 지도 위 기준 상자 높이도 맞춘다
   });
   detailSheet = makeSheet({
     panel: $('detail'), varName: '--detail-h',
@@ -1260,7 +1273,10 @@ function setBadges(list){
 }
 function renderQuick(){
   const q = $('quick'); q.replaceChildren();
-  q.appendChild(el('div','quick-title','지도에 표시 · 여러 개')); // 메뉴 폭이 좁아 짧게
+  // 메뉴 폭이 좁아서, ? 가 붙을 때는 제목을 줄인다
+  const qt = el('div','quick-title with-help'); qt.appendChild(el('span', null, state.badges.length ? '지도에 표시' : '지도에 표시 · 여러 개'));
+  if (state.badges.length) qt.appendChild(critButton(toggleLegendHelp, state.legendHelp)); // 고른 조건의 기준 보기
+  q.appendChild(qt);
   const base = el('button','quick-btn'); base.type = 'button'; base.setAttribute('aria-pressed', String(!state.badges.length));
   base.appendChild(el('span','quick-name','유형'));
   base.addEventListener('click', () => { state.purpose = null; setBadges([]); }); // 조건을 모두 풀고 유형 색으로
@@ -1404,21 +1420,48 @@ function renderPicks(vis){
   });
   box.appendChild(ol);
 }
+// 지도에서 고른 조건의 기준: 색 안내 끝(그리고 컴퓨터의 '지도에 표시' 제목)의 ? 로 펼친다
+state.legendHelp = false;
+function toggleLegendHelp(){ state.legendHelp = !state.legendHelp; renderLegend(); renderQuick(); }
+function renderLegendHelp(){
+  const box = $('legendHelp'); box.replaceChildren();
+  const ks = state.badges;
+  box.hidden = !(state.legendHelp && map);
+  if (box.hidden) return;
+  const head = el('div','lh-head'); head.appendChild(el('b', null, ks.length ? '지금 고른 조건의 기준' : '항목별 기준'));
+  const x = el('button','d-close','×'); x.type = 'button'; x.setAttribute('aria-label','기준 닫기'); x.addEventListener('click', toggleLegendHelp);
+  head.appendChild(x); box.appendChild(head);
+  box.appendChild(critPanel(ks.length ? ks : null, ks.length > 1 ? '진한 색은 고른 조건을 모두 만족하는 곳이에요. 각 조건의 기준은 아래와 같아요.' : '지도 배지는 이 기준으로 기록된 값이에요.'));
+  // 색 안내 바로 아래에 붙인다
+  const lg = $('legend'); const top = lg.hidden ? 14 : lg.offsetTop + lg.offsetHeight + 8;
+  box.style.top = top + 'px';
+  // 휴대폰: 아래 패널(목록·상세)에 가리지 않도록 남은 높이만큼만 쓴다(안에서 스크롤)
+  if (isPhone()) {
+    const panel = document.body.classList.contains('has-detail') ? $('detail') : $('side');
+    const covered = panel.getBoundingClientRect().height;
+    box.style.maxHeight = Math.max(140, innerHeight - covered - top - 12) + 'px';
+  } else box.style.maxHeight = '';
+}
 function renderLegend(){
   const lg = $('legend'); lg.replaceChildren();
   const ks = state.badges;
+  const helpBtn = () => { const b = critButton(toggleLegendHelp, state.legendHelp); b.classList.add('lg-help'); return b; };
   if (ks.length === 1) { // 조건 하나: 그 값 기준 진하기
     const k = ks[0]; lg.setAttribute('aria-label', `${ENUMS[k].label} 표시 안내`);
     lg.appendChild(el('b', null, ENUMS[k].label));
     SHORT[k].forEach((t, i) => { const s = el('span'); s.append(el('i', 'lv' + i), t); lg.appendChild(s); });
-    lg.hidden = !map; return;
+    lg.appendChild(helpBtn());
+    lg.hidden = !map; renderLegendHelp(); return;
   }
   if (ks.length > 1) { // 조건 여럿: 모두 만족하는 곳이 몇 곳인지 함께
     lg.setAttribute('aria-label', '고른 조건 표시 안내');
     lg.appendChild(el('b', null, `${ks.map(k => SHORT[k][0]).join(' + ')} 모두 만족 ${state.places.filter(allGood).length}곳`));
     ['모두', '일부', '없음'].forEach((t, i) => { const s = el('span'); s.append(el('i', 'lv' + i), t); lg.appendChild(s); });
-    lg.hidden = !map; return;
+    lg.appendChild(helpBtn());
+    lg.hidden = !map; renderLegendHelp(); return;
   }
+  if (state.legendHelp) { state.legendHelp = false; } // 조건을 모두 끄면 기준도 접는다
+  $('legendHelp').hidden = true;
   lg.setAttribute('aria-label', '장소 유형별 색');
   const used = new Set(state.places.map(p => category(p).name));
   for (const c of CATEGORIES) {
