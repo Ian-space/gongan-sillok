@@ -126,6 +126,22 @@ button.stat[aria-pressed="true"] span{color:#FFFFFF}
 /* 물음표가 정가운데 오도록 기본 여백을 없애고 격자로 가운데 정렬, 오른쪽 끝에서 2px 안쪽 */
 .help-btn{flex:none;margin:0 2px 0 auto;width:20px;height:20px;padding:0;display:inline-grid;place-items:center;border-radius:50%;border:1px solid var(--line);background:var(--panel);color:var(--muted);font-size:12px;font-weight:700;line-height:1;cursor:pointer}
 .help-btn:hover,.help-btn[aria-expanded="true"]{border-color:var(--blue);color:var(--blue)}
+/* 기록 기준 (? 버튼) */
+.with-help{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.crit-wrap{margin:10px 22px 0}
+.crit-wrap[hidden]{display:none}
+.crit{display:grid;gap:12px;padding:12px 14px;border-radius:8px;background:var(--paper);font-size:13px}
+.crit[hidden]{display:none}
+.crit-lead{margin:0;font-weight:600}
+.crit-item h4{margin:0 0 2px;font-size:13px;font-weight:700}
+.crit-how{margin:0 0 6px;font-size:12px;color:var(--muted)}
+.crit dl{margin:0;display:grid;grid-template-columns:auto minmax(0,1fr);gap:5px 10px;align-items:start}
+.crit dt{font-size:11px;font-weight:700;border-radius:999px;padding:1px 8px;white-space:nowrap}
+.crit dt.lv0{background:var(--blue);color:#FFFFFF}
+.crit dt.lv1{background:var(--blue-soft);color:var(--blue)}
+.crit dt.lv2{background:var(--panel);color:var(--muted)}
+.crit dd{margin:0;font-size:12px;line-height:1.5}
+.crit-row{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px;font-weight:600;color:var(--muted)}
 .phelp{margin-top:10px;padding:12px 14px;border-radius:8px;background:var(--paper);font-size:13px}
 .phelp-lead{margin:0 0 8px;font-weight:600}
 .phelp ul{list-style:none;margin:0;padding:0;display:grid;gap:8px}
@@ -362,7 +378,8 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
     <div class="scroll">
       <section class="sec" id="summary" aria-label="한눈에 보기"></section>
       <section class="sec" id="picks" aria-label="목적별 추천"></section>
-      <h3 class="sec-title sec-pad">조건으로 찾기</h3>
+      <h3 class="sec-title sec-pad with-help" id="filterTitle">조건으로 찾기</h3>
+      <div class="crit-wrap" id="filterCrit" hidden></div>
       <div class="filters">
         <input class="search" id="q" type="search" placeholder="이름, 자재, 가구로 찾기 · 기록 안 된 가게도 찾아요" aria-label="이름, 자재, 가구로 찾기. 기록 안 된 가게도 함께 찾아요" maxlength="40">
         <div id="fgroups"></div>
@@ -447,6 +464,50 @@ const ENUMS = {
   outlet:  { label:'콘센트',    col:'콘센트',   values:['많음','일부','없음'] },
   stay:    { label:'머무르기',  col:'체류',     values:['장시간 가능','2시간 내외','회전 빠름'] }
 };
+// 기록 기준: 사람마다 '조용함'을 다르게 고르지 않도록 값마다 기준을 정해 둔다(? 버튼으로 본다)
+// 값 순서는 ENUMS와 같다(좋음, 보통, 아쉬움)
+const CRITERIA = {
+  noise:   { how: '휴대폰 소음 측정 앱이 있으면 자리에서 30초쯤 재 보세요. 없으면 설명으로 골라 주세요.',
+             v: ['50dB 이하. 도서관이나 조용한 사무실처럼, 옆 테이블 대화가 거의 안 들려요.',
+                 '50~65dB. 잔잔한 음악과 대화 소리가 섞인 보통 카페 정도예요. 마주 앉아 편하게 이야기할 수 있어요.',
+                 '65dB 이상. 음악이 크거나 붐벼서, 마주 앉아도 목소리를 높여야 해요.'] },
+  spacing: { how: '내가 앉은 자리와 가장 가까운 옆 테이블 사이 거리예요.',
+             v: ['1m 이상. 의자를 편하게 빼고, 옆 사람 노트북 화면이 신경 쓰이지 않아요.',
+                 '50cm~1m. 지나갈 때 살짝 비켜야 하지만 불편하진 않아요.',
+                 '50cm 미만. 옆 테이블과 거의 붙어 있어 대화가 그대로 들려요.'] },
+  light:   { how: '낮 시간, 내가 앉은 자리 기준이에요. 조도 측정 앱이 있으면 책상 위에서 재 보세요.',
+             v: ['책을 조명 없이도 편하게 읽을 수 있어요. 큰 창이 있거나 밝은 조명이에요 (약 500lx 이상).',
+                 '읽을 수는 있지만 자리마다 밝기가 달라요 (약 200~500lx).',
+                 '무드 조명 위주라 오래 읽거나 작업하기엔 어두워요 (약 200lx 미만).'] },
+  outlet:  { how: '손님이 쓸 수 있는 콘센트 기준이에요.',
+             v: ['좌석 절반 이상에서 쓸 수 있어요.',
+                 '벽 쪽이나 바 좌석 등 몇몇 자리에만 있어요.',
+                 '손님이 쓸 수 있는 콘센트가 없어요.'] },
+  stay:    { how: '이용 시간 안내와 가게 분위기를 함께 보고 골라 주세요.',
+             v: ['시간 제한이 없고, 3시간 이상 머물러도 눈치가 보이지 않아요.',
+                 '이용 시간 안내가 있거나, 2시간 안팎이 자연스러운 분위기예요.',
+                 '자리가 적고 기다리는 사람이 많아 1시간 안쪽이 자연스러워요.'] }
+};
+function critPanel(){
+  const box = el('div','crit');
+  box.appendChild(el('p','crit-lead','기록할 때 이 기준으로 골라 주세요. 여러 사람의 기록을 모아도 같은 뜻이 되도록 정한 기준이에요.'));
+  for (const [k, def] of Object.entries(ENUMS)) {
+    const c = CRITERIA[k], sec = el('section','crit-item');
+    sec.append(el('h4', null, def.label), el('p','crit-how', c.how));
+    const dl = el('dl');
+    def.values.forEach((v, i) => dl.append(el('dt', 'lv' + i, v), el('dd', null, c.v[i])));
+    sec.appendChild(dl); box.appendChild(sec);
+  }
+  return box;
+}
+// ? 버튼: 누르면 기준이 펼쳐지고 다시 누르면 접힌다(마우스를 올리면 짧은 안내)
+function critButton(onToggle, open){
+  const b = el('button','help-btn','?'); b.type = 'button';
+  b.setAttribute('aria-expanded', String(!!open)); b.setAttribute('aria-label', '소음·좌석 간격·채광·콘센트·머무르기 기준 보기');
+  b.title = '조용함, 보통 같은 값이 무엇을 뜻하는지 기준 보기';
+  b.addEventListener('click', onToggle);
+  return b;
+}
 const TEXTS = { name:['이름',40], type:['유형',20], addr:['주소',60], materials:['주요자재',80], furniture:['가구',80], note:['한줄기록',200], date:['방문일',20] };
 const HEADER_MAP = new Map([['이름','name'],['유형','type'],['주소','addr'],['위도','lat'],['경도','lng'],['소음','noise'],['좌석간격','spacing'],['채광','light'],['콘센트','outlet'],['체류','stay'],['주요자재','materials'],['가구','furniture'],['한줄기록','note'],['방문일','date']]);
 
@@ -1785,6 +1846,11 @@ function renderAdd(){
   const text = (v, max) => { const i = el('input'); i.type = 'text'; i.maxLength = max; i.value = v || ''; return i; };
   const nameI = text(p.name, 40), typeI = text(p.type, 20);
   const row = el('div','add-row'); row.append(field('이름', nameI), field('유형', typeI)); body.appendChild(row);
+  // 기준 보기: 입력 중인 내용이 지워지지 않도록 창을 다시 그리지 않고 펼치고 접기만 한다
+  const critRow = el('div','crit-row'); critRow.appendChild(el('span', null, '조용함, 보통 같은 값의 기준'));
+  const critBox = critPanel(); critBox.hidden = true;
+  const cb = critButton(() => { critBox.hidden = !critBox.hidden; cb.setAttribute('aria-expanded', String(!critBox.hidden)); });
+  critRow.appendChild(cb); body.append(critRow, critBox);
   // 소음, 좌석 간격… : 칩을 눌러 고르고, 다시 누르면 '기록 안 함'
   for (const [k, def] of Object.entries(ENUMS)) {
     const w = el('div','add-field'); w.appendChild(el('span','lbl', def.label));
@@ -2024,6 +2090,12 @@ function renderAll(){
 
 /* ---------- 시작 ---------- */
 buildFilters(); bindSheets();
+// 조건으로 찾기 제목 옆 ?: 값마다 기준을 펼쳐 본다
+{
+  const fc = $('filterCrit');
+  const fb = critButton(() => { const open = fc.hidden; if (open && !fc.firstChild) fc.appendChild(critPanel()); fc.hidden = !open; fb.setAttribute('aria-expanded', String(open)); });
+  $('filterTitle').appendChild(fb);
+}
 $('btnLoad').addEventListener('click', () => $('file').click());
 $('file').addEventListener('change', e => { const f = e.target.files && e.target.files[0]; if (f) handleFile(f); e.target.value = ''; });
 $('btnAdd').addEventListener('click', openAdd);
