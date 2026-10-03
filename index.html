@@ -247,6 +247,34 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
 .all-recs ul{list-style:none;margin:6px 0 0;padding:0;display:grid;gap:3px}
 .all-recs li{display:grid;grid-template-columns:72px 1fr;gap:6px}
 .ar-k{color:var(--muted)}
+
+/* 공개 기록 한 사람씩 + 신고 */
+.rec-list{list-style:none;margin:10px 0 0;padding:0;display:grid;gap:8px;border-top:1px solid var(--line);padding-top:10px}
+.rec-list li{display:grid;gap:2px}
+.rec-head .muted{color:var(--muted);font-size:12px}
+.rec-vals{font-size:12px;color:var(--muted)}
+.rec-note{font-size:13px}
+.rec-fix{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 8px;margin-top:10px;padding-top:8px;border-top:1px dashed var(--line);font-size:12px;color:var(--muted)}
+.rep{justify-self:start}
+.rep-open{font-size:12px;color:var(--muted)}
+.rep-done{font-size:12px;color:var(--muted)}
+.rep.open{justify-self:stretch;display:grid;gap:8px;margin-top:4px;padding:10px;border:1px solid #E3B5AF;border-radius:8px;background:var(--panel)}
+.rep-q{font-size:13px;font-weight:600}
+.rep-detail{width:100%;min-height:56px;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:var(--paper);font:inherit;font-size:13px;color:inherit;resize:vertical}
+.rep-msg{margin:0;font-size:12px;color:#C0392B}
+.rep-msg:empty{display:none}
+.rep-acts{display:flex;gap:8px;flex-wrap:wrap}
+
+/* 관리자 */
+.adm-btn{padding:4px 10px;font-size:13px}
+.adm-card{display:grid;gap:6px;padding:12px 14px;border:1px solid var(--line);border-radius:10px}
+.adm-top{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px}
+.adm-top .muted{color:var(--muted);font-size:13px}
+.adm-state{margin-left:auto;font-size:11px;font-weight:700;border-radius:999px;padding:1px 8px}
+.adm-state.on{background:var(--blue-soft);color:var(--blue)}
+.adm-state.off{background:#C0392B;color:#FFFFFF}
+.adm-line,.adm-rec,.adm-detail{margin:0;font-size:13px}
+.adm-detail{color:var(--muted)}
 .ar-name{display:flex;align-items:center;gap:8px}
 .add-dup{display:grid;gap:8px;justify-items:start;padding:12px 14px;border-radius:8px;border:1px solid #E3B5AF;background:var(--paper);font-size:13px}
 .add-dup p{margin:0}
@@ -437,6 +465,7 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
 </div>
 
 <dialog class="add-dlg" id="addDlg" aria-labelledby="addTitle"><div class="add-body" id="addBody"></div></dialog>
+<dialog class="add-dlg" id="adminDlg" aria-labelledby="adminTitle"><div class="add-body" id="adminBody"></div></dialog>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
@@ -773,7 +802,7 @@ function rebuild(opt = {}){
     const g = state.pub.find(g => (m.pid && g.pid === m.pid) || (!m.pid && sameSpot(g, m)));
     if (g) used.add(g);
     const others = g ? g.recs.filter(r => !myRids.has(r.rid)) : [];
-    merged.push({ ...m, mine: true, sample: state.mineIsSample || isSamplePlace(m), lidx: i, pid: m.pid || (g && g.pid), kid: m.kid || (g && g.kid) || '', pubCount: others.length, stats: statsOf(others) });
+    merged.push({ ...m, mine: true, sample: state.mineIsSample || isSamplePlace(m), lidx: i, pid: m.pid || (g && g.pid), kid: m.kid || (g && g.kid) || '', pubCount: others.length, stats: statsOf(others), recs: others });
   });
   for (const g of state.pub) {
     if (used.has(g)) continue;
@@ -781,7 +810,7 @@ function rebuild(opt = {}){
     const stats = statsOf(others), latest = others[0];
     merged.push({ name: g.name, type: g.type, addr: g.addr, lat: g.lat, lng: g.lng, pid: g.pid, kid: g.kid, ...majorityOf(stats),
       materials: (others.find(r => r.materials) || {}).materials || '', furniture: (others.find(r => r.furniture) || {}).furniture || '',
-      note: (others.find(r => r.note) || {}).note || '', date: latest.date || '', mine: false, pubCount: others.length, stats });
+      note: (others.find(r => r.note) || {}).note || '', date: latest.date || '', mine: false, pubCount: others.length, stats, recs: others });
   }
   merged.forEach((p, i) => { p.id = 'p' + i; });
   state.places = merged;
@@ -795,18 +824,24 @@ function rebuild(opt = {}){
 // 공개 기록을 불러온다 (로그인하지 않아도 보인다). 실패하면 조용히 넘어간다
 async function loadPublic(){
   if (!sb) return;
-  const { data, error } = await sb.from('records')
-    .select('id, place_id, noise, spacing, light, outlet, stay, materials, furniture, note, visited_on, created_at, places(id, kakao_id, name, type, address, lat, lng)')
-    .eq('is_public', true).order('created_at', { ascending: false }).limit(2000);
-  if (error || !data) return;
+  // 작성자 닉네임까지 주는 서버 함수(02_moderation.sql)를 먼저 쓰고, 아직 없으면 예전 방식으로 읽는다
+  let rows = null;
+  const rpc = await sb.rpc('public_records');
+  if (!rpc.error && rpc.data) rows = rpc.data;
+  else {
+    const { data, error } = await sb.from('records')
+      .select('id, place_id, noise, spacing, light, outlet, stay, materials, furniture, note, visited_on, created_at, places(id, kakao_id, name, type, address, lat, lng)')
+      .eq('is_public', true).order('created_at', { ascending: false }).limit(2000);
+    if (error || !data) return;
+    rows = data.filter(r => r.places).map(r => ({ ...r, nickname: '', mine: false, kakao_id: r.places.kakao_id, place_name: r.places.name, place_type: r.places.type, place_address: r.places.address, lat: r.places.lat, lng: r.places.lng }));
+  }
   const groups = new Map();
-  for (const r of data) {
-    const pl = r.places; if (!pl) continue;
+  for (const r of rows) {
     // 서버 값도 엑셀 불러오기와 같은 검사를 거친다
-    const { places: [p] } = rowsToPlaces([SAMPLE_ROWS[0], [pl.name, pl.type, pl.address, pl.lat, pl.lng, r.noise, r.spacing, r.light, r.outlet, r.stay, r.materials, r.furniture, r.note, r.visited_on]]);
+    const { places: [p] } = rowsToPlaces([SAMPLE_ROWS[0], [r.place_name, r.place_type, r.place_address, r.lat, r.lng, r.noise, r.spacing, r.light, r.outlet, r.stay, r.materials, r.furniture, r.note, r.visited_on]]);
     if (!p) continue;
-    if (!groups.has(pl.id)) groups.set(pl.id, { pid: pl.id, kid: pl.kakao_id || '', name: p.name, type: p.type, addr: p.addr, lat: p.lat, lng: p.lng, recs: [] });
-    groups.get(pl.id).recs.push({ ...p, rid: r.id });
+    if (!groups.has(r.place_id)) groups.set(r.place_id, { pid: r.place_id, kid: r.kakao_id || '', name: p.name, type: p.type, addr: p.addr, lat: p.lat, lng: p.lng, recs: [] });
+    groups.get(r.place_id).recs.push({ ...p, rid: r.id, nickname: cleanText(r.nickname, 30) || '기록자', mineRec: !!r.mine });
   }
   const first = !state.pub.length;
   state.pub = [...groups.values()];
@@ -960,7 +995,31 @@ function renderDetail(){
       if (!parts.length) continue;
       const li = el('li'); li.append(el('span','ar-k', def.label), el('span', null, parts.join(' · '))); ul.appendChild(li);
     }
-    box.appendChild(ul); d.appendChild(box);
+    box.appendChild(ul);
+    // 한 사람 한 사람의 공개 기록 (닉네임, 방문일, 고른 값, 한 줄 기록) + 신고
+    const list = el('ol','rec-list');
+    for (const r of (p.recs || []).slice(0, 20)) {
+      const li = el('li');
+      const head = el('div','rec-head'); head.append(el('b', null, r.nickname || '기록자'), el('span','muted', r.date ? ` · ${r.date}` : ''));
+      const vals = Object.keys(ENUMS).map(k => r[k] ? (r[k] === '보통' ? `${ENUMS[k].label} 보통` : r[k]) : '').filter(Boolean).join(' · ');
+      li.appendChild(head);
+      if (vals) li.appendChild(el('div','rec-vals', vals));
+      if (r.note) li.appendChild(el('div','rec-note', r.note));
+      if (auth.user && !r.mineRec) li.appendChild(reportUI(r));
+      list.appendChild(li);
+    }
+    box.appendChild(list);
+    // '사실과 다름'은 신고 대신 내 기록을 더해 바로잡는다 (가장 많은 값으로 모아 보여 주므로)
+    const fix = el('div','rec-fix');
+    fix.appendChild(el('span', null, '실제와 다르다면 내 기록을 더해 바로잡아 주세요.'));
+    const fb = el('button','linkbtn', p.mine ? '내 기록 고치기' : '나도 기록하기'); fb.type = 'button';
+    fb.addEventListener('click', () => {
+      if (!auth.user && sb) return login();
+      if (p.mine) return openEdit(p.id);
+      openAdd({ name: p.name, category: p.type, address: p.addr, lat: p.lat, lng: p.lng, kid: p.kid, pid: p.pid });
+    });
+    fix.appendChild(fb); box.appendChild(fix);
+    d.appendChild(box);
   }
   // 기록 관리: 내 기록이면 수정·삭제(한 번 더 확인), 다른 사람 기록만 있는 곳이면 '나도 기록하기'
   const manage = el('div','manage');
@@ -1928,7 +1987,7 @@ function deletePlace(id){
 const sb = window.supabase && SUPABASE_URL && SUPABASE_KEY
   ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { flowType: 'pkce', persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } })
   : null;
-const auth = { user: null, nickname: '', ready: false };
+const auth = { user: null, nickname: '', role: 'user', ready: false };
 const RECORD_COLS = 'id, is_public, noise, spacing, light, outlet, stay, materials, furniture, note, visited_on, places(id, kakao_id, name, type, address, lat, lng)';
 
 async function loadMine(){
@@ -1993,6 +2052,87 @@ async function deleteFromServer(p){
   setStatus(`'${p.name}' 기록을 지웠어요.`, false);
 }
 
+/* ---------- 신고 (3단계) ---------- */
+// '사실과 다름'은 신고 이유에 넣지 않는다(내 기록을 더해 바로잡는다)
+const REPORT_REASONS = ['광고·홍보', '욕설·불쾌한 내용', '개인정보 노출', '기타'];
+state.reportFor = null; state.reported = new Set();
+function reportUI(r){
+  const w = el('div','rep');
+  if (state.reported.has(r.rid)) { w.appendChild(el('span','rep-done','신고했어요. 관리자가 확인할게요.')); return w; }
+  if (state.reportFor !== r.rid) {
+    const b = el('button','linkbtn rep-open','신고'); b.type = 'button';
+    b.addEventListener('click', () => { state.reportFor = r.rid; renderDetail(); });
+    w.appendChild(b); return w;
+  }
+  // 신고 입력: 다시 그리지 않고 칩만 바꿔서 적던 내용이 남게 한다
+  let reason = '';
+  w.classList.add('open');
+  w.appendChild(el('div','rep-q','어떤 문제인가요?'));
+  const chips = el('div','chips'); chips.setAttribute('role','group'); chips.setAttribute('aria-label','신고 이유');
+  for (const v of REPORT_REASONS) {
+    const c = el('button','chip', v); c.type = 'button'; c.setAttribute('aria-pressed','false');
+    c.addEventListener('click', () => { reason = v; chips.querySelectorAll('.chip').forEach(x => x.setAttribute('aria-pressed', String(x === c))); });
+    chips.appendChild(c);
+  }
+  const ta = el('textarea','rep-detail'); ta.maxLength = 200; ta.placeholder = '자세한 내용 (선택, 기타는 꼭 적어 주세요)'; ta.setAttribute('aria-label','자세한 내용');
+  const msg = el('p','rep-msg');
+  const send = el('button','btn danger solid','신고하기'); send.type = 'button';
+  const cancel = el('button','btn ghost','취소'); cancel.type = 'button';
+  cancel.addEventListener('click', () => { state.reportFor = null; renderDetail(); });
+  send.addEventListener('click', async () => {
+    const detail = cleanText(ta.value, 200);
+    if (!reason) { msg.textContent = '신고 이유를 골라 주세요.'; return; }
+    if (reason === '기타' && !detail) { msg.textContent = '기타를 고르셨다면 자세한 내용을 적어 주세요.'; return; }
+    send.disabled = true; msg.textContent = '보내는 중이에요…';
+    const { error } = await sb.from('reports').insert({ record_id: r.rid, reason, detail: detail || null });
+    if (error && error.code !== '23505') { send.disabled = false; msg.textContent = '신고하지 못했어요. 잠시 뒤 다시 시도해 주세요.'; return; }
+    state.reported.add(r.rid); state.reportFor = null; renderDetail(); // 이미 신고한 기록(23505)도 신고한 것으로 보여 준다
+  });
+  const acts = el('div','rep-acts'); acts.append(send, cancel);
+  w.append(chips, ta, msg, acts);
+  return w;
+}
+
+/* ---------- 관리자 (3단계) ---------- */
+async function openAdmin(){
+  $('adminDlg').showModal(); renderAdmin(null, '신고 목록을 불러오는 중이에요…');
+  const { data, error } = await sb.rpc('admin_reports');
+  if (error) return renderAdmin(null, '신고 목록을 불러오지 못했어요. 관리자 권한과 02_moderation.sql 실행 여부를 확인해 주세요.');
+  renderAdmin(data || []);
+}
+async function moderate(id, hide){
+  const { error } = await sb.rpc('moderate_record', { p_record_id: id, p_hide: hide });
+  if (error) { setStatus('처리하지 못했어요. 잠시 뒤 다시 시도해 주세요.', true); return; }
+  await loadPublic(); await openAdmin();
+}
+function renderAdmin(rows, note){
+  const body = $('adminBody'); body.replaceChildren();
+  const head = el('div','add-head'); const h = el('h2', null, '신고 관리'); h.id = 'adminTitle';
+  const x = el('button','d-close','×'); x.type = 'button'; x.setAttribute('aria-label','닫기'); x.addEventListener('click', () => $('adminDlg').close());
+  head.append(h, x); body.appendChild(head);
+  body.appendChild(el('p','add-src add-left','처리 전 신고가 5건 쌓이면 자동으로 숨겨져요. 기준은 Supabase의 app_settings 표에서 바꿀 수 있어요.'));
+  if (note) { body.appendChild(el('p','add-status', note)); return; }
+  if (!rows.length) { body.appendChild(el('p','add-status','들어온 신고가 없어요.')); return; }
+  for (const r of rows) {
+    const card = el('section','adm-card');
+    const top = el('div','adm-top');
+    top.append(el('b', null, cleanText(r.place_name, 40)), el('span','muted', ` · ${cleanText(r.nickname, 30)}`),
+      el('span', 'adm-state ' + (r.hidden ? 'off' : 'on'), r.hidden ? '숨김' : (r.is_public ? '공개 중' : '나만 보기')));
+    card.appendChild(top);
+    // 이유별 건수
+    const counts = {}; for (const reason of r.reasons || []) counts[reason] = (counts[reason] || 0) + 1;
+    card.appendChild(el('p','adm-line', `신고 ${r.report_count}건 (처리 전 ${r.open_count}건) · ` + Object.entries(counts).map(([k, n]) => `${k} ${n}`).join(' · ')));
+    const body2 = [r.note && `한 줄 기록: ${cleanText(r.note, 200)}`, r.materials && `자재: ${cleanText(r.materials, 80)}`, r.furniture && `가구: ${cleanText(r.furniture, 80)}`].filter(Boolean);
+    for (const t of body2) card.appendChild(el('p','adm-rec', t));
+    for (const dtl of (r.details || []).slice(0, 5)) card.appendChild(el('p','adm-detail', `신고 내용: ${cleanText(dtl, 200)}`));
+    const acts = el('div','rep-acts');
+    const btn = (label, cls, fn) => { const b = el('button', 'btn ' + cls, label); b.type = 'button'; b.addEventListener('click', fn); return b; };
+    if (r.hidden) acts.append(btn('다시 공개 (신고 무시)', 'ghost', () => moderate(r.record_id, false)));
+    else acts.append(btn('숨기기', 'danger solid', () => moderate(r.record_id, true)), btn('신고 무시', 'ghost', () => moderate(r.record_id, false)));
+    card.appendChild(acts); body.appendChild(card);
+  }
+}
+
 function renderAuth(){
   const box = $('auth'); box.replaceChildren();
   if (!sb) return;
@@ -2007,6 +2147,7 @@ function renderAuth(){
     const who = el('span','auth-who'); who.append(el('b', null, auth.nickname || '기록자'), '님의 기록');
     const out = el('button','linkbtn','로그아웃'); out.type = 'button'; out.addEventListener('click', logout);
     box.append(who, out);
+    if (auth.role === 'admin') { const a = el('button','btn ghost adm-btn','신고 관리'); a.type = 'button'; a.addEventListener('click', openAdmin); box.appendChild(a); }
   }
 }
 function login(){
@@ -2021,10 +2162,13 @@ async function onAuth(session){
   auth.user = user; auth.ready = true;
   if (changed) {
     if (user) {
-      const { data } = await sb.from('profiles').select('nickname').eq('id', user.id).maybeSingle();
-      auth.nickname = cleanText(data && data.nickname, 30);
+      // 닉네임과 역할(관리자 여부). 02_moderation.sql 전이면 닉네임만 읽는다
+      const me = await sb.rpc('my_profile');
+      const prof = !me.error && me.data && me.data[0] ? me.data[0] : (await sb.from('profiles').select('nickname').eq('id', user.id).maybeSingle()).data;
+      auth.nickname = cleanText(prof && prof.nickname, 30);
+      auth.role = prof && prof.role === 'admin' ? 'admin' : 'user';
       await loadMine();
-    } else { auth.nickname = ''; loadInitial(); }
+    } else { auth.nickname = ''; auth.role = 'user'; loadInitial(); }
   }
   renderAuth();
 }
