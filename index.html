@@ -473,6 +473,8 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
 /* ===== 설정: 네이버 클라우드 플랫폼에서 발급받은 Client ID를 따옴표 안에 넣으세요 ===== */
 const NAVER_CLIENT_ID = 'ffqv2bmvwg';
 /* ===== 설정: TMAP 경로 중계 서버 주소 (TMAP 키는 이 서버의 비밀 변수에만 있다, 코드는 worker/worker.js) ===== */
+/* ===== 설정: 예시(가상) 장소 14곳을 보여 줄지. 실제 기록이 충분히 쌓이면 false로 바꾼다 ===== */
+const SHOW_SAMPLE = true;
 const ROUTE_PROXY = 'https://gongan-sillok-route.spddlqj20.workers.dev';
 /* ===== 설정: Supabase (계정, 서버 저장). 공개용 주소와 공개 키만 넣는다. 데이터는 DB 권한 규칙(supabase/01_schema.sql)으로 보호된다 ===== */
 const SUPABASE_URL = 'https://qktrghajroxddrbpwtvn.supabase.co';
@@ -793,8 +795,8 @@ function majorityOf(stats){
 }
 function rebuild(opt = {}){
   const prev = !opt.clearSel && state.sel && state.sel[0] === 'p' ? state.places.find(x => x.id === state.sel) : null;
-  // 로그아웃 상태에서 공개 기록이 있으면 예시(가상) 장소는 섞지 않는다
-  const hideSample = !auth.user && state.pub.length > 0;
+  // 예시(가상) 장소는 로그인 여부와 상관없이 보여 준다(SHOW_SAMPLE). 로그아웃 상태에서는 이 브라우저 기록으로 고칠 수 있고, 로그인 상태에서는 읽기 전용이다
+  const hideSample = !SHOW_SAMPLE;
   const myRids = new Set(state.mine.map(m => m.rid).filter(Boolean));
   const merged = [], used = new Set();
   state.mine.forEach((m, i) => {
@@ -812,13 +814,22 @@ function rebuild(opt = {}){
       materials: (others.find(r => r.materials) || {}).materials || '', furniture: (others.find(r => r.furniture) || {}).furniture || '',
       note: (others.find(r => r.note) || {}).note || '', date: latest.date || '', mine: false, pubCount: others.length, stats, recs: others });
   }
+  // 로그인 상태(내 기록이 계정 기록)일 때도 예시를 덧붙인다. 같은 자리에 실제 기록이 있으면 넣지 않는다
+  if (SHOW_SAMPLE && auth.user) {
+    for (const s of rowsToPlaces(SAMPLE_ROWS).places) {
+      if (merged.some(x => sameSpot(x, s))) continue;
+      merged.push({ ...s, mine: false, sample: true, pubCount: 0, stats: statsOf([]), recs: [] });
+    }
+  }
   merged.forEach((p, i) => { p.id = 'p' + i; });
   state.places = merged;
   // 보던 장소는 계속 보이게 한다
   state.sel = prev ? ((merged.find(x => (prev.pid && x.pid === prev.pid) || sameSpot(x, prev)) || {}).id || null) : (opt.clearSel ? null : state.sel);
-  const nPub = merged.filter(x => !x.mine).length, nMine = merged.filter(x => x.mine).length;
-  $('source').textContent = state.mineIsSample && !hideSample ? state.mineLabel
-    : [nMine ? `${state.mineLabel || '내 기록'} ${nMine}곳` : '', nPub ? `다른 사람 공개 기록 ${nPub}곳` : ''].filter(Boolean).join(' · ') || '아직 기록된 곳이 없어요';
+  // 출처 안내: 내 기록 / 다른 사람 공개 기록 / 예시(가상)를 따로 센다
+  const nSample = merged.filter(x => x.sample).length;
+  const nMine = merged.filter(x => x.mine && !x.sample).length, nPub = merged.filter(x => !x.mine && !x.sample).length;
+  $('source').textContent = [nMine ? `${state.mineLabel || '내 기록'} ${nMine}곳` : '', nPub ? `다른 사람 공개 기록 ${nPub}곳` : '', nSample ? `예시(가상) ${nSample}곳` : '']
+    .filter(Boolean).join(' · ') || '아직 기록된 곳이 없어요';
   syncMarkers(); if (opt.fit) fitAll(); renderAll();
 }
 // 공개 기록을 불러온다 (로그인하지 않아도 보인다). 실패하면 조용히 넘어간다
@@ -969,8 +980,8 @@ function renderDetail(){
     d.appendChild(box);
   } else {
   // 누구의 기록인지 먼저 밝힌다
-  if (!p.mine) d.appendChild(el('p','src-note', `다른 사람 공개 기록 ${p.pubCount}개를 모았어요. 항목마다 가장 많이 고른 값이에요.`));
-  else if (p.sample) d.appendChild(el('p','src-note', '예시로 넣어 둔 가상의 장소예요. 실제 가게가 아니에요.'));
+  if (p.sample) d.appendChild(el('p','src-note', '예시로 넣어 둔 가상의 장소예요. 실제 가게가 아니에요.'));
+  else if (!p.mine) d.appendChild(el('p','src-note', `다른 사람 공개 기록 ${p.pubCount}개를 모았어요. 항목마다 가장 많이 고른 값이에요.`));
   else d.appendChild(el('p','src-note', (p.rid ? (p.pub ? '내 기록이에요 · 다른 사람에게도 공개 중' : '내 기록이에요 · 나만 보기') : '내 기록이에요 · 이 브라우저에 저장')
     + (p.pubCount ? ` · 다른 사람 공개 기록 ${p.pubCount}개도 있어요` : '')));
   const dl = el('dl','scale');
@@ -1025,7 +1036,8 @@ function renderDetail(){
   // 기록 관리: 내 기록이면 수정·삭제(한 번 더 확인), 다른 사람 기록만 있는 곳이면 '나도 기록하기'
   const manage = el('div','manage');
   const mbtn = (label, cls, fn) => { const b = el('button', 'btn ' + cls, label); b.type = 'button'; b.addEventListener('click', fn); return b; };
-  if (!p.mine) {
+  if (p.sample && !p.mine) { /* 로그인 상태의 예시는 읽기 전용 */ }
+  else if (!p.mine) {
     if (auth.user) manage.append(mbtn('나도 기록하기', 'add', () => openAdd({ name: p.name, category: p.type, address: p.addr, lat: p.lat, lng: p.lng, kid: p.kid, pid: p.pid })));
     else if (sb) manage.append(mbtn('카카오로 로그인하고 기록하기', 'kakao-btn', login));
     else manage.append(mbtn('나도 기록하기', 'add', () => openAdd({ name: p.name, category: p.type, address: p.addr, lat: p.lat, lng: p.lng })));
