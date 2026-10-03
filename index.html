@@ -40,6 +40,33 @@ button,input{font:inherit;color:inherit}
 .actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}
 .btn{border:1px solid var(--ink);background:var(--ink);color:var(--panel);padding:8px 14px;border-radius:6px;cursor:pointer;font-size:14px;font-weight:500}
 .btn.ghost{background:transparent;color:var(--ink);border-color:var(--line)}
+.btn.add{background:var(--blue);border-color:var(--blue);color:#FFFFFF;font-weight:700}
+
+/* 장소 추가 창 */
+.add-dlg{width:min(520px,calc(100% - 32px));max-height:calc(100dvh - 48px);padding:0;border:0;border-radius:14px;background:var(--panel);color:var(--ink);box-shadow:0 20px 60px rgba(15,20,40,.35)}
+.add-dlg::backdrop{background:rgba(15,20,40,.45)}
+.add-body{display:grid;gap:14px;padding:18px 20px 20px;max-height:calc(100dvh - 48px);overflow:auto;overscroll-behavior:contain}
+.add-head{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.add-head h2{margin:0;font-size:20px;font-weight:800;letter-spacing:-.02em}
+.add-search{display:flex;gap:8px}
+.add-search .search{flex:1;min-width:0}
+.add-status{margin:0;font-size:13px;color:var(--muted)}
+.add-status.err{color:#C0392B}
+.add-results{list-style:none;margin:0;padding:0;display:grid;max-height:52vh;overflow:auto}
+.add-result{width:100%;display:grid;gap:2px;text-align:left;padding:10px 8px;border:0;border-bottom:1px solid var(--line);background:transparent;cursor:pointer}
+.add-result:hover{background:var(--paper)}
+.ar-name{font-weight:700;font-size:15px}
+.ar-sub{font-size:12px;color:var(--muted)}
+.add-picked{padding:10px 12px;border-radius:8px;background:var(--paper);font-size:13px}
+.add-picked b{display:block;font-size:16px}
+.add-field{display:grid;gap:5px}
+.add-field > label,.add-field > .lbl{font-size:12px;font-weight:600;color:var(--muted)}
+.add-field input,.add-field textarea{width:100%;padding:9px 12px;border:1px solid var(--line);border-radius:6px;background:var(--paper);font:inherit;color:inherit}
+.add-field textarea{min-height:64px;resize:vertical}
+.add-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.add-warn{margin:0;font-size:12px;color:#C0392B}
+.add-actions{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.add-src{margin:0;font-size:11px;color:var(--muted);text-align:right}
 .btn:hover{filter:brightness(1.1)}
 .status{margin:12px 0 0;font-size:13px;color:var(--muted);min-height:1.2em}
 .status.err{color:#C0392B}
@@ -159,6 +186,7 @@ button.stat[aria-pressed="true"] span{color:#FFFFFF}
 .legend i.lv0{background:var(--blue)}
 .legend i.lv1{background:var(--blue-soft);box-shadow:inset 0 0 0 1px var(--blue)}
 .legend i.lv2{background:var(--line)}
+.legend i.ext-dot{background:#FFFFFF;box-shadow:inset 0 0 0 2px #7A8494}
 
 /* 지도에 표시: 고른 속성은 진하게, 나머지 메뉴는 흐리게 */
 .quick{position:absolute;right:14px;top:196px;z-index:10;display:flex;flex-direction:column;gap:2px;width:118px;background:var(--panel);border-radius:10px;padding:8px 6px;box-shadow:0 1px 6px rgba(15,20,40,.18)}
@@ -171,6 +199,17 @@ button.stat[aria-pressed="true"] span{color:#FFFFFF}
 
 /* 핀 옆 속성 배지: 좋은 값일수록 진하게 */
 .pin.dim{opacity:.55}
+
+/* 기록 안 된 장소(카카오): 흰 핀으로 기록한 곳과 구분 */
+.pin.ext .pin-head{background:#FFFFFF;border-color:#7A8494}
+.pin.ext .pin-head::after{background:#7A8494}
+.pin.ext.sel .pin-label{background:#5B6475}
+.ext-tag{flex:none;font-size:11px;font-weight:600;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:0 7px;margin-left:auto}
+.ext-list{padding:0}
+.ext-info{display:grid;gap:10px}
+.ext-none,.ext-phone{margin:0;font-size:13px}
+.ext-acts{display:flex;gap:8px;flex-wrap:wrap}
+a.btn{display:inline-flex;align-items:center;text-decoration:none}
 .pin-badge{position:absolute;left:28px;top:3px;white-space:nowrap;font-size:11px;font-weight:700;border-radius:999px;padding:2px 7px;box-shadow:0 1px 3px rgba(15,20,40,.22)}
 .pin-badge.lv0{background:var(--blue);color:#FFFFFF}
 .pin-badge.lv1{background:var(--blue-soft);color:var(--blue)}
@@ -279,7 +318,8 @@ button.stat[aria-pressed="true"] span{color:#FFFFFF}
       <h1 class="brand">공간실록</h1>
       <p class="tagline">평점 대신 공간의 사실을 기록합니다. 성수동 시제품.</p>
       <div class="actions">
-        <button class="btn" id="btnLoad" type="button">엑셀 파일 불러오기</button>
+        <button class="btn add" id="btnAdd" type="button">+ 장소 추가</button>
+        <button class="btn ghost" id="btnLoad" type="button">엑셀 파일 불러오기</button>
         <button class="btn ghost" id="btnReset" type="button">예시 데이터로 되돌리기</button>
         <input type="file" id="file" accept=".xlsx,.csv" hidden>
       </div>
@@ -291,7 +331,7 @@ button.stat[aria-pressed="true"] span{color:#FFFFFF}
       <section class="sec" id="picks" aria-label="목적별 추천"></section>
       <h3 class="sec-title sec-pad">조건으로 찾기</h3>
       <div class="filters">
-        <input class="search" id="q" type="search" placeholder="이름, 자재, 가구로 찾기" aria-label="이름, 자재, 가구로 찾기" maxlength="40">
+        <input class="search" id="q" type="search" placeholder="이름, 자재, 가구로 찾기 · 기록 안 된 가게도 찾아요" aria-label="이름, 자재, 가구로 찾기. 기록 안 된 가게도 함께 찾아요" maxlength="40">
         <div id="fgroups"></div>
       </div>
       <h3 class="sec-title sec-pad">전체 목록</h3>
@@ -303,6 +343,7 @@ button.stat[aria-pressed="true"] span{color:#FFFFFF}
         </span>
       </div>
       <ul class="list" id="list"></ul>
+      <section class="sec" id="extList" hidden aria-label="기록 안 된 장소"></section>
       <div class="notes">
         <details>
           <summary>엑셀 양식 안내</summary>
@@ -344,6 +385,8 @@ button.stat[aria-pressed="true"] span{color:#FFFFFF}
     <section class="detail" id="detail" hidden aria-live="polite"></section>
   </main>
 </div>
+
+<dialog class="add-dlg" id="addDlg" aria-labelledby="addTitle"><div class="add-body" id="addBody"></div></dialog>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script>
@@ -660,7 +703,7 @@ function renderList(vis){
   }
 }
 function renderDetail(){
-  const d = $('detail'); const p = state.places.find(x => x.id === state.sel);
+  const d = $('detail'); const p = findPlace(state.sel);
   document.body.classList.toggle('has-detail', !!p);
   if (!p) { d.hidden = true; d.replaceChildren(); return; }
   // 휴대폰: 새 장소를 열 때는 상세 패널을 '반' 높이에서 시작한다
@@ -695,6 +738,19 @@ function renderDetail(){
   }
   renderTransit(d, p);
   d.appendChild(el('h3','sec-title','공간 정보'));
+  if (p.ext) { // 카카오에서 찾은, 아직 기록 안 된 장소
+    const box = el('div','ext-info');
+    box.appendChild(el('p','ext-none','아직 공간실록에 기록이 없는 곳이에요. 다녀오셨다면 소음, 콘센트 같은 사실을 남겨 주세요.'));
+    if (p.phone) { const ph = el('p','ext-phone'); ph.append('전화 ', el('span', null, p.phone)); box.appendChild(ph); }
+    const acts = el('div','ext-acts');
+    const rec = el('button','btn add','이 장소 기록하기'); rec.type = 'button';
+    rec.addEventListener('click', () => openAdd({ name: p.name, category: p.category, address: p.addr, lat: p.lat, lng: p.lng }));
+    acts.appendChild(rec);
+    if (p.url) { const k = el('a','btn ghost','카카오맵에서 자세히'); k.href = p.url; k.target = '_blank'; k.rel = 'noopener'; acts.appendChild(k); }
+    box.appendChild(acts);
+    box.appendChild(el('p','add-src','영업시간, 리뷰, 사진은 카카오맵에서 확인할 수 있어요. 장소 정보: 카카오'));
+    d.appendChild(box);
+  } else {
   const dl = el('dl','scale');
   for (const [k, def] of Object.entries(ENUMS)) {
     dl.appendChild(el('dt', null, def.label));
@@ -708,6 +764,7 @@ function renderDetail(){
   if (p.furniture) { const b = el('div','d-block'); b.append(el('div','d-label','가구'), el('div',null,p.furniture)); d.appendChild(b); }
   if (p.note) { const b = el('div','d-block'); b.append(el('div','d-label','한 줄 기록'), el('p','d-note',p.note)); d.appendChild(b); }
   if (p.date) d.appendChild(el('div','d-date', `방문일 ${p.date}`));
+  }
 
   // 길찾기는 어떤 경우에도 이 창을 다른 페이지로 바꾸지 않는다. 앱은 앱으로, 웹은 새 탭으로 연다.
   const links = routeLinks(p, state.me);
@@ -740,7 +797,7 @@ function select(id, center){
   // 다른 앱에 다녀오는 사이 사파리가 탭을 새로고침해도 보던 장소를 다시 열 수 있게 기억한다
   try { id ? sessionStorage.setItem(SEL_KEY, id) : sessionStorage.removeItem(SEL_KEY); } catch {}
   if (id && center && map && !isPhone()) {
-    const p = state.places.find(x => x.id === id);
+    const p = findPlace(id);
     if (p) { const ll = new naver.maps.LatLng(p.lat, p.lng); if (!map.getBounds().hasLatLng(ll)) map.panTo(ll); }
   }
   renderAll();
@@ -748,7 +805,7 @@ function select(id, center){
 }
 // 휴대폰: 상세 패널이 화면 아래를 덮으므로, 고른 장소를 그 위쪽 지도 영역 가운데로 옮긴다
 function centerAboveDetail(id){
-  const p = state.places.find(x => x.id === id); if (!p) return;
+  const p = findPlace(id); if (!p) return;
   map.setCenter(new naver.maps.LatLng(p.lat, p.lng));
   map.panBy(new naver.maps.Point(0, Math.round(detailHeight() / 2)));
 }
@@ -1083,6 +1140,7 @@ function renderLegend(){
     const s = el('span'); const i = el('i'); i.style.setProperty('--c', c.color);
     s.append(i, document.createTextNode(c.name)); lg.appendChild(s);
   }
+  if (state.ext.results.length) { const s = el('span'); s.append(el('i','ext-dot'), '기록 없음'); lg.appendChild(s); }
   lg.hidden = !map || !used.size;
 }
 /* ---------- 경로 찾기 (TMAP 기본, ODsay 예비) ---------- */
@@ -1342,7 +1400,7 @@ function clearRoute(){ for (const o of routeOverlays) o.setMap(null); routeOverl
 function drawTransit(){
   clearRoute();
   const t = state.transit; if (!map || !t || !state.me || (t.status !== 'ok' && t.status !== 'near')) return;
-  const p = state.places.find(x => x.id === t.placeId); if (!p) return;
+  const p = findPlace(t.placeId); if (!p) return;
   const LL = ([lat, lng]) => new naver.maps.LatLng(lat, lng);
   const me = [state.me.lat, state.me.lng], dest = [p.lat, p.lng];
   const all = [me, dest];
@@ -1371,6 +1429,205 @@ function drawTransit(){
   map.fitBounds(b, isPhone()
     ? { top: 70, right: 50, left: 40, bottom: detailHeight() + 30 }
     : { top: 70, right: 80, bottom: 50, left: $('detail').offsetWidth + 50 });
+}
+
+/* ---------- 기록 안 된 장소 찾기 (카카오) ---------- */
+// 목록 검색창에 입력하면 우리 기록과 함께 카카오에서 실제 가게도 찾아서, 지도에 흰 핀으로 보여 준다.
+state.ext = { query: '', status: '', results: [] }; // status: loading | none | error | ''
+const extMarkers = new Map(), extCache = new Map();
+let extTimer = null;
+const findPlace = id => state.places.find(x => x.id === id) || state.ext.results.find(x => x.id === id) || null;
+const isRecorded = r => state.places.some(x => x.name === r.name || distM(x, r) < 25); // 이미 기록한 곳은 빼고 보여 준다
+const KAKAO_PLACE = /^https?:\/\/place\.map\.kakao\.com\/(\d+)$/;
+function queueExtSearch(q){
+  clearTimeout(extTimer);
+  const query = cleanText(q, 40);
+  if (query.length < 2) { if (state.ext.query) setExt({ query: '', status: '', results: [] }); return; }
+  extTimer = setTimeout(() => runExtSearch(query), 500); // 입력이 멈추면 한 번만 찾는다
+}
+async function runExtSearch(query){
+  // 지금 보고 있는 지도 가운데 근처부터 찾는다(지도가 없으면 내 위치)
+  const c = map && map.getCenter();
+  const near = (c && { lat: c.lat(), lng: c.lng() }) || state.me;
+  const key = `${query}|${near ? near.lat.toFixed(2) + ',' + near.lng.toFixed(2) : ''}`;
+  if (extCache.has(key)) { setExt({ query, status: '', ...extCache.get(key), results: extCache.get(key).results.filter(r => !isRecorded(r)) }); return; }
+  setExt({ query, status: 'loading', results: state.ext.results });
+  let results;
+  try {
+    const r = await proxyPost('/search', { query, ...(near && { x: String(near.lng), y: String(near.lat) }) });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j && j.error);
+    results = (j.places || []).map((x, i) => {
+      const m = KAKAO_PLACE.exec(String(x.url || ''));
+      const lat = toNum(x.y), lng = toNum(x.x);
+      return { id: 'k' + (m ? m[1] : `${i}-${lat}`), ext: true, name: cleanText(x.name, 40), category: cleanText(x.category, 60),
+        type: cleanText(String(x.category || '').split('>').pop(), 20), addr: cleanText(x.address, 60), phone: cleanText(x.phone, 20),
+        url: m ? `https://place.map.kakao.com/${m[1]}` : '', lat, lng };
+    }).filter(x => x.name && x.lat >= 33 && x.lat <= 39 && x.lng >= 124 && x.lng <= 132);
+  } catch (e) {
+    if (state.ext.query === query) setExt({ query, status: 'error', results: [] });
+    return;
+  }
+  extCache.set(key, { results });
+  if (state.ext.query !== query) return; // 그사이 다른 검색어로 바뀌었다
+  const fresh = results.filter(r => !isRecorded(r));
+  setExt({ query, status: fresh.length ? '' : 'none', results: fresh });
+}
+function setExt(next){
+  state.ext = next; syncExtMarkers();
+  if (state.sel && state.sel[0] === 'k' && !findPlace(state.sel)) select(null); else renderAll();
+}
+function syncExtMarkers(){
+  for (const mk of extMarkers.values()) mk.setMap(null);
+  extMarkers.clear();
+  if (!map) return;
+  for (const p of state.ext.results) {
+    const mk = new naver.maps.Marker({ map, position: new naver.maps.LatLng(p.lat, p.lng), title: p.name });
+    naver.maps.Event.addListener(mk, 'click', () => select(p.id));
+    extMarkers.set(p.id, mk);
+  }
+}
+function renderExtMarkers(){
+  const few = state.ext.results.length <= 6;
+  for (const p of state.ext.results) {
+    const mk = extMarkers.get(p.id); if (!mk) continue;
+    const sel = p.id === state.sel;
+    const label = sel || few ? `<span class="pin-label">${esc(p.name)}</span>` : '';
+    mk.setIcon({ content: `<div class="pin ext${sel ? ' sel' : ''}"><span class="pin-head"></span>${label}</div>`, anchor: new naver.maps.Point(14, 29) });
+    mk.setZIndex(sel ? 300 : 150);
+  }
+}
+function renderExtList(){
+  const box = $('extList'); box.replaceChildren();
+  const x = state.ext; box.hidden = !x.query;
+  if (!x.query) return;
+  box.appendChild(el('h3','sec-title', '기록 안 된 장소'));
+  if (x.status === 'loading' && !x.results.length) box.appendChild(el('p','near-line muted', `'${x.query}'을(를) 카카오에서 찾는 중이에요…`));
+  else if (x.status === 'none') box.appendChild(el('p','near-line muted', '지금 보고 있는 지도 근처에서 더 찾은 곳이 없어요.'));
+  else if (x.status === 'error') box.appendChild(el('p','near-line muted', '장소를 찾지 못했어요. 잠시 뒤 다시 시도해 주세요.'));
+  if (x.results.length) {
+    const ul = el('ul','list ext-list');
+    for (const p of x.results) {
+      const li = el('li'), b = el('button','item'); b.type = 'button';
+      if (state.sel === p.id) b.setAttribute('aria-current','true');
+      const nm = el('div','item-name'); nm.append(el('span', null, p.name), el('span','ext-tag','기록 없음'));
+      const sub = [p.type, p.addr, state.me ? fmtDist(distM(state.me, p)) : ''].filter(Boolean).join(' · ');
+      b.append(nm, el('div','item-sub', sub));
+      b.addEventListener('click', () => select(p.id, true));
+      li.appendChild(b); ul.appendChild(li);
+    }
+    box.appendChild(ul);
+  }
+  box.appendChild(el('p','add-src','누르면 지도에서 위치를 보고, 바로 기록할 수 있어요. 장소 정보: 카카오'));
+}
+
+/* ---------- 장소 추가 (카카오 장소 검색) ---------- */
+// 이름으로 검색해서 고르면 주소와 좌표가 채워지고, 공간 기록을 입력해 저장한다.
+// 저장은 엑셀 불러오기와 같은 방식(이 브라우저)으로 하고, 엑셀 불러오기와 같은 검사(rowsToPlaces)를 거친다.
+const addState = { step: 'search', query: '', results: [], picked: null, status: '', err: false, values: {} };
+// prefill이 있으면(지도에서 고른 기록 안 된 장소) 검색을 건너뛰고 바로 기록 입력으로 간다
+function openAdd(prefill){
+  Object.assign(addState, { step: 'search', results: [], picked: null, status: '', err: false, values: {} });
+  if (prefill && prefill.name) Object.assign(addState, { step: 'form', picked: { ...prefill, type: guessType(prefill.category) } });
+  renderAdd(); $('addDlg').showModal();
+  setTimeout(() => { const q = $('addQ'); if (q) q.focus(); }, 0);
+}
+function guessType(cat){
+  const c = String(cat || ''), last = (c.split('>').pop() || '').trim();
+  if (/베이커리|제과|빵/.test(c)) return '베이커리 카페';
+  if (/북카페|서점/.test(c)) return '북카페';
+  if (/찻집|전통차/.test(c)) return '찻집';
+  if (/카페|커피/.test(c)) return '카페';
+  return cleanText(last, 20);
+}
+async function searchPlaces(q){
+  addState.query = cleanText(q, 40); if (!addState.query) return;
+  Object.assign(addState, { status: '찾는 중이에요…', err: false, results: [] }); renderAdd();
+  // 내 위치가 있으면 그 근처부터, 없으면 지금 보고 있는 지도 가운데 근처부터 찾는다
+  const c = map && map.getCenter();
+  const near = state.me || (c && { lat: c.lat(), lng: c.lng() });
+  try {
+    const r = await proxyPost('/search', { query: addState.query, ...(near && { x: String(near.lng), y: String(near.lat) }) });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j && j.error);
+    addState.results = (j.places || []).map(x => ({ name: cleanText(x.name, 40), category: cleanText(x.category, 60), address: cleanText(x.address, 60), lng: toNum(x.x), lat: toNum(x.y), distance: toNum(x.distance) }))
+      .filter(x => x.name && x.lat >= 33 && x.lat <= 39 && x.lng >= 124 && x.lng <= 132);
+    addState.status = addState.results.length ? '' : '검색 결과가 없어요. 이름을 조금 다르게 입력해 보세요.';
+  } catch (e) { Object.assign(addState, { status: '장소를 찾지 못했어요. 잠시 뒤 다시 시도해 주세요.', err: true }); }
+  renderAdd();
+}
+function renderAdd(){
+  const body = $('addBody'); body.replaceChildren();
+  const head = el('div','add-head'); const h = el('h2', null, addState.step === 'search' ? '장소 추가' : '공간 기록하기'); h.id = 'addTitle';
+  const x = el('button','d-close','×'); x.type = 'button'; x.setAttribute('aria-label','닫기'); x.addEventListener('click', () => $('addDlg').close());
+  head.append(h, x); body.appendChild(head);
+  if (addState.step === 'search') {
+    const f = el('form','add-search'); f.setAttribute('role','search');
+    const q = el('input','search'); q.id = 'addQ'; q.type = 'search'; q.maxLength = 40; q.value = addState.query;
+    q.placeholder = '가게 이름으로 찾기 (예: 성수 카페 이름)'; q.setAttribute('aria-label','가게 이름');
+    const go = el('button','btn','찾기'); go.type = 'submit';
+    f.append(q, go); f.addEventListener('submit', e => { e.preventDefault(); searchPlaces(q.value); });
+    body.appendChild(f);
+    if (addState.status) body.appendChild(el('p','add-status' + (addState.err ? ' err' : ''), addState.status));
+    if (addState.results.length) {
+      const ul = el('ul','add-results');
+      for (const r of addState.results) {
+        const li = el('li'), b = el('button','add-result'); b.type = 'button';
+        const sub = [r.category.split('>').pop().trim(), r.address, r.distance ? fmtDist(r.distance) : ''].filter(Boolean).join(' · ');
+        b.append(el('span','ar-name', r.name), el('span','ar-sub', sub));
+        b.addEventListener('click', () => { Object.assign(addState, { step: 'form', picked: { ...r, type: guessType(r.category) }, status: '', err: false, values: {} }); renderAdd(); $('addBody').scrollTop = 0; });
+        li.appendChild(b); ul.appendChild(li);
+      }
+      body.appendChild(ul);
+    }
+    body.appendChild(el('p','add-src','장소 검색: 카카오'));
+    return;
+  }
+
+  // 기록 입력
+  const p = addState.picked;
+  const picked = el('div','add-picked'); picked.append(el('b', null, p.name), document.createTextNode([p.type, p.address].filter(Boolean).join(' · ')));
+  body.appendChild(picked);
+  const dup = state.places.find(x => x.name === p.name || distM(x, p) < 25);
+  if (dup) body.appendChild(el('p','add-warn', `이미 기록된 '${dup.name}'와 같은 곳일 수 있어요. 그래도 새로 저장할 수 있어요.`));
+  const field = (label, input) => { const w = el('div','add-field'); const l = el('label', null, label); input.id = 'add-' + label.replace(/\s/g, ''); l.htmlFor = input.id; w.append(l, input); return w; };
+  const text = (v, max) => { const i = el('input'); i.type = 'text'; i.maxLength = max; i.value = v || ''; return i; };
+  const nameI = text(p.name, 40), typeI = text(p.type, 20);
+  const row = el('div','add-row'); row.append(field('이름', nameI), field('유형', typeI)); body.appendChild(row);
+  // 소음, 좌석 간격… : 칩을 눌러 고르고, 다시 누르면 '기록 안 함'
+  for (const [k, def] of Object.entries(ENUMS)) {
+    const w = el('div','add-field'); w.appendChild(el('span','lbl', def.label));
+    const chips = el('div','chips'); chips.setAttribute('role','group'); chips.setAttribute('aria-label', def.label);
+    for (const v of def.values) {
+      const b = el('button','chip', v); b.type = 'button'; b.setAttribute('aria-pressed', String(addState.values[k] === v));
+      b.addEventListener('click', () => { addState.values[k] = addState.values[k] === v ? '' : v; chips.querySelectorAll('.chip').forEach(c => c.setAttribute('aria-pressed', String(addState.values[k] === c.textContent))); });
+      chips.appendChild(b);
+    }
+    w.appendChild(chips); body.appendChild(w);
+  }
+  const matI = text('', 80), furI = text('', 80);
+  const noteI = el('textarea'); noteI.maxLength = 200; noteI.placeholder = '예: 창가 자리는 오후 3시 이후 볕이 깊게 든다';
+  const s = seoulNow().stamp; const dateI = el('input'); dateI.type = 'date'; dateI.value = `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}`;
+  body.append(field('주요 자재', matI), field('가구', furI), field('한 줄 기록', noteI), field('방문일', dateI));
+  if (addState.status) body.appendChild(el('p','add-status' + (addState.err ? ' err' : ''), addState.status));
+  const act = el('div','add-actions');
+  const back = el('button','btn ghost','← 다시 찾기'); back.type = 'button'; back.addEventListener('click', () => { addState.step = 'search'; addState.status = ''; renderAdd(); });
+  const save = el('button','btn add','저장하기'); save.type = 'button';
+  save.addEventListener('click', () => {
+    const v = addState.values;
+    const newRow = [nameI.value, typeI.value, p.address, p.lat, p.lng, v.noise || '', v.spacing || '', v.light || '', v.outlet || '', v.stay || '', matI.value, furI.value, noteI.value, dateI.value];
+    // 기존 장소 + 새 장소를 엑셀 불러오기와 같은 검사로 다시 만든다
+    const { places } = rowsToPlaces([...placesToRows(state.places), newRow]);
+    if (places.length !== state.places.length + 1) { Object.assign(addState, { status: '저장하지 못했어요. 이름이 비어 있지 않은지 확인해 주세요.', err: true }); renderAdd(); return; }
+    const base = $('source').textContent.replace(/ \+ 직접 추가.*$/, '');
+    setData(places, `${base} + 직접 추가`, true);
+    // 방금 기록한 곳은 '기록 안 된 장소'에서 뺀다
+    if (state.ext.results.length) { state.ext.results = state.ext.results.filter(r => !isRecorded(r)); syncExtMarkers(); }
+    $('addDlg').close();
+    setStatus(`'${places[places.length - 1].name}'을(를) 추가했어요. 이 브라우저에 저장돼요.`, false);
+    select(places[places.length - 1].id, true);
+  });
+  act.append(back, save); body.appendChild(act);
 }
 
 /* ---------- 내 위치 ---------- */
@@ -1423,22 +1680,23 @@ function renderAll(){
   if (state.sortNear && state.me) vis = vis.map(p => [distM(state.me, p), p]).sort((a, b) => a[0] - b[0]).map(x => x[1]);
   $('btnSort').setAttribute('aria-pressed', String(state.sortNear && !!state.me));
   $('zloc').setAttribute('aria-pressed', String(!!state.me));
-  renderSummary(); renderPicks(vis); renderList(vis); renderMap(vis); renderLegend(); renderQuick(); renderDetail();
+  renderSummary(); renderPicks(vis); renderList(vis); renderExtList(); renderMap(vis); renderExtMarkers(); renderLegend(); renderQuick(); renderDetail();
 }
 
 /* ---------- 시작 ---------- */
 buildFilters(); bindSheets();
 $('btnLoad').addEventListener('click', () => $('file').click());
 $('file').addEventListener('change', e => { const f = e.target.files && e.target.files[0]; if (f) handleFile(f); e.target.value = ''; });
+$('btnAdd').addEventListener('click', openAdd);
 $('btnReset').addEventListener('click', () => {
   try { localStorage.removeItem(STORE_KEY); } catch {}
   setData(rowsToPlaces(SAMPLE_ROWS).places, '예시 데이터 (가상의 장소 14곳)', false); setStatus('예시 데이터로 되돌렸어요.', false);
 });
-$('q').addEventListener('input', e => { state.q = cleanText(e.target.value, 40).toLowerCase(); renderAll(); });
+$('q').addEventListener('input', e => { state.q = cleanText(e.target.value, 40).toLowerCase(); renderAll(); queueExtSearch(e.target.value); });
 $('btnClear').addEventListener('click', () => {
   for (const s of Object.values(state.filters)) s.clear();
   document.querySelectorAll('.chip').forEach(c => c.setAttribute('aria-pressed','false'));
-  $('q').value = ''; state.q = ''; renderAll();
+  $('q').value = ''; state.q = ''; renderAll(); queueExtSearch('');
 });
 $('zin').addEventListener('click', () => { if (map) map.setZoom(map.getZoom() + 1, true); });
 $('zout').addEventListener('click', () => { if (map) map.setZoom(map.getZoom() - 1, true); });

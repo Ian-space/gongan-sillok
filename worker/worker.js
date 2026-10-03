@@ -1,14 +1,16 @@
-// 공간실록 경로 중계 서버 (Cloudflare Worker)
-// - TMAP 앱 키를 사이트 코드 대신 여기(비밀 변수 TMAP_APP_KEY)에만 둔다.
+// 공간실록 중계 서버 (Cloudflare Worker)
+// - 외부 서비스 키(TMAP, 카카오)를 사이트 코드 대신 여기 비밀 변수에만 둔다.
+//     TMAP_APP_KEY   : TMAP 대중교통·보행자 경로
+//     KAKAO_REST_KEY : 카카오 로컬 장소 검색 (REST API 키)
 // - 공간실록 사이트에서 온 요청만 받는다.
-// - 같은 구간을 잠깐 사이에 다시 찾으면 TMAP을 다시 부르지 않고 저장해 둔 결과를 준다(무료 사용량 절약).
 //
 // 경로
 //   POST /transit  { startX, startY, endX, endY, searchDttm? }  → TMAP 대중교통
 //   POST /walk     { startX, startY, endX, endY }               → TMAP 보행자 경로
+//   POST /search   { query, x?, y? }                            → 카카오 키워드 장소 검색 (x, y가 있으면 그 근처부터)
 
 const ALLOWED_ORIGINS = ['https://ian-space.github.io', 'http://localhost:8765'];
-const CACHE_SECONDS = 600; // 10분 동안은 같은 구간 결과를 다시 쓴다
+const CACHE_SECONDS = 600; // 사용자 지정 도메인에서만 동작한다(workers.dev 주소에서는 저장되지 않음)
 
 const TMAP = {
   transit: 'https://apis.openapi.sk.com/transit/routes',
@@ -31,17 +33,36 @@ export default {
     if (request.method === 'OPTIONS') return new Response(null, { status: allowed ? 204 : 403, headers: cors });
     if (!allowed) return reply(403, { error: 'forbidden origin' });
     if (request.method !== 'POST') return reply(405, { error: 'POST only' });
-    if (!env.TMAP_APP_KEY) return reply(500, { error: 'TMAP_APP_KEY is not set' });
 
     const kind = new URL(request.url).pathname.replace(/^\/+/, '');
-    if (!TMAP[kind]) return reply(404, { error: 'unknown path' });
+    if (!TMAP[kind] && kind !== 'search') return reply(404, { error: 'unknown path' });
 
-    // 받은 값 검사: 국내 좌표만, 정해진 칸만 넘긴다
     let input;
     try { input = await request.json(); } catch { return reply(400, { error: 'invalid json' }); }
     const num = v => (typeof v === 'string' || typeof v === 'number') && /^-?\d+(\.\d+)?$/.test(String(v)) ? Number(v) : NaN;
-    const sx = num(input.startX), sy = num(input.startY), ex = num(input.endX), ey = num(input.endY);
     const inKorea = (x, y) => x >= 124 && x <= 132 && y >= 33 && y <= 39;
+
+    /* 카카오 장소 검색 */
+    if (kind === 'search') {
+      if (!env.KAKAO_REST_KEY) return reply(500, { error: 'KAKAO_REST_KEY is not set' });
+      const query = String(input.query || '').replace(/[\u0000-\u001F\u007F]/g, '').trim().slice(0, 40);
+      if (!query) return reply(400, { error: 'empty query' });
+      const params = new URLSearchParams({ query, size: '15' });
+      const x = num(input.x), y = num(input.y);
+      if (inKorea(x, y)) { params.set('x', String(x)); params.set('y', String(y)); } // 지도 중심 근처 결과부터
+      const up = await fetch('https://dapi.kakao.com/v2/local/search/keyword.json?' + params, { headers: { Authorization: 'KakaoAK ' + env.KAKAO_REST_KEY } });
+      const j = await up.json().catch(() => null);
+      if (!up.ok || !j) return reply(up.status === 200 ? 502 : up.status, { error: (j && (j.message || j.msg)) || 'kakao error' });
+      // 사이트에 필요한 칸만 넘긴다
+      return reply(200, { places: (j.documents || []).map(d => ({
+        name: d.place_name, category: d.category_name, address: d.road_address_name || d.address_name,
+        phone: d.phone, x: d.x, y: d.y, url: d.place_url, distance: d.distance,
+      })) });
+    }
+
+    /* TMAP 경로: 국내 좌표만, 정해진 칸만 넘긴다 */
+    if (!env.TMAP_APP_KEY) return reply(500, { error: 'TMAP_APP_KEY is not set' });
+    const sx = num(input.startX), sy = num(input.startY), ex = num(input.endX), ey = num(input.endY);
     if (!inKorea(sx, sy) || !inKorea(ex, ey)) return reply(400, { error: 'coordinates out of range' });
     const stamp = /^\d{12}$/.test(String(input.searchDttm || '')) ? String(input.searchDttm) : '';
 
