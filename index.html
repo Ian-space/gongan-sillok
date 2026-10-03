@@ -42,6 +42,18 @@ button,input{font:inherit;color:inherit}
 .btn.ghost{background:transparent;color:var(--ink);border-color:var(--line)}
 .btn.add{background:var(--blue);border-color:var(--blue);color:#FFFFFF;font-weight:700}
 
+/* 계정 */
+.auth{display:flex;align-items:center;flex-wrap:wrap;gap:6px 10px;margin-top:14px}
+.auth:empty{display:none}
+.kakao-btn{border:0;border-radius:6px;padding:8px 14px;background:#FEE500;color:#191919;font-size:14px;font-weight:700;cursor:pointer} /* 카카오 로그인 버튼 기본 색 */
+.kakao-btn:hover{filter:brightness(.97)}
+.auth-note{font-size:12px;color:var(--muted)}
+.auth-who{font-size:14px}
+.auth-who b{font-weight:700}
+.add-pub{display:flex;align-items:center;gap:8px;font-size:14px;font-weight:600;cursor:pointer}
+.add-pub input{width:18px;height:18px;accent-color:var(--blue)}
+.add-left{text-align:left}
+
 /* 장소 추가 창 */
 .add-dlg{width:min(520px,calc(100% - 32px));max-height:calc(100dvh - 48px);padding:0;border:0;border-radius:14px;background:var(--panel);color:var(--ink);box-shadow:0 20px 60px rgba(15,20,40,.35)}
 .add-dlg::backdrop{background:rgba(15,20,40,.45)}
@@ -329,6 +341,7 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
     <div class="side-head">
       <h1 class="brand">공간실록</h1>
       <p class="tagline">평점 대신 공간의 사실을 기록합니다. 성수동 시제품.</p>
+      <div class="auth" id="auth"></div>
       <div class="actions">
         <button class="btn add" id="btnAdd" type="button">+ 장소 추가</button>
         <button class="btn ghost" id="btnLoad" type="button">엑셀 파일 불러오기</button>
@@ -400,12 +413,16 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
 
 <dialog class="add-dlg" id="addDlg" aria-labelledby="addTitle"><div class="add-body" id="addBody"></div></dialog>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script>
 /* ===== 설정: 네이버 클라우드 플랫폼에서 발급받은 Client ID를 따옴표 안에 넣으세요 ===== */
 const NAVER_CLIENT_ID = 'ffqv2bmvwg';
 /* ===== 설정: TMAP 경로 중계 서버 주소 (TMAP 키는 이 서버의 비밀 변수에만 있다, 코드는 worker/worker.js) ===== */
 const ROUTE_PROXY = 'https://gongan-sillok-route.spddlqj20.workers.dev';
+/* ===== 설정: Supabase (계정, 서버 저장). 공개용 주소와 공개 키만 넣는다. 데이터는 DB 권한 규칙(supabase/01_schema.sql)으로 보호된다 ===== */
+const SUPABASE_URL = 'https://qktrghajroxddrbpwtvn.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_j-kp8YKsQTczGcsQX74OxA_mfI7DoZw';
 /* ===== 설정: ODsay LAB에서 발급받은 API Key (TMAP이 안 될 때 쓰는 예비 경로) ===== */
 const ODSAY_API_KEY = 'vpfLJcZCiAwV7L5fibSQjA';
 /* ===================================================================================== */
@@ -756,7 +773,7 @@ function renderDetail(){
     if (p.phone) { const ph = el('p','ext-phone'); ph.append('전화 ', el('span', null, p.phone)); box.appendChild(ph); }
     const acts = el('div','ext-acts');
     const rec = el('button','btn add','이 장소 기록하기'); rec.type = 'button';
-    rec.addEventListener('click', () => openAdd({ name: p.name, category: p.category, address: p.addr, lat: p.lat, lng: p.lng }));
+    rec.addEventListener('click', () => openAdd({ name: p.name, category: p.category, address: p.addr, lat: p.lat, lng: p.lng, kid: p.id.slice(1) }));
     acts.appendChild(rec);
     if (p.url) { const k = el('a','btn ghost','카카오맵에서 자세히'); k.href = p.url; k.target = '_blank'; k.rel = 'noopener'; acts.appendChild(k); }
     box.appendChild(acts);
@@ -1549,7 +1566,7 @@ function renderExtList(){
 // 이름으로 검색해서 고르면 주소와 좌표가 채워지고, 공간 기록을 입력해 저장한다.
 // 저장은 엑셀 불러오기와 같은 방식(이 브라우저)으로 하고, 엑셀 불러오기와 같은 검사(rowsToPlaces)를 거친다.
 const addState = { step: 'search', query: '', results: [], picked: null, status: '', err: false, values: {}, texts: {}, editId: null };
-const freshAdd = () => ({ step: 'search', results: [], picked: null, status: '', err: false, values: {}, texts: {}, editId: null });
+const freshAdd = () => ({ step: 'search', results: [], picked: null, status: '', err: false, values: {}, texts: {}, editId: null, server: null, busy: false });
 // 같은 곳: 거의 같은 좌표(5m 안)이거나, 이름이 같고 100m 안
 const sameSpot = (a, b) => distM(a, b) < 5 || (a.name === b.name && distM(a, b) < 100);
 // prefill이 있으면(지도에서 고른 기록 안 된 장소) 검색을 건너뛰고 바로 기록 입력으로 간다
@@ -1564,7 +1581,8 @@ function editState(p){
   return { step: 'form', editId: p.id, status: '', err: false,
     picked: { name: p.name, type: p.type, address: p.addr, lat: p.lat, lng: p.lng, category: '' },
     values: Object.fromEntries(Object.keys(ENUMS).map(k => [k, p[k] || ''])),
-    texts: { materials: p.materials, furniture: p.furniture, note: p.note, date: p.date } };
+    texts: { materials: p.materials, furniture: p.furniture, note: p.note, date: p.date },
+    server: p.rid ? { rid: p.rid, pid: p.pid, pub: !!p.pub } : null }; // 계정에 저장된 기록이면 서버 번호를 함께 둔다
 }
 function openEdit(id){
   const p = state.places.find(x => x.id === id); if (!p) return;
@@ -1589,7 +1607,7 @@ async function searchPlaces(q){
     const r = await proxyPost('/search', { query: addState.query, ...(near && { x: String(near.lng), y: String(near.lat) }) });
     const j = await r.json();
     if (!r.ok) throw new Error(j && j.error);
-    addState.results = (j.places || []).map(x => ({ name: cleanText(x.name, 40), category: cleanText(x.category, 60), address: cleanText(x.address, 60), lng: toNum(x.x), lat: toNum(x.y), distance: toNum(x.distance) }))
+    addState.results = (j.places || []).map(x => ({ name: cleanText(x.name, 40), category: cleanText(x.category, 60), address: cleanText(x.address, 60), lng: toNum(x.x), lat: toNum(x.y), distance: toNum(x.distance), kid: (KAKAO_PLACE.exec(String(x.url || '')) || [])[1] || '' }))
       .filter(x => x.name && x.lat >= 33 && x.lat <= 39 && x.lng >= 124 && x.lng <= 132);
     addState.status = addState.results.length ? '' : '검색 결과가 없어요. 이름을 조금 다르게 입력해 보세요.';
   } catch (e) { Object.assign(addState, { status: '장소를 찾지 못했어요. 잠시 뒤 다시 시도해 주세요.', err: true }); }
@@ -1667,6 +1685,15 @@ function renderAdd(){
   dateI.value = /^\d{4}-\d{2}-\d{2}$/.test(tx.date || '') ? tx.date : `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}`;
   body.append(field('주요 자재', matI), field('가구', furI), field('한 줄 기록', noteI), field('방문일', dateI));
   if (addState.status) body.appendChild(el('p','add-status' + (addState.err ? ' err' : ''), addState.status));
+  // 로그인했으면 공개 여부를 고른다(기본은 나만 보기)
+  let pubI = null;
+  if (auth.user) {
+    const w = el('label','add-pub'); pubI = el('input'); pubI.type = 'checkbox'; pubI.id = 'add-pub';
+    pubI.checked = !!(addState.server && addState.server.pub);
+    w.append(pubI, el('span', null, '다른 사람에게도 공개하기'));
+    body.append(w, el('p','add-src add-left','공개하면 다른 사람도 이 장소의 기록으로 볼 수 있어요. 작성자는 닉네임만 보여요. 켜지 않으면 나만 볼 수 있어요.'));
+    if (editing) { nameI.readOnly = typeI.readOnly = true; nameI.title = typeI.title = '장소 이름과 유형은 여러 사람이 함께 쓰는 정보라 여기서 바꿀 수 없어요'; }
+  }
   const act = el('div','add-actions');
   const back = el('button','btn ghost', editing ? '취소' : '← 다시 찾기'); back.type = 'button';
   back.addEventListener('click', () => { if (editing) { $('addDlg').close(); return; } addState.step = 'search'; addState.status = ''; renderAdd(); });
@@ -1675,6 +1702,7 @@ function renderAdd(){
   save.addEventListener('click', () => {
     const v = addState.values;
     const newRow = [nameI.value, typeI.value, p.address, p.lat, p.lng, v.noise || '', v.spacing || '', v.light || '', v.outlet || '', v.stay || '', matI.value, furI.value, noteI.value, dateI.value];
+    if (auth.user) { saveToServer(newRow, p, editing, !!(pubI && pubI.checked)); return; } // 로그인: 계정(서버)에 저장
     // 고칠 때는 같은 자리의 줄을 바꾸고, 새로 기록할 때는 맨 뒤에 붙인 다음, 엑셀 불러오기와 같은 검사로 다시 만든다
     const rows = placesToRows(state.places);
     const idx = editing ? state.places.findIndex(x => x.id === addState.editId) : -1;
@@ -1697,6 +1725,7 @@ function renderAdd(){
 // 삭제: 상세 패널에서 한 번 더 확인한 뒤 지운다
 function deletePlace(id){
   const p = state.places.find(x => x.id === id); if (!p) return;
+  if (auth.user && p.rid) { deleteFromServer(p); return; }
   const rows = placesToRows(state.places.filter(x => x.id !== id));
   const { places } = rowsToPlaces(rows.length > 1 ? rows : [rows[0]]);
   const base = $('source').textContent.replace(/ \+ 직접 (추가|수정|삭제).*$/, '');
@@ -1704,6 +1733,120 @@ function deletePlace(id){
   setData(places, `${base} + 직접 삭제`, true);
   select(null);
   setStatus(`'${p.name}' 기록을 지웠어요.`, false);
+}
+
+/* ---------- 계정과 서버 저장 (Supabase, 1단계: 내 기록) ---------- */
+// 로그인하면 내 기록을 서버에서 불러오고, 추가·수정·삭제를 서버에 저장한다. 로그인하지 않으면 지금처럼 이 브라우저에 저장한다.
+// 누가 무엇을 읽고 쓸 수 있는지는 서버의 권한 규칙(supabase/01_schema.sql)이 정한다.
+const sb = window.supabase && SUPABASE_URL && SUPABASE_KEY
+  ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { flowType: 'pkce', persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } })
+  : null;
+const auth = { user: null, nickname: '', ready: false };
+const RECORD_COLS = 'id, is_public, noise, spacing, light, outlet, stay, materials, furniture, note, visited_on, places(id, kakao_id, name, type, address, lat, lng)';
+
+async function loadMine(){
+  const { data, error } = await sb.from('records').select(RECORD_COLS).eq('user_id', auth.user.id).order('created_at');
+  if (error) { setStatus('내 기록을 불러오지 못했어요. 잠시 뒤 새로고침해 주세요.', true); return; }
+  // 한 줄씩 엑셀 불러오기와 같은 검사를 거쳐 화면용 장소로 바꾸고, 서버 번호를 붙여 둔다
+  const places = [];
+  for (const r of data) {
+    const pl = r.places; if (!pl) continue;
+    const { places: [p] } = rowsToPlaces([SAMPLE_ROWS[0], [pl.name, pl.type, pl.address, pl.lat, pl.lng, r.noise, r.spacing, r.light, r.outlet, r.stay, r.materials, r.furniture, r.note, r.visited_on]]);
+    if (!p) continue;
+    places.push(Object.assign(p, { id: 'p' + places.length, rid: r.id, pid: pl.id, kid: pl.kakao_id || '', pub: !!r.is_public }));
+  }
+  setData(places, `${auth.nickname || '내'} 기록 · 계정에 저장`, false);
+  if (!places.length) setStatus('아직 내 기록이 없어요. + 장소 추가로 첫 기록을 남겨 보세요.', false);
+}
+async function saveToServer(row, picked, editing, isPublic){
+  const fail = msg => { Object.assign(addState, { status: msg, err: true, busy: false }); renderAdd(); };
+  const { places: [np] } = rowsToPlaces([SAMPLE_ROWS[0], row]); // 저장 전 검사
+  if (!np) return fail('저장하지 못했어요. 이름이 비어 있지 않은지 확인해 주세요.');
+  if (addState.busy) return;
+  Object.assign(addState, { busy: true, status: '저장하는 중이에요…', err: false }); renderAdd();
+  const vals = { noise: np.noise || null, spacing: np.spacing || null, light: np.light || null, outlet: np.outlet || null, stay: np.stay || null,
+    materials: np.materials || null, furniture: np.furniture || null, note: np.note || null, visited_on: /^\d{4}-\d{2}-\d{2}$/.test(np.date) ? np.date : null, is_public: isPublic };
+  try {
+    let placeId;
+    if (editing && addState.server) {
+      placeId = addState.server.pid;
+      const { error } = await sb.from('records').update(vals).eq('id', addState.server.rid);
+      if (error) throw error;
+    } else {
+      // 장소는 여러 사람이 함께 쓴다: 카카오 번호로 이미 있으면 그 장소를, 없으면 새로 만든다
+      const kid = /^\d+$/.test(picked.kid || '') ? picked.kid : null;
+      if (kid) { const { data } = await sb.from('places').select('id').eq('kakao_id', kid).maybeSingle(); placeId = data && data.id; }
+      if (!placeId) {
+        const { data, error } = await sb.from('places').insert({ kakao_id: kid, name: np.name, type: np.type || null, address: np.addr || null, lat: np.lat, lng: np.lng }).select('id').single();
+        if (error) throw error;
+        placeId = data.id;
+      }
+      const { error } = await sb.from('records').insert({ place_id: placeId, ...vals });
+      if (error && error.code === '23505') { // 이미 내 기록이 있는 장소면 그 기록을 고친다
+        const r2 = await sb.from('records').update(vals).eq('place_id', placeId).eq('user_id', auth.user.id);
+        if (r2.error) throw r2.error;
+      } else if (error) throw error;
+    }
+    await loadMine();
+    if (state.ext.results.length) { state.ext.results = state.ext.results.filter(r => !isRecorded(r)); syncExtMarkers(); }
+    addState.busy = false; $('addDlg').close();
+    const target = state.places.find(x => x.pid === placeId);
+    setStatus(`'${np.name}'을(를) ${editing ? '고쳤어요' : '기록했어요'}. 계정에 저장돼서 다른 기기에서도 보여요.`, false);
+    if (target) select(target.id, true);
+  } catch (e) {
+    fail('저장하지 못했어요. 인터넷 연결을 확인하고 다시 시도해 주세요.' + (e && e.message ? ` (${cleanText(e.message, 80)})` : ''));
+  }
+}
+async function deleteFromServer(p){
+  state.delAsk = null;
+  const { error } = await sb.from('records').delete().eq('id', p.rid);
+  if (error) { setStatus('지우지 못했어요. 잠시 뒤 다시 시도해 주세요.', true); renderDetail(); return; }
+  select(null); await loadMine();
+  setStatus(`'${p.name}' 기록을 지웠어요.`, false);
+}
+
+function renderAuth(){
+  const box = $('auth'); box.replaceChildren();
+  if (!sb) return;
+  const local = !auth.user;
+  $('btnLoad').hidden = $('btnReset').hidden = !local; // 엑셀 불러오기·예시 되돌리기는 이 브라우저 저장용이라 로그인 중에는 숨긴다
+  if (!auth.ready) return;
+  if (local) {
+    const b = el('button','kakao-btn','카카오로 로그인'); b.type = 'button';
+    b.addEventListener('click', login);
+    box.append(b, el('span','auth-note','로그인하면 기록이 계정에 저장돼 휴대폰·컴퓨터 어디서나 보여요.'));
+  } else {
+    const who = el('span','auth-who'); who.append(el('b', null, auth.nickname || '기록자'), '님의 기록');
+    const out = el('button','linkbtn','로그아웃'); out.type = 'button'; out.addEventListener('click', logout);
+    box.append(who, out);
+  }
+}
+function login(){
+  // 카카오에서 돌아오면 이 페이지로 온다(Supabase URL Configuration에 등록한 주소)
+  sb.auth.signInWithOAuth({ provider: 'kakao', options: { redirectTo: location.origin + location.pathname } })
+    .then(({ error }) => { if (error) setStatus('로그인을 시작하지 못했어요. 잠시 뒤 다시 시도해 주세요.', true); });
+}
+async function logout(){ await sb.auth.signOut(); }
+async function onAuth(session){
+  const user = (session && session.user) || null;
+  const changed = (user && user.id) !== (auth.user && auth.user.id);
+  auth.user = user; auth.ready = true;
+  if (changed) {
+    if (user) {
+      const { data } = await sb.from('profiles').select('nickname').eq('id', user.id).maybeSingle();
+      auth.nickname = cleanText(data && data.nickname, 30);
+      await loadMine();
+    } else { auth.nickname = ''; loadInitial(); }
+  }
+  renderAuth();
+}
+// 로그인하고 돌아왔는데 오류가 있으면(동의항목 설정 등) 알려 주고 주소를 정리한다
+function readAuthError(){
+  const q = new URLSearchParams(location.search), h = new URLSearchParams(location.hash.replace(/^#/, ''));
+  const err = q.get('error') || h.get('error'); if (!err) return;
+  const desc = cleanText(q.get('error_description') || h.get('error_description') || err, 160);
+  setStatus(`로그인하지 못했어요. ${desc}`, true);
+  history.replaceState(null, '', location.pathname);
 }
 
 /* ---------- 내 위치 ---------- */
@@ -1796,6 +1939,9 @@ if (/KAKAOTALK/i.test(navigator.userAgent)) {
 }
 
 loadInitial();
+readAuthError();
+renderAuth();
+if (sb) sb.auth.onAuthStateChange((event, session) => { setTimeout(() => onAuth(session), 0); }); // 콜백 안에서 바로 DB를 부르면 멈출 수 있어 한 박자 늦춘다
 try { const id = sessionStorage.getItem(SEL_KEY); if (id && state.places.some(p => p.id === id)) { state.sel = id; renderAll(); } } catch {}
 loadNaver();
 // 예전에 위치 권한을 허용했다면 묻지 않고 미리 위치를 찾아 둔다 (지도는 움직이지 않음)
