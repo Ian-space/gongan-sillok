@@ -710,7 +710,7 @@ function rebuild(opt = {}){
     const g = state.pub.find(g => (m.pid && g.pid === m.pid) || (!m.pid && sameSpot(g, m)));
     if (g) used.add(g);
     const others = g ? g.recs.filter(r => !myRids.has(r.rid)) : [];
-    merged.push({ ...m, mine: true, lidx: i, pid: m.pid || (g && g.pid), kid: m.kid || (g && g.kid) || '', pubCount: others.length, stats: statsOf(others) });
+    merged.push({ ...m, mine: true, sample: state.mineIsSample || isSamplePlace(m), lidx: i, pid: m.pid || (g && g.pid), kid: m.kid || (g && g.kid) || '', pubCount: others.length, stats: statsOf(others) });
   });
   for (const g of state.pub) {
     if (used.has(g)) continue;
@@ -769,7 +769,7 @@ function loadInitial(){
 function matches(p){
   for (const k of Object.keys(ENUMS)) { const f = state.filters[k]; if (f.size && !f.has(p[k])) return false; }
   const vf = state.filters.view; // 내 기록만, 공개 기록만 골라 보기
-  if (vf.size && !((vf.has('내 기록') && p.mine) || (vf.has('공개 기록') && (p.pubCount > 0 || p.pub)))) return false;
+  if (vf.size && !((vf.has('내 기록') && p.mine && !p.sample) || (vf.has('공개 기록') && (p.pubCount > 0 || p.pub)))) return false;
   if (state.q) { const hay = (p.name + ' ' + p.materials + ' ' + p.furniture + ' ' + p.type).toLowerCase(); if (!hay.includes(state.q)) return false; }
   return true;
 }
@@ -810,7 +810,8 @@ function renderList(vis){
     const nm = el('div','item-name'); const dot = el('i'); dot.style.setProperty('--c', category(p).color);
     nm.append(dot, el('span', null, p.name));
     // 누구의 기록인지: 내 기록(공개 여부) / 다른 사람 공개 기록 수
-    if (p.mine) nm.appendChild(el('span', 'ext-tag mine', p.rid ? (p.pub ? '내 기록 · 공개' : '내 기록') : '내 기록'));
+    if (p.sample) nm.appendChild(el('span', 'ext-tag', '예시'));
+    else if (p.mine) nm.appendChild(el('span', 'ext-tag mine', p.rid && p.pub ? '내 기록 · 공개' : '내 기록'));
     if (p.pubCount) nm.appendChild(el('span', 'ext-tag pubc', `공개 ${p.pubCount}`));
     b.appendChild(nm);
     const sub = [p.type, p.noise && `소음 ${p.noise}`, p.outlet && `콘센트 ${p.outlet}`, p.stay].filter(Boolean).join(', ');
@@ -871,6 +872,7 @@ function renderDetail(){
   } else {
   // 누구의 기록인지 먼저 밝힌다
   if (!p.mine) d.appendChild(el('p','src-note', `다른 사람 공개 기록 ${p.pubCount}개를 모았어요. 항목마다 가장 많이 고른 값이에요.`));
+  else if (p.sample) d.appendChild(el('p','src-note', '예시로 넣어 둔 가상의 장소예요. 실제 가게가 아니에요.'));
   else d.appendChild(el('p','src-note', (p.rid ? (p.pub ? '내 기록이에요 · 다른 사람에게도 공개 중' : '내 기록이에요 · 나만 보기') : '내 기록이에요 · 이 브라우저에 저장')
     + (p.pubCount ? ` · 다른 사람 공개 기록 ${p.pubCount}개도 있어요` : '')));
   const dl = el('dl','scale');
