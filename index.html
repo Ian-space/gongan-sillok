@@ -210,6 +210,18 @@ button.stat[aria-pressed="true"] span{color:#FFFFFF}
 .ext-none,.ext-phone{margin:0;font-size:13px}
 .ext-acts{display:flex;gap:8px;flex-wrap:wrap}
 a.btn{display:inline-flex;align-items:center;text-decoration:none}
+.ext-tag.rec{color:var(--blue);border-color:var(--blue)}
+.ar-name{display:flex;align-items:center;gap:8px}
+.add-dup{display:grid;gap:8px;justify-items:start;padding:12px 14px;border-radius:8px;border:1px solid #E3B5AF;background:var(--paper);font-size:13px}
+.add-dup p{margin:0}
+.btn:disabled{opacity:.4;cursor:not-allowed;filter:none}
+
+/* 기록 관리 (수정, 삭제) */
+.manage{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:14px;padding-top:12px;border-top:1px dashed var(--line)}
+.manage.ask{padding:12px;border:1px solid #E3B5AF;border-radius:8px}
+.manage-q{flex:1 1 100%;font-size:13px}
+.btn.danger{color:#C0392B;border-color:#E3B5AF}
+.btn.danger.solid{background:#C0392B;border-color:#C0392B;color:#FFFFFF}
 .pin-badge{position:absolute;left:28px;top:3px;white-space:nowrap;font-size:11px;font-weight:700;border-radius:999px;padding:2px 7px;box-shadow:0 1px 3px rgba(15,20,40,.22)}
 .pin-badge.lv0{background:var(--blue);color:#FFFFFF}
 .pin-badge.lv1{background:var(--blue-soft);color:var(--blue)}
@@ -764,6 +776,17 @@ function renderDetail(){
   if (p.furniture) { const b = el('div','d-block'); b.append(el('div','d-label','가구'), el('div',null,p.furniture)); d.appendChild(b); }
   if (p.note) { const b = el('div','d-block'); b.append(el('div','d-label','한 줄 기록'), el('p','d-note',p.note)); d.appendChild(b); }
   if (p.date) d.appendChild(el('div','d-date', `방문일 ${p.date}`));
+  // 기록 관리: 수정, 삭제(한 번 더 확인)
+  const manage = el('div','manage');
+  const mbtn = (label, cls, fn) => { const b = el('button', 'btn ' + cls, label); b.type = 'button'; b.addEventListener('click', fn); return b; };
+  if (state.delAsk === p.id) {
+    manage.classList.add('ask');
+    manage.append(el('span','manage-q', `'${p.name}' 기록을 지울까요? 지운 기록은 되돌릴 수 없어요.`),
+      mbtn('지우기', 'danger solid', () => deletePlace(p.id)), mbtn('취소', 'ghost', () => { state.delAsk = null; renderDetail(); }));
+  } else {
+    manage.append(mbtn('기록 수정', 'ghost', () => openEdit(p.id)), mbtn('삭제', 'ghost danger', () => { state.delAsk = p.id; renderDetail(); }));
+  }
+  d.appendChild(manage);
   }
 
   // 길찾기는 어떤 경우에도 이 창을 다른 페이지로 바꾸지 않는다. 앱은 앱으로, 웹은 새 탭으로 연다.
@@ -792,6 +815,7 @@ function renderDetail(){
 }
 const SEL_KEY = 'gongan-sillok:sel';
 function select(id, center){
+  if (state.sel !== id) state.delAsk = null; // 다른 장소로 넘어가면 삭제 확인을 접는다
   state.sel = id;
   if (state.transit && state.transit.placeId !== id) { state.transit = null; clearRoute(); } // 다른 장소면 경로를 지운다
   // 다른 앱에 다녀오는 사이 사파리가 탭을 새로고침해도 보던 장소를 다시 열 수 있게 기억한다
@@ -1033,7 +1057,7 @@ const PURPOSES = [
   { id: 'talk', label: '대화하기', w: { noise: [1, 2, 0], spacing: [2, 1, 0], stay: [1.5, 1.5, 0], light: [1, .5, 0] }, // 대화는 너무 조용한 곳보다 보통이 낫다
     why: { noise: '너무 조용하면 목소리가 튀고, 시끄러우면 말이 안 들려요. 보통이 가장 편해요.', spacing: '옆 테이블에 이야기가 덜 들려요.', stay: '천천히 이야기 나누려면 2시간 이상이면 충분해요.', light: '밝은 곳이 분위기가 편안한 편이에요.' } }
 ];
-state.purpose = null; state.pickSort = 'fit'; state.pickHelp = false;
+state.purpose = null; state.pickSort = 'fit'; state.pickHelp = false; state.delAsk = null;
 const importance = pts => { const m = Math.max(...pts); return m >= 3 ? '가장 중요' : m >= 2 ? '중요' : '참고'; };
 const bestValues = (k, pts) => ENUMS[k].values.filter((v, i) => pts[i] === Math.max(...pts)).join(', ');
 function fitScore(p, pu){
@@ -1524,13 +1548,28 @@ function renderExtList(){
 /* ---------- 장소 추가 (카카오 장소 검색) ---------- */
 // 이름으로 검색해서 고르면 주소와 좌표가 채워지고, 공간 기록을 입력해 저장한다.
 // 저장은 엑셀 불러오기와 같은 방식(이 브라우저)으로 하고, 엑셀 불러오기와 같은 검사(rowsToPlaces)를 거친다.
-const addState = { step: 'search', query: '', results: [], picked: null, status: '', err: false, values: {} };
+const addState = { step: 'search', query: '', results: [], picked: null, status: '', err: false, values: {}, texts: {}, editId: null };
+const freshAdd = () => ({ step: 'search', results: [], picked: null, status: '', err: false, values: {}, texts: {}, editId: null });
+// 같은 곳: 거의 같은 좌표(5m 안)이거나, 이름이 같고 100m 안
+const sameSpot = (a, b) => distM(a, b) < 5 || (a.name === b.name && distM(a, b) < 100);
 // prefill이 있으면(지도에서 고른 기록 안 된 장소) 검색을 건너뛰고 바로 기록 입력으로 간다
 function openAdd(prefill){
-  Object.assign(addState, { step: 'search', results: [], picked: null, status: '', err: false, values: {} });
+  Object.assign(addState, freshAdd());
   if (prefill && prefill.name) Object.assign(addState, { step: 'form', picked: { ...prefill, type: guessType(prefill.category) } });
   renderAdd(); $('addDlg').showModal();
   setTimeout(() => { const q = $('addQ'); if (q) q.focus(); }, 0);
+}
+// 이미 기록한 장소를 고쳐 쓴다. 저장하면 같은 자리의 기록을 바꾼다
+function editState(p){
+  return { step: 'form', editId: p.id, status: '', err: false,
+    picked: { name: p.name, type: p.type, address: p.addr, lat: p.lat, lng: p.lng, category: '' },
+    values: Object.fromEntries(Object.keys(ENUMS).map(k => [k, p[k] || ''])),
+    texts: { materials: p.materials, furniture: p.furniture, note: p.note, date: p.date } };
+}
+function openEdit(id){
+  const p = state.places.find(x => x.id === id); if (!p) return;
+  Object.assign(addState, freshAdd(), editState(p));
+  renderAdd(); if (!$('addDlg').open) $('addDlg').showModal();
 }
 function guessType(cat){
   const c = String(cat || ''), last = (c.split('>').pop() || '').trim();
@@ -1574,8 +1613,15 @@ function renderAdd(){
       for (const r of addState.results) {
         const li = el('li'), b = el('button','add-result'); b.type = 'button';
         const sub = [r.category.split('>').pop().trim(), r.address, r.distance ? fmtDist(r.distance) : ''].filter(Boolean).join(' · ');
-        b.append(el('span','ar-name', r.name), el('span','ar-sub', sub));
-        b.addEventListener('click', () => { Object.assign(addState, { step: 'form', picked: { ...r, type: guessType(r.category) }, status: '', err: false, values: {} }); renderAdd(); $('addBody').scrollTop = 0; });
+        const rec = state.places.find(x => sameSpot(x, r)); // 이미 기록한 곳이면 '기록됨'을 붙이고, 누르면 그 기록을 고친다
+        const nm = el('span','ar-name', r.name); if (rec) nm.appendChild(el('span','ext-tag rec','기록됨 · 수정하기'));
+        b.append(nm, el('span','ar-sub', sub));
+        b.addEventListener('click', () => {
+          const keep = { results: addState.results }; // '다시 찾기'로 돌아왔을 때 결과가 남아 있게
+          if (rec) Object.assign(addState, freshAdd(), keep, editState(rec));
+          else Object.assign(addState, freshAdd(), keep, { step: 'form', picked: { ...r, type: guessType(r.category) } });
+          renderAdd(); $('addBody').scrollTop = 0;
+        });
         li.appendChild(b); ul.appendChild(li);
       }
       body.appendChild(ul);
@@ -1585,11 +1631,21 @@ function renderAdd(){
   }
 
   // 기록 입력
-  const p = addState.picked;
+  const p = addState.picked, editing = !!addState.editId, tx = addState.texts || {};
+  if (editing) $('addTitle').textContent = '기록 수정하기';
   const picked = el('div','add-picked'); picked.append(el('b', null, p.name), document.createTextNode([p.type, p.address].filter(Boolean).join(' · ')));
   body.appendChild(picked);
-  const dup = state.places.find(x => x.name === p.name || distM(x, p) < 25);
-  if (dup) body.appendChild(el('p','add-warn', `이미 기록된 '${dup.name}'와 같은 곳일 수 있어요. 그래도 새로 저장할 수 있어요.`));
+  // 새로 기록하는데 이미 같은 곳이 있으면 저장 대신 기존 기록 수정으로 안내한다
+  const same = !editing && state.places.find(x => sameSpot(x, p));
+  if (same) {
+    const warn = el('div','add-dup');
+    warn.appendChild(el('p', null, `'${same.name}'은(는) 이미 기록한 곳이에요. 같은 곳을 두 번 저장하지 않도록, 기존 기록을 고쳐 주세요.`));
+    const go = el('button','btn add','기존 기록 수정하기'); go.type = 'button';
+    go.addEventListener('click', () => { Object.assign(addState, freshAdd(), { results: addState.results }, editState(same)); renderAdd(); $('addBody').scrollTop = 0; });
+    warn.appendChild(go); body.appendChild(warn);
+  }
+  const near = !editing && !same && state.places.find(x => x.id !== addState.editId && distM(x, p) < 25);
+  if (near) body.appendChild(el('p','add-warn', `가까이에 '${near.name}' 기록이 있어요. 다른 가게가 맞는지 확인해 주세요.`));
   const field = (label, input) => { const w = el('div','add-field'); const l = el('label', null, label); input.id = 'add-' + label.replace(/\s/g, ''); l.htmlFor = input.id; w.append(l, input); return w; };
   const text = (v, max) => { const i = el('input'); i.type = 'text'; i.maxLength = max; i.value = v || ''; return i; };
   const nameI = text(p.name, 40), typeI = text(p.type, 20);
@@ -1605,29 +1661,49 @@ function renderAdd(){
     }
     w.appendChild(chips); body.appendChild(w);
   }
-  const matI = text('', 80), furI = text('', 80);
-  const noteI = el('textarea'); noteI.maxLength = 200; noteI.placeholder = '예: 창가 자리는 오후 3시 이후 볕이 깊게 든다';
-  const s = seoulNow().stamp; const dateI = el('input'); dateI.type = 'date'; dateI.value = `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}`;
+  const matI = text(tx.materials, 80), furI = text(tx.furniture, 80);
+  const noteI = el('textarea'); noteI.maxLength = 200; noteI.placeholder = '예: 창가 자리는 오후 3시 이후 볕이 깊게 든다'; noteI.value = tx.note || '';
+  const s = seoulNow().stamp; const dateI = el('input'); dateI.type = 'date';
+  dateI.value = /^\d{4}-\d{2}-\d{2}$/.test(tx.date || '') ? tx.date : `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}`;
   body.append(field('주요 자재', matI), field('가구', furI), field('한 줄 기록', noteI), field('방문일', dateI));
   if (addState.status) body.appendChild(el('p','add-status' + (addState.err ? ' err' : ''), addState.status));
   const act = el('div','add-actions');
-  const back = el('button','btn ghost','← 다시 찾기'); back.type = 'button'; back.addEventListener('click', () => { addState.step = 'search'; addState.status = ''; renderAdd(); });
-  const save = el('button','btn add','저장하기'); save.type = 'button';
+  const back = el('button','btn ghost', editing ? '취소' : '← 다시 찾기'); back.type = 'button';
+  back.addEventListener('click', () => { if (editing) { $('addDlg').close(); return; } addState.step = 'search'; addState.status = ''; renderAdd(); });
+  const save = el('button','btn add', editing ? '수정 저장' : '저장하기'); save.type = 'button';
+  if (same) { save.disabled = true; save.title = '이미 기록한 곳이라 새로 저장할 수 없어요'; }
   save.addEventListener('click', () => {
     const v = addState.values;
     const newRow = [nameI.value, typeI.value, p.address, p.lat, p.lng, v.noise || '', v.spacing || '', v.light || '', v.outlet || '', v.stay || '', matI.value, furI.value, noteI.value, dateI.value];
-    // 기존 장소 + 새 장소를 엑셀 불러오기와 같은 검사로 다시 만든다
-    const { places } = rowsToPlaces([...placesToRows(state.places), newRow]);
-    if (places.length !== state.places.length + 1) { Object.assign(addState, { status: '저장하지 못했어요. 이름이 비어 있지 않은지 확인해 주세요.', err: true }); renderAdd(); return; }
-    const base = $('source').textContent.replace(/ \+ 직접 추가.*$/, '');
-    setData(places, `${base} + 직접 추가`, true);
-    // 방금 기록한 곳은 '기록 안 된 장소'에서 뺀다
+    // 고칠 때는 같은 자리의 줄을 바꾸고, 새로 기록할 때는 맨 뒤에 붙인 다음, 엑셀 불러오기와 같은 검사로 다시 만든다
+    const rows = placesToRows(state.places);
+    const idx = editing ? state.places.findIndex(x => x.id === addState.editId) : -1;
+    if (editing && idx < 0) { Object.assign(addState, { status: '고칠 기록을 찾지 못했어요. 창을 닫고 다시 시도해 주세요.', err: true }); renderAdd(); return; }
+    if (editing) rows[idx + 1] = newRow; else rows.push(newRow);
+    const { places } = rowsToPlaces(rows);
+    if (places.length !== state.places.length + (editing ? 0 : 1)) { Object.assign(addState, { status: '저장하지 못했어요. 이름이 비어 있지 않은지 확인해 주세요.', err: true }); renderAdd(); return; }
+    const base = $('source').textContent.replace(/ \+ 직접 (추가|수정).*$/, '');
+    setData(places, `${base} + 직접 ${editing ? '수정' : '추가'}`, true);
+    // 기록한 곳은 '기록 안 된 장소'에서 뺀다
     if (state.ext.results.length) { state.ext.results = state.ext.results.filter(r => !isRecorded(r)); syncExtMarkers(); }
     $('addDlg').close();
-    setStatus(`'${places[places.length - 1].name}'을(를) 추가했어요. 이 브라우저에 저장돼요.`, false);
-    select(places[places.length - 1].id, true);
+    const target = places[editing ? idx : places.length - 1];
+    setStatus(`'${target.name}'을(를) ${editing ? '고쳤어요' : '추가했어요'}. 이 브라우저에 저장돼요.`, false);
+    select(target.id, true);
   });
   act.append(back, save); body.appendChild(act);
+}
+
+// 삭제: 상세 패널에서 한 번 더 확인한 뒤 지운다
+function deletePlace(id){
+  const p = state.places.find(x => x.id === id); if (!p) return;
+  const rows = placesToRows(state.places.filter(x => x.id !== id));
+  const { places } = rowsToPlaces(rows.length > 1 ? rows : [rows[0]]);
+  const base = $('source').textContent.replace(/ \+ 직접 (추가|수정|삭제).*$/, '');
+  state.delAsk = null;
+  setData(places, `${base} + 직접 삭제`, true);
+  select(null);
+  setStatus(`'${p.name}' 기록을 지웠어요.`, false);
 }
 
 /* ---------- 내 위치 ---------- */
