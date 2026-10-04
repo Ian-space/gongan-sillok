@@ -67,6 +67,17 @@ button,input{font:inherit;color:inherit}
 .acct-item:hover{background:var(--paper)}
 .acct-item[hidden]{display:none}
 .acct-sep{height:1px;background:var(--line);margin:6px 0}
+.acct-item.leave{color:var(--muted);font-size:13px}
+.acct-legal{display:flex;gap:14px;margin-top:6px;padding:8px 8px 0;border-top:1px solid var(--line);font-size:12px}
+.acct-legal a{color:var(--muted);text-decoration:none}
+.acct-legal a:hover{text-decoration:underline}
+.legal-note{margin:0;font-size:12px;color:var(--muted);line-height:1.5}
+.legal-note a{color:inherit}
+.leave-lead{margin:0;font-size:15px;font-weight:600}
+.leave-list{margin:0;padding-left:20px;display:grid;gap:4px;font-size:14px}
+.leave-check{display:flex;align-items:center;gap:8px;font-size:14px;font-weight:600;cursor:pointer}
+.leave-check input{width:18px;height:18px;accent-color:#C0392B}
+.btn:disabled{opacity:.45;cursor:not-allowed}
 .acct-sep:first-child,.acct-sep:last-child{display:none}
 .auth{display:contents}
 /* 홈 화면에 추가 안내 */
@@ -494,6 +505,8 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
         <button class="acct-item" id="btnInstall" type="button" hidden>홈 화면에 추가</button>
         <button class="acct-item" id="btnLoad" type="button">엑셀 파일 불러오기</button>
         <button class="acct-item" id="btnReset" type="button">예시 데이터로 되돌리기</button>
+        <button class="acct-item leave" id="btnLeave" type="button" hidden>회원 탈퇴</button>
+        <div class="acct-legal"><a href="terms.html">이용약관</a><a href="privacy.html"><b>개인정보처리방침</b></a></div>
       </div>
       <input type="file" id="file" accept=".xlsx,.csv" hidden>
       <div class="actions">
@@ -566,6 +579,7 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
 
 <dialog class="add-dlg" id="addDlg" aria-labelledby="addTitle"><div class="add-body" id="addBody"></div></dialog>
 <dialog class="add-dlg" id="adminDlg" aria-labelledby="adminTitle"><div class="add-body" id="adminBody"></div></dialog>
+<dialog class="add-dlg" id="leaveDlg" aria-labelledby="leaveTitle"><div class="add-body" id="leaveBody"></div></dialog>
 <dialog class="add-dlg" id="installDlg" aria-labelledby="installTitle"><div class="add-body" id="installBody"></div></dialog>
 <dialog class="add-dlg" id="choiceDlg" aria-labelledby="choiceTitle">
   <div class="add-body">
@@ -574,6 +588,7 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
       <button class="choice-btn kakao" id="choiceLogin" type="button"><b>카카오로 로그인하고 저장</b><span>휴대폰·컴퓨터 어디서나 보이고, 원하면 공개해서 함께 볼 수 있어요.</span></button>
       <button class="choice-btn" id="choiceLocal" type="button"><b>로그인 없이 이 브라우저에만 저장</b><span>지금 이 기기, 이 브라우저에서만 보여요. 나중에 로그인해도 옮겨지지 않아요.</span></button>
     </div>
+    <p class="legal-note">로그인하면 <a href="terms.html" target="_blank" rel="noopener">이용약관</a>과 <a href="privacy.html" target="_blank" rel="noopener">개인정보처리방침</a>에 동의하는 것으로 봐요.</p>
   </div>
 </dialog>
 
@@ -2310,13 +2325,15 @@ function renderAuth(){
   if (local) {
     const b = el('button','kakao-btn','카카오로 로그인'); b.type = 'button';
     b.addEventListener('click', login);
-    box.append(el('p','auth-note','로그인하면 기록이 계정에 저장돼 휴대폰·컴퓨터 어디서나 보여요. 둘러보기만 할 때는 로그인하지 않아도 돼요.'), b);
+    box.append(el('p','auth-note','로그인하면 기록이 계정에 저장돼 휴대폰·컴퓨터 어디서나 보여요. 둘러보기만 할 때는 로그인하지 않아도 돼요.'), b,
+      el('p','legal-note','로그인하면 이용약관과 개인정보처리방침에 동의하는 것으로 봐요.'));
   } else {
     const who = el('p','auth-who'); who.append(el('b', null, auth.nickname || '기록자'), '님');
     box.appendChild(who);
     if (auth.role === 'admin') box.appendChild(item('신고 관리', openAdmin));
     box.appendChild(item('로그아웃', logout));
   }
+  $('btnLeave').hidden = local;
 }
 // 제목 오른쪽 동그라미: 로그인 전에는 사람 모양, 로그인 후에는 닉네임 첫 글자
 function renderAcctBtn(){
@@ -2371,6 +2388,43 @@ async function addToHome(){
     body.appendChild(steps);
   }
   $('installDlg').showModal();
+}
+/* 회원 탈퇴: 무엇이 지워지는지 보여 주고, 확인란을 체크해야 탈퇴 버튼이 눌린다 */
+function openLeave(){
+  if (!auth.user) return;
+  const body = $('leaveBody'); body.replaceChildren();
+  const head = el('div','add-head'); const h = el('h2', null, '회원 탈퇴'); h.id = 'leaveTitle';
+  const x = el('button','d-close','×'); x.type = 'button'; x.setAttribute('aria-label','닫기'); x.addEventListener('click', () => $('leaveDlg').close());
+  head.append(h, x); body.appendChild(head);
+  const mine = state.mineIsSample ? [] : state.mine, pubN = mine.filter(p => p.pub).length;
+  body.appendChild(el('p','leave-lead','탈퇴하면 아래 정보가 바로 지워지고, 되돌릴 수 없어요.'));
+  const ul = el('ul','leave-list');
+  ul.append(el('li', null, `내 기록 ${mine.length}곳` + (pubN ? ` (공개 기록 ${pubN}곳 포함)` : '')),
+    el('li', null, '내가 한 신고'), el('li', null, '카카오 로그인으로 받은 정보 (닉네임 등)'));
+  body.appendChild(ul);
+  body.appendChild(el('p','legal-note','카카오 쪽 연결은 카카오톡 → 설정 → 카카오계정 → 연결된 서비스 관리에서 따로 끊을 수 있어요.'));
+  const lab = el('label','leave-check'); const cb = document.createElement('input'); cb.type = 'checkbox';
+  lab.append(cb, '모두 지워지는 것을 확인했어요'); body.appendChild(lab);
+  const st = el('p','add-status'); st.setAttribute('role','status');
+  const acts = el('div','rep-acts');
+  const go = el('button','btn danger solid','탈퇴하기'); go.type = 'button'; go.disabled = true;
+  const no = el('button','btn ghost','취소'); no.type = 'button'; no.addEventListener('click', () => $('leaveDlg').close());
+  cb.addEventListener('change', () => { go.disabled = !cb.checked; });
+  go.addEventListener('click', async () => {
+    go.disabled = cb.disabled = true; st.classList.remove('err'); st.textContent = '지우는 중이에요…';
+    const { error } = await sb.rpc('delete_my_account');
+    if (error) {
+      st.classList.add('err');
+      st.textContent = /delete_my_account|PGRST202|schema cache/.test(error.message + error.code) ? '탈퇴 기능이 아직 준비되지 않았어요. 잠시 뒤 다시 시도해 주세요.' : '탈퇴하지 못했어요. 잠시 뒤 다시 시도해 주세요.';
+      cb.disabled = false; go.disabled = !cb.checked; return;
+    }
+    try { await sb.auth.signOut({ scope: 'local' }); } catch {}
+    loadPublic(); // 지운 공개 기록이 화면에 남지 않도록
+    $('leaveDlg').close();
+    setStatus('탈퇴했어요. 그동안 기록해 주셔서 고마워요.', false);
+  });
+  acts.append(go, no); body.append(acts, st);
+  $('leaveDlg').showModal();
 }
 function openAcct(){ $('acctMenu').hidden = false; $('acctBtn').setAttribute('aria-expanded','true'); placeAcct(); }
 // 휴대폰: 패널이 낮으면 메뉴 아래쪽이 화면 밖으로 잘리므로, 아래 자리가 모자라면 위(지도 쪽)로 연다
@@ -2502,6 +2556,7 @@ $('btnLoad').addEventListener('click', () => { closeAcct(); $('file').click(); }
 $('file').addEventListener('change', e => { const f = e.target.files && e.target.files[0]; if (f) handleFile(f); e.target.value = ''; });
 $('btnAdd').addEventListener('click', () => startAdd());
 $('btnInstall').addEventListener('click', () => { closeAcct(); addToHome(); });
+$('btnLeave').addEventListener('click', () => { closeAcct(); openLeave(); });
 // 계정 메뉴: 동그라미를 누르면 열고, 바깥을 누르거나 Esc면 닫는다
 $('acctBtn').addEventListener('click', () => { if ($('acctMenu').hidden) openAcct(); else closeAcct(); });
 document.addEventListener('pointerdown', e => { if (!$('acctMenu').hidden && !(e.target.closest && e.target.closest('#acctMenu, #acctBtn'))) closeAcct(); });
