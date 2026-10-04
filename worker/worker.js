@@ -9,10 +9,12 @@
 //   POST /transit  { startX, startY, endX, endY, searchDttm? }  → TMAP 대중교통
 //   POST /walk     { startX, startY, endX, endY }               → TMAP 보행자 경로
 //   POST /search   { query, x?, y? }                            → 카카오 키워드 장소 검색 (x, y가 있으면 그 근처부터)
+//   POST /nearby   { rect: "왼쪽X,아래Y,오른쪽X,위Y", code? }      → 카카오 업종 검색 (지도 한 칸 안의 카페)
 
 const ALLOWED_ORIGINS = ['https://ian-space.github.io', 'http://localhost:8765'];
 // 경로 결과 저장 시간(초). KV 바인딩(ROUTE_CACHE)이 없으면 저장하지 않고 그대로 동작한다
 const CACHE_SECONDS = { transit: 600, walk: 86400 };
+const NEARBY_CODES = ['CE7']; // 카카오 업종 코드: CE7 카페 (북카페·찻집·베이커리 카페 대부분 포함)
 
 const TMAP = {
   transit: 'https://apis.openapi.sk.com/transit/routes',
@@ -37,7 +39,7 @@ export default {
     if (request.method !== 'POST') return reply(405, { error: 'POST only' });
 
     const kind = new URL(request.url).pathname.replace(/^\/+/, '');
-    if (!TMAP[kind] && kind !== 'search') return reply(404, { error: 'unknown path' });
+    if (!TMAP[kind] && kind !== 'search' && kind !== 'nearby') return reply(404, { error: 'unknown path' });
 
     let input;
     try { input = await request.json(); } catch { return reply(400, { error: 'invalid json' }); }
@@ -60,6 +62,31 @@ export default {
         name: d.place_name, category: d.category_name, address: d.road_address_name || d.address_name,
         phone: d.phone, x: d.x, y: d.y, url: d.place_url, distance: d.distance,
       })) });
+    }
+
+    /* 카카오 업종 검색: 지도 한 칸(사각형) 안의 카페. 최대 45곳(15곳씩 3쪽). 가게 정보라 하루 동안 저장해 다시 쓴다 */
+    if (kind === 'nearby') {
+      if (!env.KAKAO_REST_KEY) return reply(500, { error: 'KAKAO_REST_KEY is not set' });
+      const r = String(input.rect || '').split(',').map(num);
+      if (r.length !== 4 || !inKorea(r[0], r[1]) || !inKorea(r[2], r[3]) || r[2] <= r[0] || r[3] <= r[1] || r[2] - r[0] > 0.03 || r[3] - r[1] > 0.03)
+        return reply(400, { error: 'bad rect' });
+      const code = NEARBY_CODES.includes(input.code) ? input.code : 'CE7';
+      const rect = r.map(v => v.toFixed(4)).join(',');
+      const cacheKey = `nearby:${code}:${rect}`;
+      const kv = env.ROUTE_CACHE;
+      if (kv) { const hit = await kv.get(cacheKey).catch(() => null); if (hit) return new Response(hit, { status: 200, headers: { ...cors, 'Content-Type': 'application/json; charset=utf-8', 'X-Cache': 'HIT' } }); }
+      const places = [];
+      for (let page = 1; page <= 3; page++) {
+        const params = new URLSearchParams({ category_group_code: code, rect, page: String(page), size: '15' });
+        const up = await fetch('https://dapi.kakao.com/v2/local/search/category.json?' + params, { headers: { Authorization: 'KakaoAK ' + env.KAKAO_REST_KEY } });
+        const j = await up.json().catch(() => null);
+        if (!up.ok || !j) return reply(up.status === 200 ? 502 : up.status, { error: (j && (j.message || j.msg)) || 'kakao error' });
+        for (const d of j.documents || []) places.push({ name: d.place_name, category: d.category_name, address: d.road_address_name || d.address_name, phone: d.phone, x: d.x, y: d.y, url: d.place_url });
+        if (!j.meta || j.meta.is_end) break;
+      }
+      const text = JSON.stringify({ places });
+      if (kv) ctx.waitUntil(kv.put(cacheKey, text, { expirationTtl: 86400 }).catch(() => {}));
+      return new Response(text, { status: 200, headers: { ...cors, 'Content-Type': 'application/json; charset=utf-8', 'X-Cache': kv ? 'MISS' : 'OFF' } });
     }
 
     /* TMAP 경로: 국내 좌표만, 정해진 칸만 넘긴다 */
