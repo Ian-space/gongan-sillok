@@ -42,9 +42,61 @@ button,input{font:inherit;color:inherit}
 .btn.ghost{background:transparent;color:var(--ink);border-color:var(--line)}
 .btn.add{background:var(--blue);border-color:var(--blue);color:#FFFFFF;font-weight:700}
 
-/* 계정 */
-.auth{display:flex;align-items:center;flex-wrap:wrap;gap:6px 10px;margin-top:14px}
-.auth:empty{display:none}
+/* 계정: 제목 오른쪽의 작은 동그라미 버튼과 그 아래 메뉴 */
+.side-head{position:relative}
+.brand-row{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.acct{flex:none;display:grid;place-items:center;width:36px;height:36px;border-radius:50%;border:1px solid var(--line);background:var(--panel);color:var(--muted);cursor:pointer;padding:0}
+.acct:hover{border-color:var(--ink);color:var(--ink)}
+.acct svg{width:20px;height:20px}
+.acct.in{border:0;background:var(--blue);color:#FFFFFF;font-size:15px;font-weight:700}
+.acct[aria-expanded="true"]{box-shadow:0 0 0 3px var(--blue-soft)}
+.acct-menu{position:absolute;right:16px;top:62px;z-index:30;width:min(280px,calc(100% - 32px));display:grid;gap:4px;padding:12px;background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:0 12px 32px rgba(15,20,40,.22)}
+.acct-menu[hidden]{display:none}
+.acct-menu .kakao-btn{width:100%;padding:10px 14px}
+.acct-menu .auth-note{margin:0 0 8px;line-height:1.45}
+.acct-menu .auth-who{margin:0 0 6px;padding:0 4px}
+.acct-item{display:block;width:100%;text-align:left;border:0;background:transparent;padding:9px 8px;border-radius:6px;font-size:14px;cursor:pointer;color:var(--ink)}
+.acct-item:hover{background:var(--paper)}
+.acct-item[hidden]{display:none}
+.acct-sep{height:1px;background:var(--line);margin:6px 0}
+.acct-sep:first-child,.acct-sep:last-child{display:none}
+.auth{display:contents}
+/* 로그인 안 한 채 장소를 추가할 때: 어디에 저장할지 고른다 */
+.choice{display:grid;gap:10px}
+.choice-btn{display:grid;gap:2px;text-align:left;width:100%;padding:12px 14px;border-radius:10px;border:1px solid var(--line);background:var(--panel);color:var(--ink);cursor:pointer}
+.choice-btn:hover{border-color:var(--ink)}
+.choice-btn b{font-size:15px}
+.choice-btn span{font-size:13px;color:var(--muted)}
+.choice-btn.kakao{background:#FEE500;border-color:#FEE500;color:#191919}
+.choice-btn.kakao span{color:#3C3A2E}
+
+/* 로딩 화면: 처음 열 때 잠깐. 지도가 준비되면 걷힌다 */
+.splash{position:fixed;inset:0;z-index:100;display:grid;place-items:center;background:var(--paper);transition:opacity .35s ease-out}
+.splash.out{opacity:0;pointer-events:none}
+.splash-in{display:grid;justify-items:center;gap:14px;padding:24px;text-align:center}
+.splash-pin{position:relative;width:44px;height:52px}
+.splash-pin i{position:absolute;left:4px;top:0;width:36px;height:36px;border-radius:50% 50% 50% 0;background:var(--blue);border:3px solid #FFFFFF;transform:rotate(-45deg);box-shadow:-1px 3px 10px rgba(15,20,40,.3)}
+.splash-pin i::after{content:"";position:absolute;inset:9px;border-radius:50%;background:#FFFFFF}
+.splash-pin b{position:absolute;left:12px;bottom:0;width:20px;height:5px;border-radius:50%;background:rgba(15,20,40,.18)}
+.splash-name{margin:0;font-size:36px;font-weight:800;letter-spacing:-.03em;line-height:1.1}
+.splash-tag{margin:0;color:var(--muted);font-size:15px}
+.splash-attrs{display:flex;flex-wrap:wrap;justify-content:center;gap:6px;margin:4px 0 0;padding:0;list-style:none;max-width:440px}
+.splash-attrs li{display:flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;background:var(--panel);border:1px solid var(--line);font-size:13px;font-weight:600}
+.splash-attrs li::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--d)}
+@media (prefers-reduced-motion:no-preference){
+  .splash-pin i{animation:spdrop .5s cubic-bezier(.3,1.4,.6,1) both}
+  .splash-pin b{animation:spshadow .5s ease-out both}
+  .splash-name,.splash-tag{animation:spfade .4s ease-out .25s both}
+  .splash-attrs li{animation:spfade .3s ease-out both}
+  .splash-attrs li:nth-child(1){animation-delay:.45s}
+  .splash-attrs li:nth-child(2){animation-delay:.55s}
+  .splash-attrs li:nth-child(3){animation-delay:.65s}
+  .splash-attrs li:nth-child(4){animation-delay:.75s}
+  .splash-attrs li:nth-child(5){animation-delay:.85s}
+  @keyframes spdrop{from{transform:translateY(-28px) rotate(-45deg);opacity:0}to{transform:rotate(-45deg);opacity:1}}
+  @keyframes spshadow{from{transform:scale(.3);opacity:0}to{transform:none;opacity:1}}
+  @keyframes spfade{from{transform:translateY(6px);opacity:0}to{transform:none;opacity:1}}
+}
 .kakao-btn{border:0;border-radius:6px;padding:8px 14px;background:#FEE500;color:#191919;font-size:14px;font-weight:700;cursor:pointer} /* 카카오 로그인 버튼 기본 색 */
 .kakao-btn:hover{filter:brightness(.97)}
 .auth-note{font-size:12px;color:var(--muted)}
@@ -381,6 +433,8 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
   .legend-help{left:14px;right:14px;width:auto;max-height:42dvh}
   .quick-title.with-help{display:none} /* 휴대폰은 메뉴 제목을 숨긴다(? 는 색 안내 쪽에 있다) */
   .brand{font-size:24px}
+  .acct{width:34px;height:34px}
+  .acct-menu{top:46px}
   .tagline{font-size:13px;margin-top:2px}
   .actions{margin-top:10px}
   .btn{padding:6px 12px;font-size:13px}
@@ -392,6 +446,20 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
 </style>
 </head>
 <body>
+<div class="splash" id="splash" aria-hidden="true">
+  <div class="splash-in">
+    <div class="splash-pin"><i></i><b></b></div>
+    <p class="splash-name">공간실록</p>
+    <p class="splash-tag">평점 대신 공간의 사실을 기록합니다</p>
+    <ul class="splash-attrs">
+      <li style="--d:#7B3FF2">소음</li><li style="--d:#00A6A6">좌석 간격</li><li style="--d:#FFB000">채광</li><li style="--d:#FF3D6E">콘센트</li><li style="--d:#1F5EFF">머무르기</li>
+    </ul>
+  </div>
+</div>
+<script>
+  // 로딩 화면은 탭을 처음 열 때만. 같은 탭에서 다시 오면(새로고침, 로그인 후 돌아오기) 바로 지운다
+  try { if (sessionStorage.getItem('gongan-sillok:splash')) document.getElementById('splash').remove(); else sessionStorage.setItem('gongan-sillok:splash', '1'); } catch {}
+</script>
 <div class="inapp" id="inapp" hidden>
   <span id="inappText">카카오톡 안에서 보고 있어요. 위치와 길찾기는 사파리에서 더 잘 동작해요.</span>
   <a class="inapp-btn" id="inappBtn" href="#">사파리로 열기</a>
@@ -400,14 +468,20 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
   <aside class="side" id="side">
     <div class="sheet-handle grab" id="sheetHandle" role="button" tabindex="0" aria-label="목록 패널 높이 바꾸기"><span></span></div>
     <div class="side-head">
-      <h1 class="brand">공간실록</h1>
+      <div class="brand-row">
+        <h1 class="brand">공간실록</h1>
+        <button class="acct" id="acctBtn" type="button" aria-expanded="false" aria-controls="acctMenu" aria-label="계정 메뉴"></button>
+      </div>
       <p class="tagline">평점 대신 공간의 사실을 기록합니다. 성수동 시제품.</p>
-      <div class="auth" id="auth"></div>
+      <div class="acct-menu" id="acctMenu" hidden>
+        <div class="auth" id="auth"></div>
+        <div class="acct-sep" id="acctSep"></div>
+        <button class="acct-item" id="btnLoad" type="button">엑셀 파일 불러오기</button>
+        <button class="acct-item" id="btnReset" type="button">예시 데이터로 되돌리기</button>
+      </div>
+      <input type="file" id="file" accept=".xlsx,.csv" hidden>
       <div class="actions">
         <button class="btn add" id="btnAdd" type="button">+ 장소 추가</button>
-        <button class="btn ghost" id="btnLoad" type="button">엑셀 파일 불러오기</button>
-        <button class="btn ghost" id="btnReset" type="button">예시 데이터로 되돌리기</button>
-        <input type="file" id="file" accept=".xlsx,.csv" hidden>
       </div>
       <p class="status" id="status" role="status" aria-live="polite"></p>
       <div class="source" id="source"></div>
@@ -476,6 +550,15 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
 
 <dialog class="add-dlg" id="addDlg" aria-labelledby="addTitle"><div class="add-body" id="addBody"></div></dialog>
 <dialog class="add-dlg" id="adminDlg" aria-labelledby="adminTitle"><div class="add-body" id="adminBody"></div></dialog>
+<dialog class="add-dlg" id="choiceDlg" aria-labelledby="choiceTitle">
+  <div class="add-body">
+    <div class="add-head"><h2 id="choiceTitle">어디에 저장할까요?</h2><button class="d-close" id="choiceX" type="button" aria-label="닫기">×</button></div>
+    <div class="choice">
+      <button class="choice-btn kakao" id="choiceLogin" type="button"><b>카카오로 로그인하고 저장</b><span>휴대폰·컴퓨터 어디서나 보이고, 원하면 공개해서 함께 볼 수 있어요.</span></button>
+      <button class="choice-btn" id="choiceLocal" type="button"><b>로그인 없이 이 브라우저에만 저장</b><span>지금 이 기기, 이 브라우저에서만 보여요. 나중에 로그인해도 옮겨지지 않아요.</span></button>
+    </div>
+  </div>
+</dialog>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
@@ -984,7 +1067,7 @@ function renderDetail(){
     if (p.phone) { const ph = el('p','ext-phone'); ph.append('전화 ', el('span', null, p.phone)); box.appendChild(ph); }
     const acts = el('div','ext-acts');
     const rec = el('button','btn add','이 장소 기록하기'); rec.type = 'button';
-    rec.addEventListener('click', () => openAdd({ name: p.name, category: p.category, address: p.addr, lat: p.lat, lng: p.lng, kid: p.id.slice(1) }));
+    rec.addEventListener('click', () => startAdd({ name: p.name, category: p.category, address: p.addr, lat: p.lat, lng: p.lng, kid: p.id.slice(1) }));
     acts.appendChild(rec);
     if (p.url) { const k = el('a','btn ghost','카카오맵에서 자세히'); k.href = p.url; k.target = '_blank'; k.rel = 'noopener'; acts.appendChild(k); }
     box.appendChild(acts);
@@ -1038,7 +1121,8 @@ function renderDetail(){
     fix.appendChild(el('span', null, '실제와 다르다면 내 기록을 더해 바로잡아 주세요.'));
     const fb = el('button','linkbtn', p.mine ? '내 기록 고치기' : '나도 기록하기'); fb.type = 'button';
     fb.addEventListener('click', () => {
-      if (!auth.user && sb) return login();
+      if (!auth.user && sb && p.mine) return login();
+      if (!auth.user && sb) { choicePrefill = { name: p.name, category: p.type, address: p.addr, lat: p.lat, lng: p.lng, kid: p.kid, pid: p.pid }; return loginThenAdd(); }
       if (p.mine) return openEdit(p.id);
       openAdd({ name: p.name, category: p.type, address: p.addr, lat: p.lat, lng: p.lng, kid: p.kid, pid: p.pid });
     });
@@ -1051,7 +1135,7 @@ function renderDetail(){
   if (p.sample && !p.mine) { /* 로그인 상태의 예시는 읽기 전용 */ }
   else if (!p.mine) {
     if (auth.user) manage.append(mbtn('나도 기록하기', 'add', () => openAdd({ name: p.name, category: p.type, address: p.addr, lat: p.lat, lng: p.lng, kid: p.kid, pid: p.pid })));
-    else if (sb) manage.append(mbtn('카카오로 로그인하고 기록하기', 'kakao-btn', login));
+    else if (sb) manage.append(mbtn('카카오로 로그인하고 기록하기', 'kakao-btn', () => { choicePrefill = { name: p.name, category: p.type, address: p.addr, lat: p.lat, lng: p.lng, kid: p.kid, pid: p.pid }; loginThenAdd(); }));
     else manage.append(mbtn('나도 기록하기', 'add', () => openAdd({ name: p.name, category: p.type, address: p.addr, lat: p.lat, lng: p.lng })));
   } else if (state.delAsk === p.id) {
     manage.classList.add('ask');
@@ -1112,7 +1196,13 @@ function centerAboveDetail(id){
 let map = null;
 const markers = new Map();
 
-function mapMessage(text){ $('mapmsgText').textContent = text; $('mapmsg').hidden = false; }
+function mapMessage(text){ $('mapmsgText').textContent = text; $('mapmsg').hidden = false; hideSplash(); }
+// 로딩 화면은 지도가 준비되면 걷는다. 애니메이션이 끝나기 전에 사라지지 않도록 최소 시간을 두고, 늦어도 3.5초면 걷는다
+function hideSplash(){
+  const s = $('splash'); if (!s || s.classList.contains('out')) return;
+  const min = matchMedia('(prefers-reduced-motion: reduce)').matches ? 300 : 1300;
+  setTimeout(() => { s.classList.add('out'); setTimeout(() => s.remove(), 400); }, Math.max(0, min - performance.now()));
+}
 
 function loadNaver(){
   if (!NAVER_CLIENT_ID) { mapMessage('네이버 지도 Client ID가 비어 있어요. index.html 파일 위쪽의 NAVER_CLIENT_ID 따옴표 안에 발급받은 Client ID를 넣어 주세요.'); return; }
@@ -1132,6 +1222,7 @@ function initMap(){
   naver.maps.Event.addListener(map, 'zoom_changed', () => renderMap(state.places.filter(matches)));
   syncMarkers(); fitAll(); renderAll();
   if (state.sel && isPhone()) centerAboveDetail(state.sel); // 새로고침 뒤 다시 열린 장소
+  naver.maps.Event.once(map, 'tilesloaded', hideSplash);
   // 지도 영역 크기가 바뀌면 지도에 알려 준다. 크기가 0이던 상태(숨겨진 탭 등)에서 처음 보이면 범위도 다시 맞춘다.
   const box = $('map'); let wasEmpty = !box.clientWidth || !box.clientHeight;
   new ResizeObserver(() => {
@@ -2191,20 +2282,59 @@ function renderAdmin(rows, note){
 
 function renderAuth(){
   const box = $('auth'); box.replaceChildren();
-  if (!sb) return;
+  renderAcctBtn();
+  if (!sb) { $('acctSep').hidden = true; return; }
   const local = !auth.user;
   $('btnLoad').hidden = $('btnReset').hidden = !local; // 엑셀 불러오기·예시 되돌리기는 이 브라우저 저장용이라 로그인 중에는 숨긴다
+  $('acctSep').hidden = !local || !auth.ready;
   if (!auth.ready) return;
+  const item = (label, fn) => { const b = el('button','acct-item', label); b.type = 'button'; b.addEventListener('click', () => { closeAcct(); fn(); }); return b; };
   if (local) {
     const b = el('button','kakao-btn','카카오로 로그인'); b.type = 'button';
     b.addEventListener('click', login);
-    box.append(b, el('span','auth-note','로그인하면 기록이 계정에 저장돼 휴대폰·컴퓨터 어디서나 보여요.'));
+    box.append(el('p','auth-note','로그인하면 기록이 계정에 저장돼 휴대폰·컴퓨터 어디서나 보여요. 둘러보기만 할 때는 로그인하지 않아도 돼요.'), b);
   } else {
-    const who = el('span','auth-who'); who.append(el('b', null, auth.nickname || '기록자'), '님의 기록');
-    const out = el('button','linkbtn','로그아웃'); out.type = 'button'; out.addEventListener('click', logout);
-    box.append(who, out);
-    if (auth.role === 'admin') { const a = el('button','btn ghost adm-btn','신고 관리'); a.type = 'button'; a.addEventListener('click', openAdmin); box.appendChild(a); }
+    const who = el('p','auth-who'); who.append(el('b', null, auth.nickname || '기록자'), '님');
+    box.appendChild(who);
+    if (auth.role === 'admin') box.appendChild(item('신고 관리', openAdmin));
+    box.appendChild(item('로그아웃', logout));
   }
+}
+// 제목 오른쪽 동그라미: 로그인 전에는 사람 모양, 로그인 후에는 닉네임 첫 글자
+function renderAcctBtn(){
+  const b = $('acctBtn');
+  if (auth.user) {
+    b.className = 'acct in'; b.textContent = Array.from(auth.nickname || '기록자')[0];
+    b.setAttribute('aria-label', `${auth.nickname || '기록자'}님 계정 메뉴`);
+  } else {
+    b.className = 'acct';
+    b.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7"/></svg>';
+    b.setAttribute('aria-label', sb ? '로그인과 계정 메뉴' : '메뉴');
+  }
+}
+function openAcct(){ $('acctMenu').hidden = false; $('acctBtn').setAttribute('aria-expanded','true'); }
+function closeAcct(){ $('acctMenu').hidden = true; $('acctBtn').setAttribute('aria-expanded','false'); }
+// 장소 추가: 로그인했거나 로그인 기능이 없으면 바로, 아니면 어디에 저장할지 먼저 고른다
+const PENDING_ADD = 'gongan-sillok:pending-add';
+let localChosen = false, choicePrefill = null;
+function startAdd(prefill){
+  prefill = prefill && prefill.name ? prefill : null; closeAcct();
+  if (auth.user || !sb || localChosen) return openAdd(prefill);
+  choicePrefill = prefill; $('choiceDlg').showModal();
+}
+// 로그인하러 가기 전에 고르던 장소를 남겨 두고, 돌아오면 그 장소의 기록 창을 다시 연다
+function loginThenAdd(){
+  try { sessionStorage.setItem(PENDING_ADD, JSON.stringify(choicePrefill || {})); } catch {}
+  login();
+}
+function resumePendingAdd(){
+  let raw = null;
+  try { raw = sessionStorage.getItem(PENDING_ADD); sessionStorage.removeItem(PENDING_ADD); } catch {}
+  if (!raw || !auth.user) return;
+  let p = null; try { p = JSON.parse(raw); } catch {}
+  const ok = p && typeof p.name === 'string' && Number.isFinite(p.lat) && Number.isFinite(p.lng);
+  openAdd(ok ? { name: cleanText(p.name, 40), category: cleanText(p.category, 100), address: cleanText(p.address, 60), lat: p.lat, lng: p.lng,
+    kid: p.kid && /^\d{1,20}$/.test(String(p.kid)) ? String(p.kid) : undefined, pid: Number.isInteger(p.pid) ? p.pid : undefined } : null);
 }
 function login(){
   // 카카오에서 돌아오면 이 페이지로 온다(Supabase URL Configuration에 등록한 주소)
@@ -2227,6 +2357,7 @@ async function onAuth(session){
     } else { auth.nickname = ''; auth.role = 'user'; loadInitial(); }
   }
   renderAuth();
+  if (changed && user) resumePendingAdd();
 }
 // 로그인하고 돌아왔는데 오류가 있으면(동의항목 설정 등) 알려 주고 주소를 정리한다
 function readAuthError(){
@@ -2298,10 +2429,18 @@ buildFilters(); bindSheets();
   const fb = critButton(() => { const open = fc.hidden; if (open && !fc.firstChild) fc.appendChild(critPanel()); fc.hidden = !open; fb.setAttribute('aria-expanded', String(open)); });
   $('filterTitle').appendChild(fb);
 }
-$('btnLoad').addEventListener('click', () => $('file').click());
+$('btnLoad').addEventListener('click', () => { closeAcct(); $('file').click(); });
 $('file').addEventListener('change', e => { const f = e.target.files && e.target.files[0]; if (f) handleFile(f); e.target.value = ''; });
-$('btnAdd').addEventListener('click', openAdd);
+$('btnAdd').addEventListener('click', () => startAdd());
+// 계정 메뉴: 동그라미를 누르면 열고, 바깥을 누르거나 Esc면 닫는다
+$('acctBtn').addEventListener('click', () => { if ($('acctMenu').hidden) openAcct(); else closeAcct(); });
+document.addEventListener('pointerdown', e => { if (!$('acctMenu').hidden && !(e.target.closest && e.target.closest('#acctMenu, #acctBtn'))) closeAcct(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('acctMenu').hidden) { closeAcct(); $('acctBtn').focus(); } });
+$('choiceX').addEventListener('click', () => $('choiceDlg').close());
+$('choiceLogin').addEventListener('click', () => { $('choiceDlg').close(); loginThenAdd(); });
+$('choiceLocal').addEventListener('click', () => { localChosen = true; $('choiceDlg').close(); openAdd(choicePrefill); });
 $('btnReset').addEventListener('click', () => {
+  closeAcct();
   try { localStorage.removeItem(STORE_KEY); } catch {}
   setMine(rowsToPlaces(SAMPLE_ROWS).places, '예시 데이터 (가상의 장소 14곳)', false, true); setStatus('예시 데이터로 되돌렸어요.', false);
 });
@@ -2339,6 +2478,7 @@ renderAuth();
 if (sb) sb.auth.onAuthStateChange((event, session) => { setTimeout(() => onAuth(session), 0); }); // 콜백 안에서 바로 DB를 부르면 멈출 수 있어 한 박자 늦춘다
 try { const id = sessionStorage.getItem(SEL_KEY); if (id && state.places.some(p => p.id === id)) { state.sel = id; renderAll(); } } catch {}
 loadNaver();
+setTimeout(hideSplash, 3500);
 // 예전에 위치 권한을 허용했다면 묻지 않고 미리 위치를 찾아 둔다 (지도는 움직이지 않음)
 if (navigator.permissions && navigator.permissions.query) {
   navigator.permissions.query({ name: 'geolocation' }).then(s => { if (s.state === 'granted') locate(false, true); }).catch(() => {});
