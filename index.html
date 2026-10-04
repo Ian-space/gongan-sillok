@@ -310,7 +310,7 @@ button.stat[aria-pressed="true"] span{color:#FFFFFF}
 .legend i.ext-dot{background:#FFFFFF;box-shadow:inset 0 0 0 2px #7A8494}
 
 /* 지도에 표시: 고른 속성은 진하게, 나머지 메뉴는 흐리게 */
-.quick{position:absolute;right:14px;top:196px;z-index:10;display:flex;flex-direction:column;gap:2px;width:118px;background:var(--panel);border-radius:10px;padding:8px 6px;box-shadow:0 1px 6px rgba(15,20,40,.18)}
+.quick{position:absolute;right:14px;top:244px;z-index:10;display:flex;flex-direction:column;gap:2px;width:118px;background:var(--panel);border-radius:10px;padding:8px 6px;box-shadow:0 1px 6px rgba(15,20,40,.18)}
 .quick[hidden]{display:none}
 .quick-title{font-size:11px;font-weight:600;color:var(--muted);padding:0 6px 4px}
 .quick-tabs{display:none} /* 휴대폰에서만 쓰는 윗줄 */
@@ -454,6 +454,64 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
 .scale{margin:14px 0 0;display:grid;grid-template-columns:72px 1fr;row-gap:7px;font-size:13px}
 .scale dt{color:var(--muted)}
 .scale dd{margin:0;display:flex;gap:4px;flex-wrap:wrap}
+/* 지도 위 윗줄: 검색창 + 계정, 빠른 조건 한 줄, 모아 보기 안내 */
+.topbar{position:absolute;left:14px;top:14px;z-index:13;width:min(460px,calc(100% - 190px));display:grid;gap:8px}
+.tb-row{position:relative;display:flex;gap:8px;align-items:center}
+.tb-search{flex:1;min-width:0;display:flex;align-items:center;gap:8px;height:46px;padding:0 16px;background:var(--panel);border-radius:999px;box-shadow:0 2px 10px rgba(15,20,40,.2)}
+.tb-search svg{width:18px;height:18px;color:var(--muted);flex:none}
+.tb-search input.search{flex:1;min-width:0;width:auto;height:100%;margin:0;padding:0;border:0;background:transparent;font-size:15px;outline:none;box-shadow:none}
+.tb-search:focus-within{box-shadow:0 0 0 2px var(--blue),0 2px 10px rgba(15,20,40,.2)}
+.topbar .acct{width:46px;height:46px;border:0;box-shadow:0 2px 10px rgba(15,20,40,.2)}
+.tb-row .acct-menu{right:0;top:54px}
+.qchips{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;padding:2px 2px 4px}
+.qchips::-webkit-scrollbar{display:none}
+.qchip{flex:none;display:inline-flex;align-items:center;gap:5px;height:34px;padding:0 13px;border:0;border-radius:999px;background:var(--panel);color:var(--ink);font-size:13px;font-weight:600;box-shadow:0 1px 5px rgba(15,20,40,.2);cursor:pointer;white-space:nowrap}
+.qchip svg{width:16px;height:16px;flex:none}
+.qchip[aria-pressed="true"]{background:var(--ink);color:var(--panel)}
+.qchip-n{min-width:18px;padding:0 5px;border-radius:999px;background:var(--blue);color:#FFFFFF;font-size:11px;line-height:18px;text-align:center}
+.qchip.filter{padding-left:11px}
+.collect-bar{display:flex;align-items:center;gap:8px;padding:9px 12px;border-radius:12px;background:var(--blue);color:#FFFFFF;font-size:13px;font-weight:600;box-shadow:0 2px 10px rgba(15,20,40,.2)}
+.collect-bar[hidden]{display:none}
+.collect-bar span{flex:1;min-width:0}
+.collect-bar button{border:0;border-radius:999px;padding:4px 10px;background:rgba(255,255,255,.2);color:#FFFFFF;font-size:12px;font-weight:700;cursor:pointer}
+.mapctl .round{display:grid;place-items:center;padding:0}
+.mapctl .round svg{width:19px;height:19px}
+.mapctl #zsaved[aria-pressed="true"]{background:var(--blue);border-color:var(--blue);color:#FFFFFF}
+.mapctl #zsaved[aria-pressed="true"] svg path{fill:currentColor}
+/* 패널 윗줄 요약 */
+.peek{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:12px}
+.peek-text{min-width:0;display:grid;gap:1px;font-size:14px;line-height:1.35}
+.peek-text b{font-weight:800}
+.peek-text span{font-size:12.5px;color:var(--muted)}
+.peek .btn.add{flex:none}
+/* 필터 화면: 컴퓨터는 오른쪽에서, 휴대폰은 화면 가득 */
+.filter-dlg{width:min(460px,100vw);height:100dvh;max-width:none;max-height:none;margin:0 0 0 auto;padding:0;border:0;background:var(--panel);color:var(--ink);box-shadow:-10px 0 40px rgba(15,20,40,.25)}
+.filter-dlg[open]{display:grid;grid-template-rows:auto minmax(0,1fr) auto}
+.filter-dlg::backdrop{background:rgba(15,20,40,.4)}
+.fd-head{display:flex;justify-content:space-between;align-items:center;padding:calc(14px + env(safe-area-inset-top,0px)) 18px 12px;border-bottom:1px solid var(--line)}
+.fd-head h2{margin:0;font-size:20px;font-weight:800}
+.fd-body{overflow:auto;overscroll-behavior:contain;padding:16px 18px 28px}
+.fd-body .filters{padding:0}
+.fd-sec{margin-top:26px}
+.fd-note{margin-left:6px;font-size:12px;font-weight:400;color:var(--muted)}
+.fd-foot{display:flex;gap:8px;justify-content:space-between;padding:12px 18px calc(12px + env(safe-area-inset-bottom,0px));border-top:1px solid var(--line)}
+.fd-foot .btn.add{flex:1}
+.fd-chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+.fd-group{margin:10px 0 4px;font-size:12px;font-weight:700;color:var(--muted)}
+.fd-types{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:13px}
+.fd-types span{display:inline-flex;align-items:center;gap:6px}
+.fd-types i{width:10px;height:10px;border-radius:50%;background:var(--c)}
+/* 장소 상세: 사실 한 줄, 찜 */
+.d-facts{display:flex;flex-wrap:wrap;gap:5px;margin:10px 0 2px}
+.d-fact{padding:3px 9px;border-radius:999px;font-size:12px;font-weight:700}
+.d-fact.lv0{background:var(--blue);color:#FFFFFF}
+.d-fact.lv1{background:var(--blue-soft);color:var(--blue)}
+.d-fact.lv2{background:var(--paper);color:var(--muted);font-weight:600}
+.ext-tag.saved{background:#FFE8EC;color:#D62F48}
+.d-save{display:inline-grid;place-items:center;width:34px;height:30px;border:0;border-radius:999px;background:var(--paper);color:var(--muted);cursor:pointer}
+.d-save svg{width:17px;height:17px}
+.d-save[aria-pressed="true"]{background:#FFE8EC;color:#E8364F}
+.d-save[aria-pressed="true"] svg path{fill:currentColor}
 /* 사진 */
 .photo{display:block;padding:0;border:0;border-radius:8px;overflow:hidden;background:var(--paper);aspect-ratio:4 / 3;cursor:zoom-in}
 .photo img{display:block;width:100%;height:100%;object-fit:cover}
@@ -560,6 +618,20 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
   .tagline{font-size:13px;margin-top:2px}
   .actions{margin-top:10px}
   .btn{padding:6px 12px;font-size:13px}
+  /* 첫 화면은 지도 우선: 위에 검색창과 빠른 조건, 오른쪽 아래 둥근 버튼 두 개, 아래 패널은 한 줄로 접힘 */
+  .topbar{position:fixed;left:12px;right:12px;top:calc(10px + env(safe-area-inset-top,0px));width:auto;z-index:16}
+  .tb-search{height:46px}
+  .quick{display:none !important}
+  .legend{left:12px;max-width:calc(100% - 24px)}
+  .mapctl{top:auto;right:12px;bottom:calc(var(--sheet-h,104px) + 12px);gap:8px}
+  body.has-detail .mapctl{bottom:calc(var(--detail-h,55dvh) + 12px)}
+  .mapctl #zin,.mapctl #zout,.mapctl #zfit{display:none}
+  .mapctl .round{width:44px;height:44px;border:0;border-radius:50%;box-shadow:0 2px 10px rgba(15,20,40,.22)}
+  .brand-row,.tagline,.source{display:none}
+  .side-head{padding:0 16px 10px}
+  .peek{margin-top:0}
+  .peek .btn.add{padding:8px 14px;font-size:14px}
+  .filter-dlg{width:100vw;box-shadow:none}
 }
 @media (prefers-reduced-motion:no-preference){
   .detail:not([hidden]){animation:rise .18s ease-out}
@@ -592,21 +664,13 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
     <div class="side-head">
       <div class="brand-row">
         <h1 class="brand">공간실록</h1>
-        <button class="acct" id="acctBtn" type="button" aria-expanded="false" aria-controls="acctMenu" aria-label="계정 메뉴"></button>
       </div>
       <p class="tagline">평점 대신 공간의 사실을 기록합니다. 성수동 시제품.</p>
-      <div class="acct-menu" id="acctMenu" hidden>
-        <div class="auth" id="auth"></div>
-        <div class="acct-sep" id="acctSep"></div>
-        <button class="acct-item" id="btnInstall" type="button" hidden>홈 화면에 추가</button>
-        <button class="acct-item" id="btnLoad" type="button">엑셀 파일 불러오기</button>
-        <button class="acct-item" id="btnReset" type="button">예시 데이터로 되돌리기</button>
-        <button class="acct-item leave" id="btnLeave" type="button" hidden>회원 탈퇴</button>
-        <div class="acct-legal"><a href="terms.html">이용약관</a><a href="privacy.html"><b>개인정보처리방침</b></a></div>
-      </div>
       <input type="file" id="file" accept=".xlsx,.csv" hidden>
-      <div class="actions">
-        <button class="btn add" id="btnAdd" type="button">+ 장소 추가</button>
+      <!-- 패널이 접혀 있을 때도 보이는 한 줄: 지금 지도에 보이는 곳 수와 사실 요약, 기록하기 -->
+      <div class="peek">
+        <div class="peek-text"><b id="peekN"></b><span id="peekFacts"></span></div>
+        <button class="btn add" id="btnAdd" type="button">+ 기록</button>
       </div>
       <p class="status" id="status" role="status" aria-live="polite"></p>
       <div class="source" id="source"></div>
@@ -614,17 +678,12 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
     <div class="scroll">
       <section class="sec" id="summary" aria-label="한눈에 보기"></section>
       <section class="sec" id="picks" aria-label="목적별 추천"></section>
-      <h3 class="sec-title sec-pad with-help" id="filterTitle">조건으로 찾기</h3>
-      <div class="crit-wrap" id="filterCrit" hidden></div>
-      <div class="filters">
-        <input class="search" id="q" type="search" placeholder="이름, 자재, 가구로 찾기 · 기록 안 된 가게도 찾아요" aria-label="이름, 자재, 가구로 찾기. 기록 안 된 가게도 함께 찾아요" maxlength="40">
-        <div id="fgroups"></div>
-      </div>
-      <h3 class="sec-title sec-pad">전체 목록</h3>
+      <h3 class="sec-title sec-pad">목록</h3>
       <div class="count-row">
         <span class="count" id="count"></span>
         <span class="count-tools">
           <button class="sortbtn" id="btnSort" type="button" aria-pressed="false">가까운 순</button>
+          <button class="linkbtn" id="btnFit" type="button">지도 전체 보기</button>
           <button class="linkbtn" id="btnClear" type="button">필터 지우기</button>
         </span>
       </div>
@@ -660,12 +719,38 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
   <main class="mapwrap">
     <div id="map" role="region" aria-label="성수동 지도와 기록된 공간 위치"></div>
     <div class="mapmsg" id="mapmsg" hidden><p id="mapmsgText"></p></div>
+    <!-- 지도 위 맨 윗줄: 검색창과 계정, 그 아래 빠른 조건 한 줄 -->
+    <div class="topbar" id="topbar">
+      <div class="tb-row">
+        <div class="tb-search">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+          <input class="search" id="q" type="search" placeholder="장소, 동네, 자재로 찾기" aria-label="장소 이름, 동네, 자재, 가구로 찾기. 기록 안 된 가게도 함께 찾아요" maxlength="40" enterkeyhint="search">
+        </div>
+        <button class="acct" id="acctBtn" type="button" aria-expanded="false" aria-controls="acctMenu" aria-label="계정 메뉴"></button>
+        <div class="acct-menu" id="acctMenu" hidden>
+          <div class="auth" id="auth"></div>
+          <div class="acct-sep" id="acctSep"></div>
+          <button class="acct-item" id="btnInstall" type="button" hidden>홈 화면에 추가</button>
+          <button class="acct-item" id="btnLoad" type="button">엑셀 파일 불러오기</button>
+          <button class="acct-item" id="btnReset" type="button">예시 데이터로 되돌리기</button>
+          <button class="acct-item leave" id="btnLeave" type="button" hidden>회원 탈퇴</button>
+          <div class="acct-legal"><a href="terms.html">이용약관</a><a href="privacy.html"><b>개인정보처리방침</b></a></div>
+        </div>
+      </div>
+      <div class="qchips" id="qchips" role="toolbar" aria-label="빠른 조건"></div>
+      <div class="collect-bar" id="collectBar" hidden></div>
+    </div>
     <div class="legend" id="legend" hidden aria-label="장소 유형별 색"></div>
     <div class="mapctl">
       <button type="button" id="zin" aria-label="확대">+</button>
       <button type="button" id="zout" aria-label="축소">−</button>
       <button type="button" class="wide" id="zfit">전체 보기</button>
-      <button type="button" class="wide loc" id="zloc" aria-pressed="false">내 위치</button>
+      <button type="button" class="round" id="zsaved" aria-pressed="false" aria-label="찜한 곳과 내 기록만 모아 보기" title="내 장소 모아 보기">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h12v18l-6-4.5L6 21z"/></svg>
+      </button>
+      <button type="button" class="round loc" id="zloc" aria-pressed="false" aria-label="내 위치" title="내 위치">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>
+      </button>
     </div>
     <nav class="quick" id="quick" hidden aria-label="지도에 표시할 정보"></nav>
     <div class="legend-help" id="legendHelp" hidden aria-label="지도에 표시한 조건의 기준"></div>
@@ -676,6 +761,21 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
 <dialog class="add-dlg" id="addDlg" aria-labelledby="addTitle"><div class="add-body" id="addBody"></div></dialog>
 <dialog class="add-dlg" id="adminDlg" aria-labelledby="adminTitle"><div class="add-body" id="adminBody"></div></dialog>
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+<dialog class="filter-dlg" id="filterDlg" aria-labelledby="filterDlgTitle">
+  <div class="fd-head"><h2 id="filterDlgTitle">필터</h2><button class="d-close" id="filterX" type="button" aria-label="닫기">×</button></div>
+  <div class="fd-body">
+    <h3 class="sec-title with-help" id="filterTitle">조건으로 찾기</h3>
+    <div class="crit-wrap" id="filterCrit" hidden></div>
+    <div class="filters"><div id="fgroups"></div></div>
+    <h3 class="sec-title fd-sec">지도에 표시 <span class="fd-note">거르지 않고 핀 옆에 값만 보여 줘요</span></h3>
+    <div id="fdBadges"></div>
+    <h3 class="sec-title fd-sec">주변 장소 <span class="fd-note">지도를 확대하면 기록 없는 곳이 점으로 보여요</span></h3>
+    <div id="fdNear"></div>
+    <h3 class="sec-title fd-sec">장소 색</h3>
+    <div id="fdTypes"></div>
+  </div>
+  <div class="fd-foot"><button class="btn ghost" id="fdClear" type="button">모두 풀기</button><button class="btn add" id="fdDone" type="button">결과 보기</button></div>
+</dialog>
 <dialog class="pv" id="photoDlg" aria-label="사진 크게 보기">
   <div class="pv-top"><span id="photoCount"></span><button class="pv-x" id="photoX" type="button" aria-label="닫기">×</button></div>
   <div class="pv-track" id="photoTrack"></div>
@@ -1049,7 +1149,10 @@ for (const k of Object.keys(ENUMS)) state.filters[k] = new Set();
 state.filters.view = new Set(); // 보기: 내 기록 / 공개 기록
 const $ = id => document.getElementById(id);
 function el(tag, cls, text){ const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
-function setStatus(msg, err){ const s = $('status'); s.textContent = msg; s.classList.toggle('err', !!err); }
+function setStatus(msg, err){
+  const s = $('status'); s.textContent = msg; s.classList.toggle('err', !!err);
+  if (msg && isPhone()) toast(msg); // 휴대폰은 패널이 접혀 있어 안내가 안 보이므로 잠깐 띄운다
+}
 
 /* 화면에 보이는 장소 = 내 기록 + 다른 사람들의 공개 기록 (같은 장소는 하나로 합친다)
    state.mine : 내 기록 (로그인하면 계정, 아니면 이 브라우저)
@@ -1155,6 +1258,7 @@ function loadInitial(){
 }
 
 function matches(p){
+  if (state.collect && !inCollect(p)) return false; // 내 장소 모아 보기: 찜한 곳과 내 기록만
   for (const k of Object.keys(ENUMS)) { const f = state.filters[k]; if (f.size && !f.has(p[k])) return false; }
   const vf = state.filters.view; // 내 기록만, 공개 기록만 골라 보기
   if (vf.size && !((vf.has('내 기록') && p.mine && !p.sample) || (vf.has('공개 기록') && (p.pubCount > 0 || p.pub)))) return false;
@@ -1169,7 +1273,7 @@ function buildFilters(){
   const vg = el('div','fgroup'); vg.appendChild(el('div','fgroup-name', '보기'));
   const vchips = el('div','chips'); vchips.setAttribute('role','group'); vchips.setAttribute('aria-label', '보기');
   for (const v of ['내 기록', '공개 기록']) {
-    const b = el('button','chip', v); b.type = 'button'; b.setAttribute('aria-pressed','false');
+    const b = el('button','chip', v); b.type = 'button'; b.setAttribute('aria-pressed','false'); b.dataset.k = 'view'; b.dataset.v = v;
     b.addEventListener('click', () => { const s = state.filters.view; s.has(v) ? s.delete(v) : s.add(v); b.setAttribute('aria-pressed', String(s.has(v))); renderAll(); });
     vchips.appendChild(b);
   }
@@ -1180,7 +1284,7 @@ function buildFilters(){
     const g = el('div','fgroup'); g.appendChild(el('div','fgroup-name', def.label));
     const chips = el('div','chips'); chips.setAttribute('role','group'); chips.setAttribute('aria-label', def.label);
     for (const v of def.values) {
-      const b = el('button','chip', v); b.type = 'button'; b.setAttribute('aria-pressed','false');
+      const b = el('button','chip', v); b.type = 'button'; b.setAttribute('aria-pressed','false'); b.dataset.k = k; b.dataset.v = v;
       b.addEventListener('click', () => {
         const s = state.filters[k]; s.has(v) ? s.delete(v) : s.add(v);
         b.setAttribute('aria-pressed', String(s.has(v))); renderAll();
@@ -1200,6 +1304,7 @@ function renderList(vis){
     const nm = el('div','item-name'); const dot = el('i'); dot.style.setProperty('--c', category(p).color);
     nm.append(dot, el('span', null, p.name));
     // 누구의 기록인지: 내 기록(공개 여부) / 다른 사람 공개 기록 수
+    if (isSaved(p)) nm.appendChild(el('span', 'ext-tag saved', '찜'));
     if (p.sample) nm.appendChild(el('span', 'ext-tag', '예시'));
     else if (p.mine) nm.appendChild(el('span', 'ext-tag mine', p.rid && p.pub ? '내 기록 · 공개' : '내 기록'));
     if (p.pubCount) nm.appendChild(el('span', 'ext-tag pubc', `공개 ${p.pubCount}`));
@@ -1231,7 +1336,12 @@ function renderDetail(){
   const share = el('button','d-share'); share.type = 'button'; share.setAttribute('aria-label', `${p.name} 링크 공유하기`);
   share.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 8l5-5 5 5"/><path d="M5 12v8h14v-8"/></svg>';
   share.append('공유'); share.addEventListener('click', () => sharePlace(p));
-  const acts = el('div','d-head-acts'); acts.append(share, close);
+  const saved = isSaved(p);
+  const save = el('button','d-save'); save.type = 'button'; save.setAttribute('aria-pressed', String(saved));
+  save.setAttribute('aria-label', saved ? `${p.name} 찜 풀기` : `${p.name} 찜하기`); save.title = saved ? '찜 풀기' : '찜하기';
+  save.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" aria-hidden="true"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"/></svg>';
+  save.addEventListener('click', () => toggleSave(p));
+  const acts = el('div','d-head-acts'); acts.append(save, share, close);
   head.append(t, acts); d.appendChild(head);
   // 사진이 있으면 맨 위에 크게: 내 사진 먼저, 그다음 다른 사람 공개 기록의 사진. 옆으로 밀어 넘기고, 누르면 화면 가득
   const photos = [...new Set([...(p.mine ? p.photos || [] : []), ...(p.recs || []).flatMap(r => r.photos || [])])].slice(0, 20);
@@ -1245,6 +1355,15 @@ function renderDetail(){
     }
     d.appendChild(hero);
     fillPhotos(hero).then(() => { if (!hero.querySelector('.photo:not(.missing)')) hero.remove(); }); // 사진을 못 불러오면 빈 칸을 남기지 않는다
+  }
+  // 사실 한 줄: 기록된 값을 맨 위에 짧게 (좋음은 진하게, 보통은 연하게, 아쉬움은 회색)
+  if (!p.ext) {
+    const facts = Object.keys(ENUMS).filter(k => p[k]).map(k => ({ k, l: level(p, k) }));
+    if (facts.length) {
+      const row = el('div','d-facts');
+      for (const f of facts.slice(0, 8)) row.appendChild(el('span', 'd-fact lv' + f.l, FACT[f.k][f.l]));
+      d.appendChild(row);
+    }
   }
 
   const st = nearestStation(p);
@@ -1502,6 +1621,7 @@ function initMap(){
   });
   naver.maps.Event.addListener(map, 'zoom_changed', () => { renderMap(state.places.filter(matches)); renderNearMarkers(); renderLegend(); });
   naver.maps.Event.addListener(map, 'idle', queueNearby); // 지도가 멈추면 화면 안의 주변 카페를 불러온다
+  naver.maps.Event.addListener(map, 'idle', () => renderPeek(state.places.filter(matches))); // '이 지역 n곳'은 보이는 범위가 바뀔 때마다
   // 지도의 빈 곳을 짧게 누르면(끌지 않고) 고른 장소를 닫는다. 핀·점을 누를 때는 그 장소가 열린다
   let down = null;
   const mapEl = $('map');
@@ -1535,15 +1655,18 @@ function syncMarkers(){
     markers.set(p.id, mk);
   }
 }
-function fitAll(){
-  if (!map || !state.places.length) return;
-  const first = new naver.maps.LatLng(state.places[0].lat, state.places[0].lng);
-  if (state.places.length === 1) { map.setCenter(first); map.setZoom(16); return; }
+// 장소들이 모두 보이게 맞춘다 (list를 주면 그 장소들만, 모아 보기에서 쓴다)
+function fitAll(list){
+  const pts = Array.isArray(list) ? list : state.places;
+  if (!map || !pts.length) return;
+  const first = new naver.maps.LatLng(pts[0].lat, pts[0].lng);
+  if (pts.length === 1) { map.setCenter(first); map.setZoom(16); return; }
   const b = new naver.maps.LatLngBounds(first, first);
-  for (const p of state.places) b.extend(new naver.maps.LatLng(p.lat, p.lng));
-  // 휴대폰에서는 아래 패널에 가려지는 만큼 아래 여백을 더 준다
+  for (const p of pts) b.extend(new naver.maps.LatLng(p.lat, p.lng));
+  // 위쪽 검색창과 아래 패널에 가려지는 만큼 여백을 더 준다
+  const top = $('topbar').getBoundingClientRect().bottom + 20;
   const bottom = isPhone() ? $('side').getBoundingClientRect().height + 30 : 60;
-  map.fitBounds(b, { top: isPhone() ? 80 : 60, right: 70, bottom, left: 30 });
+  map.fitBounds(b, { top, right: 70, bottom, left: 30 });
 }
 
 /* ---------- 휴대폰 아래 패널 끌기 ---------- */
@@ -1553,7 +1676,8 @@ const isPhone = () => matchMedia('(max-width:899px)').matches;
 const vh = f => Math.round(innerHeight * f);
 function makeSheet({ panel, varName, snaps, isGrab, onSettle, onDismiss }){
   let h = null, drag = null;
-  const set = (px, animate) => { panel.classList.toggle('anim', !!animate); h = px; panel.style.setProperty(varName, px + 'px'); };
+  // 높이는 문서 전체에도 알려 둔다(지도 위 둥근 버튼이 패널 바로 위에 붙도록)
+  const set = (px, animate) => { panel.classList.toggle('anim', !!animate); h = px; panel.style.setProperty(varName, px + 'px'); document.documentElement.style.setProperty(varName, px + 'px'); };
   const settle = px => { set(px, true); if (onSettle) onSettle(px); };
   const cycle = () => { // 손잡이를 탭하면 다음 높이로
     const s = snaps(), cur = h ?? panel.getBoundingClientRect().height;
@@ -1598,7 +1722,7 @@ const detailHeight = () => (isPhone() && detailSheet && detailSheet.height) || $
 function bindSheets(){
   listSheet = makeSheet({
     panel: $('side'), varName: '--sheet-h',
-    snaps: () => [130, vh(0.5), vh(0.88)], // 접힘, 반, 거의 전체
+    snaps: () => [PEEK_H, vh(0.5), vh(0.88)], // 한 줄(요약), 반, 거의 전체
     isGrab: t => !!t.closest('.sheet-handle, .side-head'),
     onSettle: () => renderLegendHelp() // 패널 높이가 바뀌면 지도 위 기준 상자 높이도 맞춘다
   });
@@ -1612,8 +1736,9 @@ function bindSheets(){
   });
   $('sheetHandle').addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); listSheet.cycle(); } });
   $('detail').addEventListener('keydown', e => { if ((e.key === 'Enter' || e.key === ' ') && e.target.closest('.d-handle')) { e.preventDefault(); detailSheet.cycle(); } });
-  if (isPhone()) listSheet.set(vh(0.5), false);
+  if (isPhone()) listSheet.set(PEEK_H, false); // 처음에는 한 줄로 접어 두고 지도를 넓게
 }
+const PEEK_H = 104; // 접힌 목록 패널 높이: 손잡이 + 요약 한 줄 + 기록 버튼
 function renderMap(vis){
   if (!map) return;
   const visSet = new Set(vis.map(p => p.id));
@@ -1641,6 +1766,11 @@ const BADGE_KEY = 'gongan-sillok:badges';
 // 여러 조건을 함께 고를 수 있다. 저장은 이 브라우저에만 한다
 state.badges = (() => { try { const v = JSON.parse(localStorage.getItem(BADGE_KEY) || '[]'); return Array.isArray(v) ? v.filter(k => ENUMS[k]) : []; } catch { return []; } })();
 const level = (p, k) => ENUMS[k].values.indexOf(p[k]); // 0 좋음, 1 보통, 2 아쉬움, -1 기록 없음
+// 장소 상세 맨 위 '사실 한 줄'용: 혼자 읽어도 무슨 뜻인지 알 수 있는 짧은 말
+const FACT = { noise:['조용함','소음 보통','시끄러움'], spacing:['좌석 넓음','좌석 보통','좌석 좁음'], light:['밝음','채광 보통','어두움'],
+  outlet:['콘센트 많음','콘센트 일부','콘센트 없음'], stay:['오래 머물기','2시간 내외','회전 빠름'],
+  entrance:['턱 없음','경사로','입구 계단'], floor:['1층','엘리베이터','계단만'], toilet:['화장실 매장 안','화장실 건물','화장실 없음'],
+  kids:['유아 의자','아이 동반 가능','노키즈존'], pets:['반려동물 실내','반려동물 야외','반려동물 불가'] };
 // 배지 진하기: 조건이 하나면 그 값 그대로, 여럿이면 '모두 좋음 / 일부 좋음 / 하나도 없음'
 function badgeLevel(p){
   const ks = state.badges, ls = ks.map(k => level(p, k));
@@ -1694,11 +1824,11 @@ function renderQuick(){
   q.hidden = !map;
   placeLegend();
 }
-// 휴대폰: '지도에 표시'가 두 줄이 되어 높이가 달라지므로, 색 안내를 그 바로 아래에 붙인다
+// 색 안내는 위쪽 검색창·빠른 조건(·모아 보기 안내) 바로 아래에 붙인다. 그 높이가 바뀔 수 있어 그때마다 맞춘다
 function placeLegend(){
-  const q = $('quick'), lg = $('legend');
-  if (!lg) return;
-  lg.style.top = isPhone() && !q.hidden ? (q.offsetTop + q.offsetHeight + 8) + 'px' : '';
+  const tb = $('topbar'), lg = $('legend');
+  if (!lg || !tb) return;
+  lg.style.top = Math.round(tb.getBoundingClientRect().bottom - lg.parentElement.getBoundingClientRect().top + 6) + 'px';
   if (!$('legendHelp').hidden) renderLegendHelp();
 }
 
@@ -1885,7 +2015,7 @@ function renderLegend(){
   }
   if (state.ext.results.length) { const s = el('span'); s.append(el('i','ext-dot'), '기록 없음'); lg.appendChild(s); }
   nearLegendRow(lg);
-  lg.hidden = !map || !used.size;
+  lg.hidden = !map || !used.size || isPhone(); // 휴대폰은 지도를 넓게: 유형 색은 필터 화면에서 본다
 }
 /* ---------- 경로 찾기 (대중교통은 ODsay 기본·TMAP 예비, 도보는 TMAP) ---------- */
 // TMAP 대중교통은 무료 한도가 하루 약 20번이라 ODsay가 실패할 때만 쓴다. 걷는 길은 TMAP이 실제 길을 따라 준다.
@@ -2252,13 +2382,13 @@ const nearMarkers = new Map();
 let nearTimer = null, nearOff = false;
 const NEAR_ZOOM_BASE = 15; // 이보다 멀리 보면 주변 장소 점을 숨긴다
 const NEAR_ROW_ZOOM = 14;  // 범례의 '주변' 줄은 한 단계 더 멀리서부터 보여 준다(있는 줄 알도록)
-const nearShown = () => !!map && map.getZoom() >= NEAR_ZOOM_BASE && !Object.keys(ENUMS).some(k => state.filters[k].size) && !state.filters.view.size;
+const nearShown = () => !!map && !state.collect && map.getZoom() >= NEAR_ZOOM_BASE && !Object.keys(ENUMS).some(k => state.filters[k].size) && !state.filters.view.size;
 function queueNearby(){ clearTimeout(nearTimer); nearTimer = setTimeout(loadNearby, 350); }
 function toggleNearKind(code){
   if (state.nearKinds.has(code)) state.nearKinds.delete(code); else state.nearKinds.add(code);
   try { localStorage.setItem(NEAR_PREF, JSON.stringify([...state.nearKinds])); } catch {}
   if (state.sel && state.near.has(state.sel) && !state.nearKinds.has(state.near.get(state.sel).kind)) select(null);
-  renderNearMarkers(); renderLegend(); loadNearby();
+  renderAll(); renderNearMarkers(); loadNearby();
 }
 function loadNearby(){
   renderNearMarkers();
@@ -2344,7 +2474,7 @@ function renderNearMarkers(){
 }
 // 범례 아래 줄: 주변 장소 종류 켜고 끄기 (확대했을 때만)
 function nearLegendRow(lg){
-  if (!map || nearOff || map.getZoom() < NEAR_ROW_ZOOM || Object.keys(ENUMS).some(k => state.filters[k].size) || state.filters.view.size) return;
+  if (!map || nearOff || isPhone() || state.collect || map.getZoom() < NEAR_ROW_ZOOM || Object.keys(ENUMS).some(k => state.filters[k].size) || state.filters.view.size) return;
   const row = el('div','near-row'); row.appendChild(el('b', null, '주변'));
   const z = map.getZoom();
   if (z < NEAR_ZOOM_BASE) row.appendChild(el('span','near-hint', '한 번 더 확대하면 보여요'));
@@ -3122,6 +3252,7 @@ async function onAuth(session){
   }
   renderAuth();
   if (changed && user) resumePendingAdd();
+  if (changed) loadSaves(); // 로그인하면 계정의 찜(이 기기의 찜은 계정으로 옮긴다), 로그아웃하면 이 기기의 찜
 }
 // 로그인하고 돌아왔는데 오류가 있으면(동의항목 설정 등) 알려 주고 주소를 정리한다
 function readAuthError(){
@@ -3182,6 +3313,174 @@ function renderAll(){
   $('btnSort').setAttribute('aria-pressed', String(state.sortNear && !!state.me));
   $('zloc').setAttribute('aria-pressed', String(!!state.me));
   renderSummary(); renderPicks(vis); renderList(vis); renderExtList(); renderMap(vis); renderExtMarkers(); renderLegend(); renderQuick(); renderDetail();
+  renderQuickChips(); renderPeek(vis); syncFilterChips(); renderCollectBar(); if ($('filterDlg').open) renderFilterExtras();
+}
+
+/* ---------- 빠른 조건 한 줄, 필터 화면, 패널 요약 ---------- */
+// 검색창 아래 한 줄: [필터] + 자주 찾는 사실 조건 + 주변 가게. 누르면 그 조건으로 거르고, 핀 옆에도 값을 보여 준다
+const QUICK = [
+  { label: '조용한 곳',     k: 'noise',    v: ['조용함'] },
+  { label: '콘센트 많음',   k: 'outlet',   v: ['많음'] },
+  { label: '턱 없음',       k: 'entrance', v: ['턱 없음'] },
+  { label: '반려동물 가능', k: 'pets',     v: ['실내 가능', '야외만'] },
+  { label: '오래 머물기',   k: 'stay',     v: ['장시간 가능'] },
+];
+const sameSet = (s, arr) => s.size === arr.length && arr.every(x => s.has(x));
+const quickOn = q => sameSet(state.filters[q.k], q.v);
+function toggleQuick(q){
+  const on = quickOn(q);
+  state.filters[q.k] = on ? new Set() : new Set(q.v);
+  const rest = state.badges.filter(k => k !== q.k);
+  setBadges(on ? rest : [...rest, q.k]); // 다시 그리기도 여기서 한다
+}
+const filterCount = () => Object.keys(ENUMS).reduce((n, k) => n + state.filters[k].size, 0) + state.filters.view.size;
+const saveNearKinds = () => { try { localStorage.setItem(NEAR_PREF, JSON.stringify([...state.nearKinds])); } catch {} };
+let nearBefore = null; // '주변 가게'를 끄기 전에 켜 두었던 종류
+function renderQuickChips(){
+  const box = $('qchips'); box.replaceChildren();
+  const f = el('button','qchip filter'); f.type = 'button'; f.setAttribute('aria-haspopup', 'dialog');
+  f.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>';
+  f.append('필터');
+  const n = filterCount(); if (n) f.appendChild(el('span','qchip-n', String(n)));
+  f.addEventListener('click', openFilters); box.appendChild(f);
+  for (const q of QUICK) {
+    const b = el('button','qchip', q.label); b.type = 'button'; b.setAttribute('aria-pressed', String(quickOn(q)));
+    b.addEventListener('click', () => toggleQuick(q)); box.appendChild(b);
+  }
+  const nb = el('button','qchip', '주변 가게'); nb.type = 'button'; nb.setAttribute('aria-pressed', String(state.nearKinds.size > 0));
+  nb.title = '지도를 확대하면 기록 없는 카페·음식점·문화시설·도서관이 점으로 보여요';
+  nb.addEventListener('click', () => {
+    if (state.nearKinds.size) { nearBefore = [...state.nearKinds]; state.nearKinds = new Set(); }
+    else state.nearKinds = new Set(nearBefore && nearBefore.length ? nearBefore : NEAR_KINDS.map(k => k.code));
+    saveNearKinds(); renderAll(); loadNearby();
+    if (state.nearKinds.size && map && map.getZoom() < NEAR_ZOOM_BASE) toast('지도를 조금 더 확대하면 주변 가게가 점으로 보여요.');
+  });
+  box.appendChild(nb);
+}
+// 조건으로 찾기(필터 화면)의 칩 눌림 상태를 지금 조건에 맞춘다 (빠른 조건으로 바꿨을 때)
+function syncFilterChips(){
+  document.querySelectorAll('#fgroups .chip[data-k]').forEach(b => {
+    const s = state.filters[b.dataset.k]; b.setAttribute('aria-pressed', String(!!s && s.has(b.dataset.v)));
+  });
+}
+function openFilters(){ renderFilterExtras(); $('filterDlg').showModal(); }
+// 필터 화면 아래쪽: 지도에 표시(거르지 않고 값만), 주변 장소 종류, 장소 색
+function renderFilterExtras(){
+  const fb = $('fdBadges'); fb.replaceChildren();
+  for (const g of GROUPS) {
+    fb.appendChild(el('div','fd-group', g.label));
+    const row = el('div','fd-chips');
+    for (const k of Object.keys(ENUMS).filter(k => groupOf(k) === g.id)) {
+      const on = state.badges.includes(k);
+      const b = el('button','chip', ENUMS[k].label); b.type = 'button'; b.setAttribute('aria-pressed', String(on));
+      b.addEventListener('click', () => setBadges(on ? state.badges.filter(x => x !== k) : [...state.badges, k]));
+      row.appendChild(b);
+    }
+    fb.appendChild(row);
+  }
+  const fn = $('fdNear'); fn.replaceChildren();
+  const nrow = el('div','fd-chips');
+  for (const k of NEAR_KINDS) {
+    const b = el('button','near-chip'); b.type = 'button'; b.setAttribute('aria-pressed', String(state.nearKinds.has(k.code)));
+    const i = el('i'); i.style.setProperty('--nc', k.color); b.append(i, k.label);
+    b.addEventListener('click', () => toggleNearKind(k.code));
+    nrow.appendChild(b);
+  }
+  fn.appendChild(nrow);
+  const ft = $('fdTypes'); ft.replaceChildren();
+  const w = el('div','fd-types'), used = new Set(state.places.map(p => category(p).name));
+  for (const c of CATEGORIES) {
+    if (!used.has(c.name)) continue;
+    const s = el('span'), i = el('i'); i.style.setProperty('--c', c.color); s.append(i, c.name); w.appendChild(s);
+  }
+  ft.appendChild(w);
+  $('fdDone').textContent = `${state.places.filter(matches).length}곳 보기`;
+}
+// 패널 윗줄: 지금 지도에 보이는 곳 수와 사실 요약 (패널이 접혀 있어도 보인다)
+function renderPeek(vis){
+  let list = vis;
+  if (map) { const b = map.getBounds(); list = vis.filter(p => b.hasLatLng(new naver.maps.LatLng(p.lat, p.lng))); }
+  $('peekN').textContent = state.collect ? `내 장소 ${vis.length}곳` : map ? `이 지역 ${list.length}곳` : `${vis.length}곳`;
+  const c = (k, v) => list.filter(p => p[k] === v).length;
+  const facts = [[c('noise', '조용함'), '조용한 곳'], [c('entrance', '턱 없음'), '턱 없는 곳'], [c('outlet', '많음'), '콘센트 많은 곳']]
+    .filter(([n]) => n).map(([n, t]) => `${t} ${n}`).join(' · ');
+  $('peekFacts').textContent = facts || (list.length ? '목록을 올려 자세히 보기' : '지도를 옮기거나 조건을 풀어 보세요');
+}
+
+/* ---------- 찜, 내 장소 모아 보기 ---------- */
+// 찜은 로그인하면 계정(saves 표)에, 아니면 이 기기에 저장한다. 로그인하면 이 기기의 찜을 계정으로 옮긴다.
+// 모아 보기는 찜한 곳과 내 기록만 지도와 목록에 남긴다. 찜했지만 공간실록 기록이 없는 곳은 흰 핀으로 보여 준다.
+const SAVES_KEY = 'gongan-sillok:saves';
+state.saves = []; state.collect = false;
+const kidOf = p => { const k = String(p.kid || (p.ext ? p.id.slice(1) : '')); return /^\d{1,20}$/.test(k) ? k : ''; };
+const saveKeyOf = p => kidOf(p) ? 'k' + kidOf(p) : p.pid ? 'p' + p.pid : `n${p.name}@${(+p.lat).toFixed(5)},${(+p.lng).toFixed(5)}`;
+const savedItem = p => state.saves.find(s => s.key === saveKeyOf(p) || (kidOf(p) && s.kid === kidOf(p)) || (p.pid && s.pid === p.pid) || (s.name === p.name && distM(s, p) < 30));
+const isSaved = p => !!savedItem(p);
+const inCollect = p => isSaved(p) || (p.mine && !p.sample);
+function cleanSave(s){
+  if (!s) return null;
+  const name = cleanText(s.name, 40), lat = Number(s.lat), lng = Number(s.lng);
+  if (!name || !(lat >= 33 && lat <= 39) || !(lng >= 124 && lng <= 132)) return null;
+  const kid = /^\d{1,20}$/.test(String(s.kid || '')) ? String(s.kid) : '';
+  const pid = Number.isInteger(Number(s.pid)) && Number(s.pid) > 0 ? Number(s.pid) : null;
+  return { key: cleanText(s.key, 80), name, lat, lng, kid, pid, category: cleanText(s.category, 100), addr: cleanText(s.addr, 60) };
+}
+function loadLocalSaves(){ try { const v = JSON.parse(localStorage.getItem(SAVES_KEY) || '[]'); return Array.isArray(v) ? v.map(cleanSave).filter(x => x && x.key) : []; } catch { return []; } }
+const storeLocalSaves = () => { try { localStorage.setItem(SAVES_KEY, JSON.stringify(state.saves)); } catch {} };
+const saveRow = s => ({ key: s.key, name: s.name, lat: s.lat, lng: s.lng, kid: s.kid || null, pid: s.pid, category: s.category || null, addr: s.addr || null });
+async function loadSaves(){
+  const local = loadLocalSaves();
+  if (!auth.user || !sb) { state.saves = local; renderAll(); return; }
+  if (local.length) { // 로그인 전에 이 기기에 찜해 둔 곳은 계정으로 옮긴다
+    const { error } = await sb.from('saves').upsert(local.map(saveRow), { onConflict: 'user_id,key', ignoreDuplicates: true });
+    if (!error) { try { localStorage.removeItem(SAVES_KEY); } catch {} }
+  }
+  const { data, error } = await sb.from('saves').select('key, name, lat, lng, kid, pid, category, addr').order('created_at', { ascending: false });
+  state.saves = error ? local : (data || []).map(cleanSave).filter(x => x && x.key);
+  if (state.collect) setCollect(true); else renderAll();
+}
+async function toggleSave(p){
+  const cur = savedItem(p);
+  if (cur) {
+    state.saves = state.saves.filter(s => s !== cur); renderAll();
+    if (auth.user) {
+      const { error } = await sb.from('saves').delete().eq('key', cur.key);
+      if (error) { state.saves.unshift(cur); renderAll(); toast('찜을 풀지 못했어요. 잠시 뒤 다시 시도해 주세요.'); return; }
+    } else storeLocalSaves();
+    toast('찜을 풀었어요.');
+    return;
+  }
+  const item = { key: saveKeyOf(p), name: p.name, lat: +p.lat, lng: +p.lng, kid: kidOf(p), pid: p.pid || null, category: p.category || p.type || '', addr: p.addr || '' };
+  state.saves.unshift(item); renderAll();
+  if (auth.user) {
+    const { error } = await sb.from('saves').insert(saveRow(item));
+    if (error && error.code !== '23505') { state.saves = state.saves.filter(s => s !== item); renderAll(); toast('찜하지 못했어요. 잠시 뒤 다시 시도해 주세요.'); return; }
+  } else storeLocalSaves();
+  toast(auth.user ? '찜했어요. 지도 오른쪽의 책갈피 버튼으로 모아 볼 수 있어요.' : '찜했어요. 이 기기에 저장돼요. 로그인하면 계정으로 옮겨져요.');
+}
+function setCollect(on){
+  state.collect = on;
+  $('zsaved').setAttribute('aria-pressed', String(on));
+  if (on) {
+    const extra = state.saves.filter(s => !state.places.some(p => savedItem(p) === s)).map((s, i) => ({
+      id: 'k' + (s.kid || 's' + i), ext: true, saved: true, name: s.name, category: s.category || '', type: cleanText(String(s.category || '').split('>').pop(), 20),
+      addr: s.addr || '', phone: '', url: s.kid ? `https://place.map.kakao.com/${s.kid}` : '', lat: s.lat, lng: s.lng }));
+    state.ext = { query: '', status: '', results: extra, collect: true }; syncExtMarkers();
+    const pts = [...state.places.filter(matches), ...extra];
+    if (!pts.length) toast('아직 찜한 곳이나 내 기록이 없어요. 장소를 열고 하트를 눌러 찜해 보세요.');
+    else fitAll(pts);
+  } else if (state.ext.collect) { state.ext = { query: '', status: '', results: [] }; syncExtMarkers(); }
+  if (state.sel && !findPlace(state.sel)) select(null); else renderAll();
+}
+function renderCollectBar(){
+  const bar = $('collectBar');
+  bar.hidden = !state.collect;
+  if (state.collect) {
+    const mine = state.places.filter(p => p.mine && !p.sample).length;
+    bar.replaceChildren(el('span', null, `내 장소만 보는 중 · 찜 ${state.saves.length} · 내 기록 ${mine}`));
+    const b = el('button', null, '모두 보기'); b.type = 'button'; b.addEventListener('click', () => setCollect(false)); bar.appendChild(b);
+  }
+  placeLegend();
 }
 
 /* ---------- 시작 ---------- */
@@ -3199,6 +3498,20 @@ $('btnInstall').addEventListener('click', () => { closeAcct(); addToHome(); });
 $('btnLeave').addEventListener('click', () => { closeAcct(); openLeave(); });
 // 사진 크게 보기: 닫기, 이전·다음, 사진 바깥(검은 부분)을 누르면 닫기, 키보드 화살표
 window.addEventListener('resize', placeLegend);
+// 필터 화면, 모아 보기, 지도 전체 보기
+$('filterX').addEventListener('click', () => $('filterDlg').close());
+$('fdDone').addEventListener('click', () => $('filterDlg').close());
+$('fdClear').addEventListener('click', () => { $('btnClear').click(); setBadges([]); });
+$('filterDlg').addEventListener('click', e => { if (e.target === $('filterDlg')) $('filterDlg').close(); }); // 바깥(어두운 부분)을 누르면 닫기
+$('zsaved').addEventListener('click', () => setCollect(!state.collect));
+$('btnFit').addEventListener('click', () => { fitAll(); if (isPhone() && listSheet) listSheet.set(PEEK_H, true); });
+state.saves = loadLocalSaves(); // 로그인 상태가 확인되면 계정의 찜으로 바꾼다
+// 휴대폰: 검색창을 누르면 열린 장소를 닫고 목록 패널을 반쯤 올려 검색 결과가 보이게 한다
+$('q').addEventListener('focus', () => {
+  if (!isPhone()) return;
+  if (state.sel) select(null);
+  if (listSheet && (listSheet.height || 0) < vh(0.5) - 10) listSheet.set(vh(0.5), true);
+});
 $('photoX').addEventListener('click', () => $('photoDlg').close());
 $('photoPrev').addEventListener('click', () => stepViewer(-1));
 $('photoNext').addEventListener('click', () => stepViewer(1));
