@@ -451,6 +451,14 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
 .scale{margin:14px 0 0;display:grid;grid-template-columns:72px 1fr;row-gap:7px;font-size:13px}
 .scale dt{color:var(--muted)}
 .scale dd{margin:0;display:flex;gap:4px;flex-wrap:wrap}
+/* 항목 묶음 제목 (공간 / 접근·동반) */
+.scale dt.scale-group{grid-column:1 / -1;margin-top:6px;font-size:12px;font-weight:700;color:var(--ink);letter-spacing:.02em}
+.scale dt.scale-group:first-child{margin-top:0}
+.scale dd.scale-empty{grid-column:1 / -1;color:var(--muted);font-size:12px}
+.add-group{margin:6px 0 -4px;padding-top:10px;border-top:1px solid var(--line);font-size:14px;font-weight:700}
+.fgroup-head{margin:14px 0 6px;padding-top:10px;border-top:1px solid var(--line);font-size:13px;font-weight:700}
+.crit-group{margin:6px 0 0;font-size:13px;font-weight:800}
+.quick-sep{margin:6px 8px 2px;padding-top:6px;border-top:1px solid var(--line);font-size:11px;font-weight:700;color:var(--muted)}
 .opt{padding:1px 7px;border-radius:4px;color:var(--muted)}
 .opt.on{background:var(--mark);color:var(--mark-ink);font-weight:600}
 .opt.none{font-style:italic}
@@ -482,6 +490,7 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
   .quick::-webkit-scrollbar{display:none}
   .quick-title{display:none}
   .quick-btn{flex:none;padding:5px 9px}
+  .quick-sep{flex:none;margin:0 2px;padding:0 0 0 8px;border-top:0;border-left:1px solid var(--line);align-self:stretch;display:flex;align-items:center}
   .quick-n{display:none}
   .legend{top:60px;max-width:calc(100% - 128px)}
   .legend-help{left:14px;right:14px;width:auto;max-height:42dvh}
@@ -647,8 +656,19 @@ const ENUMS = {
   spacing: { label:'좌석 간격', col:'좌석간격', values:['넓음','보통','좁음'] },
   light:   { label:'채광',      col:'채광',     values:['밝음','보통','어두움'] },
   outlet:  { label:'콘센트',    col:'콘센트',   values:['많음','일부','없음'] },
-  stay:    { label:'머무르기',  col:'체류',     values:['장시간 가능','2시간 내외','회전 빠름'] }
+  stay:    { label:'머무르기',  col:'체류',     values:['장시간 가능','2시간 내외','회전 빠름'] },
+  // 접근·동반: 휠체어·유아차·아이·반려동물과 함께 갈 수 있는지 (서버 칸 이름은 db)
+  entrance:{ label:'입구',      col:'입구',     values:['턱 없음','경사로 있음','계단 있음'], group:'access' },
+  floor:   { label:'층 이동',   col:'층이동',   values:['1층','엘리베이터 있음','계단만'], group:'access', db:'floor_access' },
+  toilet:  { label:'화장실',    col:'화장실',   values:['매장 안','건물 공용','없음'], group:'access' },
+  kids:    { label:'아이 동반', col:'아이동반', values:['유아 의자 있음','동반 가능','노키즈존'], group:'access' },
+  pets:    { label:'반려동물',  col:'반려동물', values:['실내 가능','야외만','불가'], group:'access' }
 };
+// 항목 묶음: 화면(기록 창, 조건으로 찾기, 상세, 지도에 표시)을 이 두 묶음으로 나눠 보여 준다
+const GROUPS = [{ id:'space', label:'공간' }, { id:'access', label:'접근·동반' }];
+const groupOf = k => ENUMS[k].group || 'space';
+const ACCESS_KEYS = Object.keys(ENUMS).filter(k => groupOf(k) === 'access');
+const dbCol = k => ENUMS[k].db || k;
 // 기록 기준: 사람마다 '조용함'을 다르게 고르지 않도록 값마다 기준을 정해 둔다(? 버튼으로 본다)
 // 값 순서는 ENUMS와 같다(좋음, 보통, 아쉬움)
 const CRITERIA = {
@@ -673,14 +693,36 @@ const CRITERIA = {
   stay:    { how: '이용 시간 안내와 가게 분위기를 함께 보고 골라 주세요.',
              v: ['시간 제한이 없고, 3시간 이상 머물러도 눈치가 보이지 않아요.',
                  '이용 시간 안내가 있거나, 2시간 안팎이 자연스러운 분위기예요.',
-                 '자리가 적고 기다리는 사람이 많아 1시간 안쪽이 자연스러워요.'] }
+                 '자리가 적고 기다리는 사람이 많아 1시간 안쪽이 자연스러워요.'] },
+  entrance:{ how: '길에서 매장 안 좌석까지, 휠체어나 유아차가 그대로 들어갈 수 있는지예요. 2cm 이하 문턱은 턱이 없는 것으로 봐요.',
+             v: ['계단이나 높은 문턱 없이 바로 들어갈 수 있어요.',
+                 '계단이 있지만 경사로나 리프트로 들어갈 수 있어요.',
+                 '계단이나 높은 턱만 있어서, 휠체어로는 도움 없이 들어가기 어려워요.'] },
+  floor:   { how: '매장이 지하나 2층 이상이면 엘리베이터가 있는지예요. 매장 안이 여러 층이면 주 좌석 기준이에요.',
+             v: ['매장(주 좌석)이 1층이에요.',
+                 '지하나 2층 이상이지만 엘리베이터로 갈 수 있어요.',
+                 '지하나 2층 이상인데 계단으로만 갈 수 있어요.'] },
+  toilet:  { how: '손님이 쓸 수 있는 화장실이 어디 있는지예요.',
+             v: ['매장 안에 화장실이 있어요.',
+                 '매장 밖, 건물 공용 화장실을 써요(열쇠·비밀번호가 필요할 수 있어요).',
+                 '손님이 쓸 수 있는 화장실이 없어요.'] },
+  kids:    { how: '매장이 밝힌 정책과 실제로 갖춘 물품 기준이에요.',
+             v: ['아이와 함께 갈 수 있고, 유아 의자가 있어요.',
+                 '아이와 함께 갈 수 있지만, 유아 의자 같은 물품은 없어요.',
+                 '노키즈존이에요(나이 제한 포함).'] },
+  pets:    { how: '매장이 밝힌 정책 기준이에요. 크기·종류 제한이 있으면 한 줄 기록에 남겨 주세요.',
+             v: ['반려동물과 함께 실내에 들어갈 수 있어요.',
+                 '테라스 등 야외 자리에서만 함께할 수 있어요.',
+                 '반려동물과 함께 갈 수 없어요(보조견 제외).'] }
 };
 // keys를 주면 그 항목만 보여 준다(지도에서 고른 조건의 기준만 볼 때)
 function critPanel(keys, lead){
   const box = el('div','crit');
   box.appendChild(el('p','crit-lead', lead || '기록할 때 이 기준으로 골라 주세요. 여러 사람의 기록을 모아도 같은 뜻이 되도록 정한 기준이에요.'));
+  let lastGroup = null;
   for (const [k, def] of Object.entries(ENUMS)) {
     if (keys && !keys.includes(k)) continue;
+    if (!keys && groupOf(k) !== lastGroup) { lastGroup = groupOf(k); box.appendChild(el('h3','crit-group', GROUPS.find(g => g.id === lastGroup).label)); }
     const c = CRITERIA[k], sec = el('section','crit-item');
     sec.append(el('h4', null, def.label), el('p','crit-how', c.how));
     const dl = el('dl');
@@ -692,13 +734,13 @@ function critPanel(keys, lead){
 // ? 버튼: 누르면 기준이 펼쳐지고 다시 누르면 접힌다(마우스를 올리면 짧은 안내)
 function critButton(onToggle, open){
   const b = el('button','help-btn','?'); b.type = 'button';
-  b.setAttribute('aria-expanded', String(!!open)); b.setAttribute('aria-label', '소음·좌석 간격·채광·콘센트·머무르기 기준 보기');
+  b.setAttribute('aria-expanded', String(!!open)); b.setAttribute('aria-label', '항목별 값의 기준 보기');
   b.title = '조용함, 보통 같은 값이 무엇을 뜻하는지 기준 보기';
   b.addEventListener('click', onToggle);
   return b;
 }
 const TEXTS = { name:['이름',40], type:['유형',20], addr:['주소',60], materials:['주요자재',80], furniture:['가구',80], note:['한줄기록',200], date:['방문일',20] };
-const HEADER_MAP = new Map([['이름','name'],['유형','type'],['주소','addr'],['위도','lat'],['경도','lng'],['소음','noise'],['좌석간격','spacing'],['채광','light'],['콘센트','outlet'],['체류','stay'],['주요자재','materials'],['가구','furniture'],['한줄기록','note'],['방문일','date']]);
+const HEADER_MAP = new Map([['이름','name'],['유형','type'],['주소','addr'],['위도','lat'],['경도','lng'],['소음','noise'],['좌석간격','spacing'],['채광','light'],['콘센트','outlet'],['체류','stay'],['주요자재','materials'],['가구','furniture'],['한줄기록','note'],['방문일','date'],['입구','entrance'],['층이동','floor'],['화장실','toilet'],['아이동반','kids'],['반려동물','pets']]);
 
 // 예시 데이터: 가상의 장소입니다.
 const SAMPLE = [
@@ -717,7 +759,20 @@ const SAMPLE = [
  ['바람길 카페','카페','성수동2가 일대',37.5498,127.0612,'보통','넓음','밝음','일부','장시간 가능','폴딩 도어, 원목 데크','야외 테라스 좌석','날씨 좋은 날엔 문을 전면 개방한다','2026-09-21'],
  ['지하 음반실','카페','성수동2가 일대',37.5437,127.0520,'보통','좁음','어두움','많음','2시간 내외','흡음 패널, 카펫 타일','리스닝 소파','음악 감상 위주라 대화는 작게','2026-09-26']
 ];
-const SAMPLE_ROWS = [['이름','유형','주소','위도','경도','소음','좌석간격','채광','콘센트','체류','주요자재','가구','한줄기록','방문일'], ...SAMPLE];
+// 예시 장소의 접근·동반 값 (SAMPLE과 같은 순서): 입구, 층 이동, 화장실, 아이 동반, 반려동물
+const SAMPLE_ACCESS = [
+ ['턱 없음','1층','매장 안','유아 의자 있음','야외만'], ['경사로 있음','1층','건물 공용','동반 가능','실내 가능'],
+ ['계단 있음','계단만','건물 공용','노키즈존','불가'], ['턱 없음','엘리베이터 있음','건물 공용','노키즈존','불가'],
+ ['계단 있음','1층','매장 안','동반 가능','야외만'], ['계단 있음','1층','없음','동반 가능','불가'],
+ ['턱 없음','1층','매장 안','유아 의자 있음','실내 가능'], ['경사로 있음','1층','매장 안','동반 가능','불가'],
+ ['턱 없음','1층','매장 안','유아 의자 있음','야외만'], ['계단 있음','엘리베이터 있음','건물 공용','동반 가능','불가'],
+ ['턱 없음','1층','건물 공용','동반 가능','실내 가능'], ['턱 없음','1층','없음','유아 의자 있음','야외만'],
+ ['경사로 있음','1층','매장 안','동반 가능','실내 가능'], ['계단 있음','계단만','매장 안','노키즈존','불가']
+];
+// 열 순서: 처음 14개는 예전과 같고, 접근·동반 5개는 맨 뒤에 붙인다(예전에 저장한 기록도 그대로 읽힌다)
+const SAMPLE_ROWS = [['이름','유형','주소','위도','경도','소음','좌석간격','채광','콘센트','체류','주요자재','가구','한줄기록','방문일','입구','층이동','화장실','아이동반','반려동물'],
+  ...SAMPLE.map((r, i) => [...r, ...(SAMPLE_ACCESS[i] || [])])];
+const accessOf = o => ACCESS_KEYS.map(k => o[dbCol(k)] || o[k] || ''); // 서버 줄이나 장소에서 접근·동반 값 5개를 열 순서대로
 
 /* ---------- 입력 정리(보안) ---------- */
 const BAD_CHARS = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F​-‏‪-‮⁦-⁩﻿]/g;
@@ -1005,7 +1060,7 @@ async function loadPublic(){
   const groups = new Map();
   for (const r of rows) {
     // 서버 값도 엑셀 불러오기와 같은 검사를 거친다
-    const { places: [p] } = rowsToPlaces([SAMPLE_ROWS[0], [r.place_name, r.place_type, r.place_address, r.lat, r.lng, r.noise, r.spacing, r.light, r.outlet, r.stay, r.materials, r.furniture, r.note, r.visited_on]]);
+    const { places: [p] } = rowsToPlaces([SAMPLE_ROWS[0], [r.place_name, r.place_type, r.place_address, r.lat, r.lng, r.noise, r.spacing, r.light, r.outlet, r.stay, r.materials, r.furniture, r.note, r.visited_on, ...accessOf(r)]]);
     if (!p) continue;
     if (!groups.has(r.place_id)) groups.set(r.place_id, { pid: r.place_id, kid: r.kakao_id || '', name: p.name, type: p.type, addr: p.addr, lat: p.lat, lng: p.lng, recs: [] });
     groups.get(r.place_id).recs.push({ ...p, rid: r.id, nickname: cleanText(r.nickname, 30), mineRec: !!r.mine }); // 닉네임은 관리자에게만 온다
@@ -1015,7 +1070,7 @@ async function loadPublic(){
   rebuild({ fit: first && !state.sel });
 }
 function placesToRows(places){
-  return [SAMPLE_ROWS[0], ...places.map(p => [p.name,p.type,p.addr,p.lat,p.lng,p.noise,p.spacing,p.light,p.outlet,p.stay,p.materials,p.furniture,p.note,p.date])];
+  return [SAMPLE_ROWS[0], ...places.map(p => [p.name,p.type,p.addr,p.lat,p.lng,p.noise,p.spacing,p.light,p.outlet,p.stay,p.materials,p.furniture,p.note,p.date, ...accessOf(p)])];
 }
 function loadInitial(){
   try {
@@ -1051,7 +1106,9 @@ function buildFilters(){
     vchips.appendChild(b);
   }
   vg.appendChild(vchips); wrap.appendChild(vg);
+  let lastGroup = null;
   for (const [k, def] of Object.entries(ENUMS)) {
+    if (groupOf(k) !== lastGroup) { lastGroup = groupOf(k); wrap.appendChild(el('div','fgroup-head', GROUPS.find(g => g.id === lastGroup).label)); }
     const g = el('div','fgroup'); g.appendChild(el('div','fgroup-name', def.label));
     const chips = el('div','chips'); chips.setAttribute('role','group'); chips.setAttribute('aria-label', def.label);
     for (const v of def.values) {
@@ -1145,7 +1202,16 @@ function renderDetail(){
   else d.appendChild(el('p','src-note', (p.rid ? (p.pub ? '내 기록이에요 · 다른 사람에게도 공개 중' : '내 기록이에요 · 나만 보기') : '내 기록이에요 · 이 브라우저에 저장')
     + (p.pubCount ? ` · 다른 사람 공개 기록 ${p.pubCount}개도 있어요` : '')));
   const dl = el('dl','scale');
+  const accessEmpty = ACCESS_KEYS.every(k => !p[k]);
+  let lastGroup = null;
   for (const [k, def] of Object.entries(ENUMS)) {
+    if (groupOf(k) !== lastGroup) {
+      lastGroup = groupOf(k);
+      dl.appendChild(el('dt','scale-group', GROUPS.find(g => g.id === lastGroup).label));
+      // 접근·동반은 예전 기록에는 없으므로, 하나도 없으면 줄 하나로 줄인다
+      if (lastGroup === 'access' && accessEmpty) { dl.appendChild(el('dd','scale-empty', '입구, 층 이동, 화장실, 아이·반려동물 동반은 아직 기록이 없어요.')); }
+    }
+    if (groupOf(k) === 'access' && accessEmpty) continue;
     dl.appendChild(el('dt', null, def.label));
     const dd = el('dd');
     if (!p[k]) dd.appendChild(el('span','opt none','기록 없음'));
@@ -1472,7 +1538,8 @@ function renderMap(vis){
 
 /* ---------- 지도에 표시 (자주 찾는 메뉴) ---------- */
 // 고른 속성을 핀 옆 배지로 보여 준다. ENUMS 값은 좋은 것부터 아쉬운 것 순서라, 그 순서가 곧 진하기다.
-const SHORT = { noise:['조용','보통','시끄러움'], spacing:['넓음','보통','좁음'], light:['밝음','보통','어두움'], outlet:['많음','일부','없음'], stay:['장시간','2시간','회전 빠름'] };
+const SHORT = { noise:['조용','보통','시끄러움'], spacing:['넓음','보통','좁음'], light:['밝음','보통','어두움'], outlet:['많음','일부','없음'], stay:['장시간','2시간','회전 빠름'],
+  entrance:['턱 없음','경사로','계단'], floor:['1층','엘리베이터','계단만'], toilet:['매장 안','건물','없음'], kids:['유아 의자','아이 가능','노키즈'], pets:['실내 동반','야외만','불가'] };
 const BADGE_KEY = 'gongan-sillok:badges';
 // 여러 조건을 함께 고를 수 있다. 저장은 이 브라우저에만 한다
 state.badges = (() => { try { const v = JSON.parse(localStorage.getItem(BADGE_KEY) || '[]'); return Array.isArray(v) ? v.filter(k => ENUMS[k]) : []; } catch { return []; } })();
@@ -1503,6 +1570,7 @@ function renderQuick(){
   base.addEventListener('click', () => { state.purpose = null; setBadges([]); }); // 조건을 모두 풀고 유형 색으로
   q.appendChild(base);
   for (const k of Object.keys(ENUMS)) {
+    if (k === ACCESS_KEYS[0]) q.appendChild(el('div','quick-sep', '접근·동반'));
     const on = state.badges.includes(k);
     const b = el('button','quick-btn'); b.type = 'button'; b.setAttribute('aria-pressed', String(on));
     b.append(el('span','quick-name', ENUMS[k].label), el('span','quick-n', `${SHORT[k][0]} ${state.places.filter(p => level(p, k) === 0).length}`)); // 좋은 값인 곳 수
@@ -1554,7 +1622,10 @@ const PURPOSES = [
   { id: 'read', label: '책 읽기',  w: { noise: [3, 1, 0], light: [2, 1, 0], stay: [2, 1, 0], spacing: [1, .5, 0] },
     why: { noise: '글에 빠져들려면 조용해야 해요.', light: '밝아야 오래 읽어도 눈이 덜 피로해요.', stay: '한 권을 읽으려면 시간이 넉넉해야 해요.', spacing: '옆 사람과 거리가 있으면 덜 신경 쓰여요.' } },
   { id: 'talk', label: '대화하기', w: { noise: [1, 2, 0], spacing: [2, 1, 0], stay: [1.5, 1.5, 0], light: [1, .5, 0] }, // 대화는 너무 조용한 곳보다 보통이 낫다
-    why: { noise: '너무 조용하면 목소리가 튀고, 시끄러우면 말이 안 들려요. 보통이 가장 편해요.', spacing: '옆 테이블에 이야기가 덜 들려요.', stay: '천천히 이야기 나누려면 2시간 이상이면 충분해요.', light: '밝은 곳이 분위기가 편안한 편이에요.' } }
+    why: { noise: '너무 조용하면 목소리가 튀고, 시끄러우면 말이 안 들려요. 보통이 가장 편해요.', spacing: '옆 테이블에 이야기가 덜 들려요.', stay: '천천히 이야기 나누려면 2시간 이상이면 충분해요.', light: '밝은 곳이 분위기가 편안한 편이에요.' } },
+  // 경사로·엘리베이터도 들어갈 수 있으니 '보통'에도 점수를 크게 준다
+  { id: 'wheel', label: '휠체어·유아차', w: { entrance: [3, 2.5, 0], floor: [3, 2.5, 0], spacing: [1, .5, 0], toilet: [1, .5, 0] },
+    why: { entrance: '계단 없이, 또는 경사로로 들어갈 수 있어야 해요.', floor: '1층이거나 엘리베이터가 있어야 좌석까지 갈 수 있어요.', spacing: '테이블 사이가 넓어야 휠체어·유아차가 지나갈 수 있어요.', toilet: '매장 안에 화장실이 있으면 오래 머물기 편해요.' } }
 ];
 state.purpose = null; state.pickSort = 'fit'; state.pickHelp = false; state.delAsk = null;
 const importance = pts => { const m = Math.max(...pts); return m >= 3 ? '가장 중요' : m >= 2 ? '중요' : '참고'; };
@@ -2319,7 +2390,12 @@ function renderAdd(){
   const cb = critButton(() => { critBox.hidden = !critBox.hidden; cb.setAttribute('aria-expanded', String(!critBox.hidden)); });
   critRow.appendChild(cb); body.append(critRow, critBox);
   // 소음, 좌석 간격… : 칩을 눌러 고르고, 다시 누르면 '기록 안 함'
+  let lastGroup = null;
   for (const [k, def] of Object.entries(ENUMS)) {
+    if (groupOf(k) !== lastGroup) {
+      lastGroup = groupOf(k);
+      body.appendChild(el('h3','add-group', GROUPS.find(g => g.id === lastGroup).label + (lastGroup === 'access' ? ' · 아는 것만 골라도 돼요' : '')));
+    }
     const w = el('div','add-field'); w.appendChild(el('span','lbl', def.label));
     const chips = el('div','chips'); chips.setAttribute('role','group'); chips.setAttribute('aria-label', def.label);
     for (const v of def.values) {
@@ -2351,7 +2427,7 @@ function renderAdd(){
   if (same) { save.disabled = true; save.title = '이미 기록한 곳이라 새로 저장할 수 없어요'; }
   save.addEventListener('click', () => {
     const v = addState.values;
-    const newRow = [nameI.value, typeI.value, p.address, p.lat, p.lng, v.noise || '', v.spacing || '', v.light || '', v.outlet || '', v.stay || '', matI.value, furI.value, noteI.value, dateI.value];
+    const newRow = [nameI.value, typeI.value, p.address, p.lat, p.lng, v.noise || '', v.spacing || '', v.light || '', v.outlet || '', v.stay || '', matI.value, furI.value, noteI.value, dateI.value, ...accessOf(v)];
     if (auth.user) { saveToServer(newRow, p, editing, !!(pubI && pubI.checked)); return; } // 로그인: 계정(서버)에 저장
     // 이 브라우저의 '내 기록'만 고친다: 고칠 때는 같은 자리의 줄을 바꾸고, 새로 기록할 때는 맨 뒤에 붙인 다음, 엑셀 불러오기와 같은 검사로 다시 만든다
     // 예시(가상) 장소만 있던 상태에서 처음 기록하면 예시는 빼고 시작한다
@@ -2394,7 +2470,7 @@ const sb = window.supabase && SUPABASE_URL && SUPABASE_KEY
   ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { flowType: 'pkce', persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } })
   : null;
 const auth = { user: null, nickname: '', role: 'user', ready: false };
-const RECORD_COLS = 'id, is_public, noise, spacing, light, outlet, stay, materials, furniture, note, visited_on, places(id, kakao_id, name, type, address, lat, lng)';
+const RECORD_COLS = 'id, is_public, noise, spacing, light, outlet, stay, materials, furniture, note, visited_on, entrance, floor_access, toilet, kids, pets, places(id, kakao_id, name, type, address, lat, lng)';
 
 async function loadMine(){
   const { data, error } = await sb.from('records').select(RECORD_COLS).eq('user_id', auth.user.id).order('created_at');
@@ -2403,7 +2479,7 @@ async function loadMine(){
   const places = [];
   for (const r of data) {
     const pl = r.places; if (!pl) continue;
-    const { places: [p] } = rowsToPlaces([SAMPLE_ROWS[0], [pl.name, pl.type, pl.address, pl.lat, pl.lng, r.noise, r.spacing, r.light, r.outlet, r.stay, r.materials, r.furniture, r.note, r.visited_on]]);
+    const { places: [p] } = rowsToPlaces([SAMPLE_ROWS[0], [pl.name, pl.type, pl.address, pl.lat, pl.lng, r.noise, r.spacing, r.light, r.outlet, r.stay, r.materials, r.furniture, r.note, r.visited_on, ...accessOf(r)]]);
     if (!p) continue;
     places.push(Object.assign(p, { id: 'p' + places.length, rid: r.id, pid: pl.id, kid: pl.kakao_id || '', pub: !!r.is_public }));
   }
@@ -2417,7 +2493,8 @@ async function saveToServer(row, picked, editing, isPublic){
   if (addState.busy) return;
   Object.assign(addState, { busy: true, status: '저장하는 중이에요…', err: false }); renderAdd();
   const vals = { noise: np.noise || null, spacing: np.spacing || null, light: np.light || null, outlet: np.outlet || null, stay: np.stay || null,
-    materials: np.materials || null, furniture: np.furniture || null, note: np.note || null, visited_on: /^\d{4}-\d{2}-\d{2}$/.test(np.date) ? np.date : null, is_public: isPublic };
+    materials: np.materials || null, furniture: np.furniture || null, note: np.note || null, visited_on: /^\d{4}-\d{2}-\d{2}$/.test(np.date) ? np.date : null, is_public: isPublic,
+    ...Object.fromEntries(ACCESS_KEYS.map(k => [dbCol(k), np[k] || null])) };
   try {
     let placeId;
     if (editing && addState.server) {
