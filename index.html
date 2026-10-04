@@ -2414,7 +2414,10 @@ const NEAR_KIND = Object.fromEntries(NEAR_KINDS.map(k => [k.code, k]));
 const NEAR_TW = 0.006, NEAR_TH = 0.0045, NEAR_MAX_TILES = 24, NEAR_MAX_DEPTH = 2, NEAR_PARALLEL = 4;
 const NEAR_PREF = 'gongan-sillok:near';
 state.near = new Map(); // id → 장소
-state.nearKinds = (() => { try { const v = JSON.parse(localStorage.getItem(NEAR_PREF)); if (Array.isArray(v)) return new Set(v.filter(c => NEAR_KIND[c])); } catch {} return new Set(NEAR_KINDS.map(k => k.code)); })();
+// 주변 장소는 처음에는 꺼 둔다(내 기록 핀이 잘 보이도록). '주변 가게'를 직접 눌러야 켜지고,
+// 켤 때는 지난번에 골라 둔 종류(NEAR_PREF)를 쓴다
+state.nearKinds = new Set();
+const nearPref = () => { try { const v = JSON.parse(localStorage.getItem(NEAR_PREF)); if (Array.isArray(v)) { const s = v.filter(c => NEAR_KIND[c]); if (s.length) return s; } } catch {} return NEAR_KINDS.map(k => k.code); };
 const nearTiles = new Map(); // 종류:칸 → 'loading' | 'done'
 const nearMarkers = new Map();
 let nearTimer = null, nearOff = false;
@@ -2424,7 +2427,7 @@ const nearShown = () => !!map && !state.collect && map.getZoom() >= NEAR_ZOOM_BA
 function queueNearby(){ clearTimeout(nearTimer); nearTimer = setTimeout(loadNearby, 350); }
 function toggleNearKind(code){
   if (state.nearKinds.has(code)) state.nearKinds.delete(code); else state.nearKinds.add(code);
-  try { localStorage.setItem(NEAR_PREF, JSON.stringify([...state.nearKinds])); } catch {}
+  if (state.nearKinds.size) try { localStorage.setItem(NEAR_PREF, JSON.stringify([...state.nearKinds])); } catch {} // 켜 둔 종류만 기억한다
   if (state.sel && state.near.has(state.sel) && !state.nearKinds.has(state.near.get(state.sel).kind)) select(null);
   renderAll(); renderNearMarkers(); loadNearby();
 }
@@ -3372,7 +3375,7 @@ function toggleQuick(q){
   setBadges(on ? rest : [...rest, q.k]); // 다시 그리기도 여기서 한다
 }
 const filterCount = () => Object.keys(ENUMS).reduce((n, k) => n + state.filters[k].size, 0) + state.filters.view.size;
-const saveNearKinds = () => { try { localStorage.setItem(NEAR_PREF, JSON.stringify([...state.nearKinds])); } catch {} };
+const saveNearKinds = () => { if (state.nearKinds.size) try { localStorage.setItem(NEAR_PREF, JSON.stringify([...state.nearKinds])); } catch {} };
 let nearBefore = null; // '주변 가게'를 끄기 전에 켜 두었던 종류
 function renderQuickChips(){
   const box = $('qchips'); box.replaceChildren();
@@ -3389,7 +3392,7 @@ function renderQuickChips(){
   nb.title = '지도를 확대하면 기록 없는 카페·음식점·문화시설·도서관이 점으로 보여요';
   nb.addEventListener('click', () => {
     if (state.nearKinds.size) { nearBefore = [...state.nearKinds]; state.nearKinds = new Set(); }
-    else state.nearKinds = new Set(nearBefore && nearBefore.length ? nearBefore : NEAR_KINDS.map(k => k.code));
+    else state.nearKinds = new Set(nearBefore && nearBefore.length ? nearBefore : nearPref());
     saveNearKinds(); renderAll(); loadNearby();
     if (state.nearKinds.size && map && map.getZoom() < NEAR_ZOOM_BASE) toast('지도를 조금 더 확대하면 주변 가게가 점으로 보여요.');
   });
