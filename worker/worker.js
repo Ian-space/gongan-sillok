@@ -9,10 +9,11 @@
 //   POST /transit  { startX, startY, endX, endY, searchDttm? }  → TMAP 대중교통
 //   POST /walk     { startX, startY, endX, endY }               → TMAP 보행자 경로
 //   POST /search   { query, x?, y? }                            → 카카오 키워드 장소 검색 (x, y가 있으면 그 근처부터)
+//   POST /station  { x, y }                                     → 1.5km 안 지하철역 (가까운 순)
 //   POST /nearby   { rect: "왼쪽X,아래Y,오른쪽X,위Y", code? }      → 지도 한 칸 안의 장소 (code: CE7 카페, FD6 음식점, CT1 문화시설, LIB 도서관)
 
 const ALLOWED_ORIGINS = ['https://ian-space.github.io', 'http://localhost:8765'];
-const VERSION = '2026-10-04.1'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
+const VERSION = '2026-10-05.1'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
 // 경로 결과 저장 시간(초). KV 바인딩(ROUTE_CACHE)이 없으면 저장하지 않고 그대로 동작한다
 const CACHE_SECONDS = { transit: 600, walk: 86400 };
 // 주변 장소 종류. 카카오 업종 코드(CE7 카페, FD6 음식점, CT1 문화시설)로 찾고,
@@ -48,7 +49,7 @@ export default {
     if (request.method !== 'POST') return reply(405, { error: 'POST only' });
 
     const kind = new URL(request.url).pathname.replace(/^\/+/, '');
-    if (!TMAP[kind] && kind !== 'search' && kind !== 'nearby') return reply(404, { error: 'unknown path' });
+    if (!TMAP[kind] && kind !== 'search' && kind !== 'nearby' && kind !== 'station') return reply(404, { error: 'unknown path' });
 
     let input;
     try { input = await request.json(); } catch { return reply(400, { error: 'invalid json' }); }
@@ -71,6 +72,23 @@ export default {
         name: d.place_name, category: d.category_name, address: d.road_address_name || d.address_name,
         phone: d.phone, x: d.x, y: d.y, url: d.place_url, distance: d.distance,
       })) });
+    }
+
+    /* 가까운 지하철역: 카카오 업종 검색(SW8)으로 1.5km 안의 역을 가까운 순으로. 역은 잘 바뀌지 않아 약 100m 단위로 30일 저장 */
+    if (kind === 'station') {
+      if (!env.KAKAO_REST_KEY) return reply(500, { error: 'KAKAO_REST_KEY is not set' });
+      const x = num(input.x), y = num(input.y);
+      if (!inKorea(x, y)) return reply(400, { error: 'coordinates out of range' });
+      const cacheKey = `station:${x.toFixed(3)},${y.toFixed(3)}`;
+      const kv = env.ROUTE_CACHE;
+      if (kv) { const hit = await kv.get(cacheKey).catch(() => null); if (hit) return new Response(hit, { status: 200, headers: { ...cors, 'Content-Type': 'application/json; charset=utf-8', 'X-Cache': 'HIT' } }); }
+      const params = new URLSearchParams({ category_group_code: 'SW8', x: x.toFixed(4), y: y.toFixed(4), radius: '1500', sort: 'distance', size: '5' });
+      const up = await fetch('https://dapi.kakao.com/v2/local/search/category.json?' + params, { headers: { Authorization: 'KakaoAK ' + env.KAKAO_REST_KEY } });
+      const j = await up.json().catch(() => null);
+      if (!up.ok || !j) return reply(up.status === 200 ? 502 : up.status, { error: (j && (j.message || j.msg)) || 'kakao error' });
+      const text = JSON.stringify({ stations: (j.documents || []).map(d => ({ name: d.place_name, line: String(d.category_name || '').split('>').pop().trim(), x: d.x, y: d.y })) });
+      if (kv) ctx.waitUntil(kv.put(cacheKey, text, { expirationTtl: 30 * 86400 }).catch(() => {}));
+      return new Response(text, { status: 200, headers: { ...cors, 'Content-Type': 'application/json; charset=utf-8', 'X-Cache': kv ? 'MISS' : 'OFF' } });
     }
 
     /* 카카오 업종 검색: 지도 한 칸(사각형) 안의 장소. 카카오는 한 번에 최대 45곳(15곳씩 3쪽)만 준다.

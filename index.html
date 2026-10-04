@@ -9,7 +9,7 @@
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="공간실록">
 <meta property="og:title" content="공간실록 · 평점 대신 공간의 사실">
-<meta property="og:description" content="소음, 좌석 간격, 채광, 콘센트, 머무르기. 성수동 공간을 사실로 기록하는 지도예요.">
+<meta property="og:description" content="소음, 좌석 간격, 콘센트부터 입구 계단, 화장실까지. 공간을 평점 대신 사실로 기록하는 지도예요.">
 <meta property="og:image" content="https://ian-space.github.io/gongan-sillok/icons/icon-512.png">
 <meta property="og:url" content="https://ian-space.github.io/gongan-sillok/">
 <link rel="manifest" href="manifest.webmanifest">
@@ -685,7 +685,7 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
       <div class="brand-row">
         <h1 class="brand">공간실록</h1>
       </div>
-      <p class="tagline">평점 대신 공간의 사실을 기록합니다. 성수동 시제품.</p>
+      <p class="tagline">평점 대신 공간의 사실을 기록합니다. 시제품.</p>
       <input type="file" id="file" accept=".xlsx,.csv" hidden>
       <!-- 패널이 접혀 있을 때도 보이는 한 줄: 지금 지도에 보이는 곳 수와 사실 요약, 기록하기 -->
       <div class="peek">
@@ -738,7 +738,7 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
   </aside>
 
   <main class="mapwrap">
-    <div id="map" role="region" aria-label="성수동 지도와 기록된 공간 위치"></div>
+    <div id="map" role="region" aria-label="지도와 기록된 공간 위치"></div>
     <div class="mapmsg" id="mapmsg" hidden><p id="mapmsgText"></p></div>
     <!-- 지도 위 맨 윗줄: 검색창과 계정, 그 아래 빠른 조건 한 줄 -->
     <div class="topbar" id="topbar">
@@ -1013,14 +1013,6 @@ function routeLinks(p, me){
 }
 
 /* ---------- 거리 ---------- */
-// 성수동 일대 지하철역 (역 중심 기준 대략 좌표)
-const STATIONS = [
-  { name:'성수역',       line:'2호선',      lat:37.5446, lng:127.0560 },
-  { name:'뚝섬역',       line:'2호선',      lat:37.5472, lng:127.0474 },
-  { name:'건대입구역',   line:'2·7호선',    lat:37.5404, lng:127.0692 },
-  { name:'서울숲역',     line:'수인분당선', lat:37.5436, lng:127.0447 },
-  { name:'뚝섬유원지역', line:'7호선',      lat:37.5315, lng:127.0667 }
-];
 const STATION_MAX_M = 1500; // 이보다 먼 역은 "가까운 역"으로 보여 주지 않는다
 
 function distM(a, b){ // 두 좌표 사이 직선거리(m)
@@ -1032,10 +1024,32 @@ function distM(a, b){ // 두 좌표 사이 직선거리(m)
 // 실제 길은 직선보다 돌아가므로 1.3배로 잡고, 분당 75m를 걷는다고 본다
 const walkMin = m => Math.max(1, Math.round(m * 1.3 / 75));
 const fmtDist = m => m < 995 ?`${Math.max(10, Math.round(m / 10) * 10)}m` : `${(m / 1000).toFixed(1)}km`;
+// 가까운 지하철역: 전국 어디서나 카카오에서 찾아 온다(중계 서버 /station). 약 100m 단위로 한 번만 묻고 기억한다.
+// 아직 모르면 null을 돌려주고 찾아 온 뒤 상세 패널을 다시 그린다
+const stationCache = new Map(); // '위도,경도'(소수 셋째 자리) → 역 목록 | 'loading'
 function nearestStation(p){
+  const key = (+p.lat).toFixed(3) + ',' + (+p.lng).toFixed(3), list = stationCache.get(key);
+  if (list === undefined) { loadStations(key, p); return null; }
+  if (!Array.isArray(list)) return null;
   let best = null;
-  for (const s of STATIONS) { const m = distM(p, s); if (!best || m < best.m) best = { ...s, m }; }
+  for (const s of list) { const m = distM(p, s); if (!best || m < best.m) best = { ...s, m }; }
   return best && best.m <= STATION_MAX_M ? best : null;
+}
+async function loadStations(key, p){
+  if (!ROUTE_PROXY) { stationCache.set(key, []); return; }
+  stationCache.set(key, 'loading');
+  try {
+    const r = await proxyPost('/station', { x: String(p.lng), y: String(p.lat) });
+    if (r.status === 404) { stationCache.set(key, []); return; } // 중계 서버가 아직 예전 코드
+    if (!r.ok) throw new Error('station ' + r.status);
+    const j = await r.json();
+    stationCache.set(key, (j.stations || []).map(s => {
+      const line = cleanText(s.line, 20).replace(/^(수도권|서울|부산|대구|광주|대전)\s*/, '');
+      const name = cleanText(s.name, 30);
+      return { name: /호선|선$/.test(name) || !line ? name : `${name}(${line})`, lat: toNum(s.y), lng: toNum(s.x) };
+    }).filter(s => s.name && s.lat >= 33 && s.lat <= 39 && s.lng >= 124 && s.lng <= 132));
+  } catch { stationCache.delete(key); return; } // 다음에 다시 시도
+  if (state.sel) renderDetail();
 }
 
 function rowsToPlaces(rows){
@@ -1400,7 +1414,7 @@ function renderDetail(){
     }
     if (st) {
       const line = el('div');
-      line.append(`${st.name}(${st.line})에서 `, el('b', null, `걸어서 약 ${walkMin(st.m)}분`), ` (${fmtDist(st.m)})`); w.appendChild(line);
+      line.append(`${st.name}에서 `, el('b', null, `걸어서 약 ${walkMin(st.m)}분`), ` (${fmtDist(st.m)})`); w.appendChild(line);
     }
     w.appendChild(el('div','muted','직선거리로 계산한 대략적인 값이에요.'));
     d.appendChild(w);
@@ -2643,7 +2657,7 @@ function renderAdd(){
   if (addState.step === 'search') {
     const f = el('form','add-search'); f.setAttribute('role','search');
     const q = el('input','search'); q.id = 'addQ'; q.type = 'search'; q.maxLength = 40; q.value = addState.query;
-    q.placeholder = '가게 이름으로 찾기 (예: 성수 카페 이름)'; q.setAttribute('aria-label','가게 이름');
+    q.placeholder = '가게 이름으로 찾기 (예: 동네 이름 + 가게 이름)'; q.setAttribute('aria-label','가게 이름');
     const go = el('button','btn','찾기'); go.type = 'submit';
     f.append(q, go); f.addEventListener('submit', e => { e.preventDefault(); searchPlaces(q.value); });
     body.appendChild(f);
