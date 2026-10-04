@@ -1,0 +1,13 @@
+# 공간실록 중계 서버 (Cloudflare Worker) 설정
+# Cloudflare가 GitHub 저장소의 이 폴더(worker)를 가져가 `npx wrangler deploy`로 자동 배포한다.
+# 비밀 변수(TMAP_APP_KEY, KAKAO_REST_KEY)는 여기 적지 않는다. Cloudflare 대시보드에 그대로 두면 배포해도 유지된다.
+name = "gongan-sillok-route"
+main = "worker.js"
+compatibility_date = "2025-09-01"
+workers_dev = true
+keep_vars = true # 대시보드에서 넣은 일반 변수도 지우지 않는다
+
+# 경로 결과·주변 장소 저장소 (KV). id는 비밀이 아니라 저장소 이름표다
+[[kv_namespaces]]
+binding = "ROUTE_CACHE"
+id = "08c80ee463d14c6d8b68f87f26b229c8"
