@@ -327,7 +327,15 @@ button.stat[aria-pressed="true"] span{color:#FFFFFF}
 .pin.ext.sel .pin-label{background:#5B6475}
 /* 주변 카페(기록 없음): 작은 회색 점. 아주 확대하면 이름도 */
 .near-dot{position:relative;width:14px;height:14px;cursor:pointer}
-.near-dot i{position:absolute;inset:0;border-radius:50%;background:#FFFFFF;box-shadow:inset 0 0 0 3px #7A8494,0 1px 3px rgba(15,20,40,.3);transition:transform .1s ease-out}
+.near-dot i{position:absolute;inset:0;border-radius:50%;background:#FFFFFF;box-shadow:inset 0 0 0 3px var(--nc,#7A8494),0 1px 3px rgba(15,20,40,.3);transition:transform .1s ease-out}
+/* 범례 아래 줄: 주변 장소 종류 켜고 끄기 */
+.near-row{flex-basis:100%;display:flex;flex-wrap:wrap;align-items:center;gap:4px 6px;padding-top:6px;margin-top:1px;border-top:1px solid var(--line)}
+.near-row b{margin-right:2px}
+.near-chip{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--line);border-radius:999px;background:var(--panel);padding:2px 9px 2px 7px;font-size:12px;font-weight:600;color:var(--muted);cursor:pointer}
+.near-chip i{width:10px !important;height:10px !important;background:#FFFFFF !important;box-shadow:inset 0 0 0 2.5px var(--nc)}
+.near-chip[aria-pressed="true"]{border-color:var(--nc-on,var(--ink));color:var(--ink)}
+.near-chip[aria-pressed="false"]{opacity:.55;text-decoration:line-through}
+.near-chip.later{border-style:dashed}
 .near-dot:hover i{transform:scale(1.3)}
 .near-dot span{position:absolute;left:18px;top:-2px;white-space:nowrap;font-size:11px;font-weight:600;color:#4A5262;text-shadow:0 0 3px #FFFFFF,0 0 3px #FFFFFF,0 0 3px #FFFFFF}
 .ext-tag{flex:none;font-size:11px;font-weight:600;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:0 7px;margin-left:auto}
@@ -1664,14 +1672,14 @@ function renderLegend(){
     lg.appendChild(el('b', null, ENUMS[k].label));
     SHORT[k].forEach((t, i) => { const s = el('span'); s.append(el('i', 'lv' + i), t); lg.appendChild(s); });
     lg.appendChild(helpBtn());
-    lg.hidden = !map; renderLegendHelp(); return;
+    nearLegendRow(lg); lg.hidden = !map; renderLegendHelp(); return;
   }
   if (ks.length > 1) { // 조건 여럿: 모두 만족하는 곳이 몇 곳인지 함께
     lg.setAttribute('aria-label', '고른 조건 표시 안내');
     lg.appendChild(el('b', null, `${ks.map(k => SHORT[k][0]).join(' + ')} 모두 만족 ${state.places.filter(allGood).length}곳`));
     ['모두', '일부', '없음'].forEach((t, i) => { const s = el('span'); s.append(el('i', 'lv' + i), t); lg.appendChild(s); });
     lg.appendChild(helpBtn());
-    lg.hidden = !map; renderLegendHelp(); return;
+    nearLegendRow(lg); lg.hidden = !map; renderLegendHelp(); return;
   }
   if (state.legendHelp) { state.legendHelp = false; } // 조건을 모두 끄면 기준도 접는다
   $('legendHelp').hidden = true;
@@ -1682,7 +1690,8 @@ function renderLegend(){
     const s = el('span'); const i = el('i'); i.style.setProperty('--c', c.color);
     s.append(i, document.createTextNode(c.name)); lg.appendChild(s);
   }
-  if (state.ext.results.length || (nearShown() && [...state.near.values()].some(nearVisible))) { const s = el('span'); s.append(el('i','ext-dot'), '기록 없음'); lg.appendChild(s); }
+  if (state.ext.results.length) { const s = el('span'); s.append(el('i','ext-dot'), '기록 없음'); lg.appendChild(s); }
+  nearLegendRow(lg);
   lg.hidden = !map || !used.size;
 }
 /* ---------- 경로 찾기 (대중교통은 ODsay 기본·TMAP 예비, 도보는 TMAP) ---------- */
@@ -2030,52 +2039,91 @@ function syncExtMarkers(){
     extMarkers.set(p.id, mk);
   }
 }
-/* ---------- 주변 카페 (기록 없는 가게를 지도에서 바로 눌러 보기) ---------- */
-// 지도를 충분히 확대하면, 화면에 걸친 칸(약 550m x 500m)마다 카카오에서 카페를 불러와 작은 회색 점으로 보여 준다.
+/* ---------- 주변 장소 (기록 없는 곳을 지도에서 바로 눌러 보기) ---------- */
+// 지도를 충분히 확대하면, 화면에 걸친 칸(약 550m x 500m)마다 카카오에서 종류별로 장소를 불러와 작은 점으로 보여 준다.
 // 점을 누르면 검색 결과의 흰 핀처럼 기본 정보와 '이 장소 기록하기'가 열린다. 칸마다 한 번만 불러온다.
-const NEAR_ZOOM = 16, NEAR_TW = 0.006, NEAR_TH = 0.0045, NEAR_MAX_TILES = 12;
-state.near = new Map(); // id → 가게
-const nearTiles = new Map(); // 칸 → 'loading' | 'done'
+// 카카오는 한 번에 45곳까지만 주므로, 더 많은 칸은 중계 서버가 split을 돌려주고 여기서 4등분해 다시 묻는다(두 번까지).
+const NEAR_KINDS = [
+  { code: 'CE7', label: '카페',     color: '#7A8494', zoom: 16 },
+  { code: 'FD6', label: '음식점',   color: '#E8742C', zoom: 17 }, // 가게가 많아서 한 단계 더 확대했을 때만
+  { code: 'CT1', label: '문화시설', color: '#9B5DE5', zoom: 16 },
+  { code: 'LIB', label: '도서관',   color: '#00A6A6', zoom: 16 },
+];
+const NEAR_KIND = Object.fromEntries(NEAR_KINDS.map(k => [k.code, k]));
+const NEAR_TW = 0.006, NEAR_TH = 0.0045, NEAR_MAX_TILES = 12, NEAR_MAX_DEPTH = 2, NEAR_PARALLEL = 4;
+const NEAR_PREF = 'gongan-sillok:near';
+state.near = new Map(); // id → 장소
+state.nearKinds = (() => { try { const v = JSON.parse(localStorage.getItem(NEAR_PREF)); if (Array.isArray(v)) return new Set(v.filter(c => NEAR_KIND[c])); } catch {} return new Set(NEAR_KINDS.map(k => k.code)); })();
+const nearTiles = new Map(); // 종류:칸 → 'loading' | 'done'
 const nearMarkers = new Map();
 let nearTimer = null, nearOff = false;
-const nearShown = () => !!map && map.getZoom() >= NEAR_ZOOM && !Object.keys(ENUMS).some(k => state.filters[k].size) && !state.filters.view.size;
+const NEAR_ZOOM_BASE = 16; // 이보다 멀리 보면 주변 장소를 숨긴다
+const nearShown = () => !!map && map.getZoom() >= NEAR_ZOOM_BASE && !Object.keys(ENUMS).some(k => state.filters[k].size) && !state.filters.view.size;
 function queueNearby(){ clearTimeout(nearTimer); nearTimer = setTimeout(loadNearby, 350); }
+function toggleNearKind(code){
+  if (state.nearKinds.has(code)) state.nearKinds.delete(code); else state.nearKinds.add(code);
+  try { localStorage.setItem(NEAR_PREF, JSON.stringify([...state.nearKinds])); } catch {}
+  if (state.sel && state.near.has(state.sel) && !state.nearKinds.has(state.near.get(state.sel).kind)) select(null);
+  renderNearMarkers(); renderLegend(); loadNearby();
+}
 function loadNearby(){
   renderNearMarkers();
   if (nearOff || !ROUTE_PROXY || !nearShown()) return;
+  const z = map.getZoom();
+  const kinds = NEAR_KINDS.filter(k => state.nearKinds.has(k.code) && z >= k.zoom);
+  if (!kinds.length) return;
   const b = map.getBounds(), sw = b.getSW(), ne = b.getNE();
   const x0 = Math.floor(sw.lng() / NEAR_TW), x1 = Math.floor(ne.lng() / NEAR_TW), y0 = Math.floor(sw.lat() / NEAR_TH), y1 = Math.floor(ne.lat() / NEAR_TH);
-  const want = [];
-  for (let ty = y0; ty <= y1; ty++) for (let tx = x0; tx <= x1; tx++) if (!nearTiles.has(tx + ',' + ty)) want.push([tx, ty]);
+  const tiles = [];
+  for (let ty = y0; ty <= y1; ty++) for (let tx = x0; tx <= x1; tx++) tiles.push([tx, ty]);
   // 화면 가운데에 가까운 칸부터
   const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
-  want.sort((a, b) => Math.hypot(a[0] - cx, a[1] - cy) - Math.hypot(b[0] - cx, b[1] - cy));
-  for (const [tx, ty] of want.slice(0, NEAR_MAX_TILES)) loadTile(tx, ty);
+  tiles.sort((a, b) => Math.hypot(a[0] - cx, a[1] - cy) - Math.hypot(b[0] - cx, b[1] - cy));
+  for (const [tx, ty] of tiles.slice(0, NEAR_MAX_TILES)) for (const k of kinds) {
+    const key = `${k.code}:${tx},${ty}`; if (nearTiles.has(key)) continue;
+    nearTiles.set(key, 'loading');
+    nearQueue.push({ key, code: k.code, rect: [tx * NEAR_TW, ty * NEAR_TH, (tx + 1) * NEAR_TW, (ty + 1) * NEAR_TH], depth: 0 });
+  }
+  pumpNear();
 }
-async function loadTile(tx, ty){
-  const key = tx + ',' + ty; nearTiles.set(key, 'loading');
-  const rect = [tx * NEAR_TW, ty * NEAR_TH, (tx + 1) * NEAR_TW, (ty + 1) * NEAR_TH].map(v => v.toFixed(4)).join(',');
+// 한꺼번에 너무 많이 부르지 않도록 동시에 몇 개씩만
+const nearQueue = []; let nearBusy = 0;
+function pumpNear(){
+  while (nearBusy < NEAR_PARALLEL && nearQueue.length) {
+    const job = nearQueue.shift(); nearBusy++;
+    loadRect(job).finally(() => { nearBusy--; pumpNear(); });
+  }
+}
+async function loadRect(job){
+  const rect = job.rect.map(v => v.toFixed(4)).join(',');
   try {
-    const r = await proxyPost('/nearby', { rect, code: 'CE7' });
-    if (r.status === 404) { nearOff = true; nearTiles.delete(key); return; } // 중계 서버가 아직 예전 코드
+    const r = await proxyPost('/nearby', { rect, code: job.code });
+    if (r.status === 404) { nearOff = true; nearTiles.delete(job.key); return; } // 중계 서버가 아직 예전 코드
     if (!r.ok) throw new Error('nearby ' + r.status);
     const j = await r.json();
+    if (j.split && job.depth < NEAR_MAX_DEPTH) { // 45곳이 넘는 칸: 4등분해서 다시
+      const [ax, ay, bx, by] = job.rect, mx = (ax + bx) / 2, my = (ay + by) / 2;
+      for (const q of [[ax, ay, mx, my], [mx, ay, bx, my], [ax, my, mx, by], [mx, my, bx, by]]) nearQueue.push({ ...job, rect: q, depth: job.depth + 1 });
+      return;
+    }
+    let added = 0;
     for (const x of j.places || []) {
       const m = KAKAO_PLACE.exec(String(x.url || '')); if (!m) continue;
       const lat = toNum(x.y), lng = toNum(x.x);
       if (!(lat >= 33 && lat <= 39 && lng >= 124 && lng <= 132)) continue;
       const id = 'k' + m[1];
       if (state.near.has(id)) continue;
-      state.near.set(id, { id, ext: true, near: true, name: cleanText(x.name, 40), category: cleanText(x.category, 60),
+      state.near.set(id, { id, ext: true, near: true, kind: job.code, name: cleanText(x.name, 40), category: cleanText(x.category, 60),
         type: cleanText(String(x.category || '').split('>').pop(), 20), addr: cleanText(x.address, 60), phone: cleanText(x.phone, 20),
         url: `https://place.map.kakao.com/${m[1]}`, lat, lng });
+      added++;
     }
-    nearTiles.set(key, 'done');
-  } catch (e) { nearTiles.delete(key); return; } // 다음에 지도를 움직이면 다시 시도
-  syncNearMarkers();
+    if (job.depth === 0) nearTiles.set(job.key, 'done');
+    if (added) syncNearMarkers();
+  } catch (e) { if (job.depth === 0) nearTiles.delete(job.key); } // 다음에 지도를 움직이면 다시 시도
 }
-// 이미 기록한 곳, 검색 결과로 이미 흰 핀이 있는 곳은 점을 찍지 않는다
-const nearVisible = p => !isRecorded(p) && !state.ext.results.some(x => x.id === p.id);
+// 이미 기록한 곳, 검색 결과로 이미 흰 핀이 있는 곳, 꺼 둔 종류는 점을 찍지 않는다
+const nearVisible = p => state.nearKinds.has(p.kind) && map.getZoom() >= NEAR_KIND[p.kind].zoom && !isRecorded(p) && !state.ext.results.some(x => x.id === p.id);
 function syncNearMarkers(){
   if (!map) return;
   for (const p of state.near.values()) {
@@ -2087,18 +2135,35 @@ function syncNearMarkers(){
   renderNearMarkers(); renderLegend();
 }
 function renderNearMarkers(){
-  const on = nearShown();
+  if (!map) return;
+  const on = nearShown(), big = map.getZoom() >= 18; // 아주 가까이 보면 이름도 같이
   for (const [id, mk] of nearMarkers) {
     const p = state.near.get(id), sel = id === state.sel;
     const show = sel || (on && nearVisible(p));
     mk.setVisible(show);
     if (!show) continue;
-    const big = map.getZoom() >= 18; // 아주 가까이 보면 이름도 같이
     mk.setIcon(sel
       ? { content: `<div class="pin ext sel"><span class="pin-head"></span><span class="pin-label">${esc(p.name)}</span></div>`, anchor: new naver.maps.Point(14, 29) }
-      : { content: `<div class="near-dot${big ? ' named' : ''}"><i></i>${big ? `<span>${esc(p.name)}</span>` : ''}</div>`, anchor: new naver.maps.Point(7, 7) });
+      : { content: `<div class="near-dot${big ? ' named' : ''}" style="--nc:${NEAR_KIND[p.kind].color}"><i></i>${big ? `<span>${esc(p.name)}</span>` : ''}</div>`, anchor: new naver.maps.Point(7, 7) });
     mk.setZIndex(sel ? 300 : 50);
   }
+}
+// 범례 아래 줄: 주변 장소 종류 켜고 끄기 (확대했을 때만)
+function nearLegendRow(lg){
+  if (!nearShown() || nearOff) return;
+  const row = el('div','near-row'); row.appendChild(el('b', null, '주변'));
+  const z = map.getZoom();
+  for (const k of NEAR_KINDS) {
+    const b = el('button','near-chip'); b.type = 'button';
+    const on = state.nearKinds.has(k.code);
+    b.setAttribute('aria-pressed', String(on));
+    const i = el('i'); i.style.setProperty('--nc', k.color);
+    b.append(i, k.label);
+    if (on && z < k.zoom) { b.title = '더 확대하면 보여요'; b.classList.add('later'); }
+    b.addEventListener('click', () => toggleNearKind(k.code));
+    row.appendChild(b);
+  }
+  lg.appendChild(row);
 }
 function renderExtMarkers(){
   renderNearMarkers();

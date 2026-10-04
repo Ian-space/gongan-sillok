@@ -9,12 +9,19 @@
 //   POST /transit  { startX, startY, endX, endY, searchDttm? }  → TMAP 대중교통
 //   POST /walk     { startX, startY, endX, endY }               → TMAP 보행자 경로
 //   POST /search   { query, x?, y? }                            → 카카오 키워드 장소 검색 (x, y가 있으면 그 근처부터)
-//   POST /nearby   { rect: "왼쪽X,아래Y,오른쪽X,위Y", code? }      → 카카오 업종 검색 (지도 한 칸 안의 카페)
+//   POST /nearby   { rect: "왼쪽X,아래Y,오른쪽X,위Y", code? }      → 지도 한 칸 안의 장소 (code: CE7 카페, FD6 음식점, CT1 문화시설, LIB 도서관)
 
 const ALLOWED_ORIGINS = ['https://ian-space.github.io', 'http://localhost:8765'];
 // 경로 결과 저장 시간(초). KV 바인딩(ROUTE_CACHE)이 없으면 저장하지 않고 그대로 동작한다
 const CACHE_SECONDS = { transit: 600, walk: 86400 };
-const NEARBY_CODES = ['CE7']; // 카카오 업종 코드: CE7 카페 (북카페·찻집·베이커리 카페 대부분 포함)
+// 주변 장소 종류. 카카오 업종 코드(CE7 카페, FD6 음식점, CT1 문화시설)로 찾고,
+// 업종 분류가 없는 도서관은 검색어로 찾은 뒤 분류에 '도서관'이 있는 곳만 남긴다
+const NEARBY = {
+  CE7: { api: 'category', params: { category_group_code: 'CE7' } },
+  FD6: { api: 'category', params: { category_group_code: 'FD6' } },
+  CT1: { api: 'category', params: { category_group_code: 'CT1' } },
+  LIB: { api: 'keyword', params: { query: '도서관' }, keep: d => /도서관/.test(d.category_name || '') },
+};
 
 const TMAP = {
   transit: 'https://apis.openapi.sk.com/transit/routes',
@@ -64,27 +71,36 @@ export default {
       })) });
     }
 
-    /* 카카오 업종 검색: 지도 한 칸(사각형) 안의 카페. 최대 45곳(15곳씩 3쪽). 가게 정보라 하루 동안 저장해 다시 쓴다 */
+    /* 카카오 업종 검색: 지도 한 칸(사각형) 안의 장소. 카카오는 한 번에 최대 45곳(15곳씩 3쪽)만 준다.
+       그보다 많고 칸이 아직 크면 { split: true }만 돌려줘서, 사이트가 칸을 4등분해 다시 묻게 한다.
+       가게 정보라 하루 동안 저장해 다시 쓴다 */
     if (kind === 'nearby') {
       if (!env.KAKAO_REST_KEY) return reply(500, { error: 'KAKAO_REST_KEY is not set' });
       const r = String(input.rect || '').split(',').map(num);
       if (r.length !== 4 || !inKorea(r[0], r[1]) || !inKorea(r[2], r[3]) || r[2] <= r[0] || r[3] <= r[1] || r[2] - r[0] > 0.03 || r[3] - r[1] > 0.03)
         return reply(400, { error: 'bad rect' });
-      const code = NEARBY_CODES.includes(input.code) ? input.code : 'CE7';
+      const code = NEARBY[input.code] ? input.code : 'CE7';
+      const how = NEARBY[code];
       const rect = r.map(v => v.toFixed(4)).join(',');
-      const cacheKey = `nearby:${code}:${rect}`;
+      const canSplit = r[2] - r[0] > 0.0016;
+      const cacheKey = `nearby2:${code}:${rect}`;
       const kv = env.ROUTE_CACHE;
       if (kv) { const hit = await kv.get(cacheKey).catch(() => null); if (hit) return new Response(hit, { status: 200, headers: { ...cors, 'Content-Type': 'application/json; charset=utf-8', 'X-Cache': 'HIT' } }); }
       const places = [];
+      let split = false;
       for (let page = 1; page <= 3; page++) {
-        const params = new URLSearchParams({ category_group_code: code, rect, page: String(page), size: '15' });
-        const up = await fetch('https://dapi.kakao.com/v2/local/search/category.json?' + params, { headers: { Authorization: 'KakaoAK ' + env.KAKAO_REST_KEY } });
+        const params = new URLSearchParams({ rect, page: String(page), size: '15', ...how.params });
+        const up = await fetch(`https://dapi.kakao.com/v2/local/search/${how.api}.json?` + params, { headers: { Authorization: 'KakaoAK ' + env.KAKAO_REST_KEY } });
         const j = await up.json().catch(() => null);
         if (!up.ok || !j) return reply(up.status === 200 ? 502 : up.status, { error: (j && (j.message || j.msg)) || 'kakao error' });
-        for (const d of j.documents || []) places.push({ name: d.place_name, category: d.category_name, address: d.road_address_name || d.address_name, phone: d.phone, x: d.x, y: d.y, url: d.place_url });
+        if (page === 1 && canSplit && j.meta && j.meta.total_count > 45) { split = true; break; }
+        for (const d of j.documents || []) {
+          if (how.keep && !how.keep(d)) continue;
+          places.push({ name: d.place_name, category: d.category_name, address: d.road_address_name || d.address_name, phone: d.phone, x: d.x, y: d.y, url: d.place_url });
+        }
         if (!j.meta || j.meta.is_end) break;
       }
-      const text = JSON.stringify({ places });
+      const text = JSON.stringify(split ? { places: [], split: true } : { places });
       if (kv) ctx.waitUntil(kv.put(cacheKey, text, { expirationTtl: 86400 }).catch(() => {}));
       return new Response(text, { status: 200, headers: { ...cors, 'Content-Type': 'application/json; charset=utf-8', 'X-Cache': kv ? 'MISS' : 'OFF' } });
     }
