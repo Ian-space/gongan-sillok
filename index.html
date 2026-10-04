@@ -313,6 +313,8 @@ button.stat[aria-pressed="true"] span{color:#FFFFFF}
 .quick{position:absolute;right:14px;top:196px;z-index:10;display:flex;flex-direction:column;gap:2px;width:118px;background:var(--panel);border-radius:10px;padding:8px 6px;box-shadow:0 1px 6px rgba(15,20,40,.18)}
 .quick[hidden]{display:none}
 .quick-title{font-size:11px;font-weight:600;color:var(--muted);padding:0 6px 4px}
+.quick-tabs{display:none} /* 휴대폰에서만 쓰는 윗줄 */
+.quick-items{display:flex;flex-direction:column;gap:2px}
 .quick-btn{display:flex;justify-content:space-between;align-items:baseline;gap:6px;border:0;border-radius:6px;padding:6px 8px;background:transparent;color:var(--muted);font-size:13px;font-weight:500;cursor:pointer;opacity:.7;white-space:nowrap}
 .quick-btn:hover{opacity:1;background:var(--paper)}
 .quick-btn[aria-pressed="true"]{opacity:1;background:var(--ink);color:var(--panel);font-weight:700}
@@ -336,6 +338,7 @@ button.stat[aria-pressed="true"] span{color:#FFFFFF}
 .near-chip[aria-pressed="true"]{border-color:var(--nc-on,var(--ink));color:var(--ink)}
 .near-chip[aria-pressed="false"]{opacity:.55;text-decoration:line-through}
 .near-chip.later{border-style:dashed}
+.near-hint{flex-basis:100%;order:9;font-size:11px;color:var(--muted)}
 .near-dot:hover i{transform:scale(1.3)}
 .near-dot span{position:absolute;left:18px;top:-2px;white-space:nowrap;font-size:11px;font-weight:600;color:#4A5262;text-shadow:0 0 3px #FFFFFF,0 0 3px #FFFFFF,0 0 3px #FFFFFF}
 .ext-tag{flex:none;font-size:11px;font-weight:600;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:0 7px;margin-left:auto}
@@ -452,14 +455,40 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
 .scale dt{color:var(--muted)}
 .scale dd{margin:0;display:flex;gap:4px;flex-wrap:wrap}
 /* 사진 */
-.photo{display:block;border-radius:8px;overflow:hidden;background:var(--paper);aspect-ratio:4 / 3}
+.photo{display:block;padding:0;border:0;border-radius:8px;overflow:hidden;background:var(--paper);aspect-ratio:4 / 3;cursor:zoom-in}
 .photo img{display:block;width:100%;height:100%;object-fit:cover}
 .photo.missing{display:none}
-.photo.small{width:96px;margin-top:6px}
-.d-photos{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:6px;margin:14px 0 0}
-.photo-pick{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-.photo-thumb{width:120px;aspect-ratio:4 / 3;object-fit:cover;border-radius:8px;background:var(--paper)}
-.photo-acts{display:flex;gap:6px;flex-wrap:wrap}
+.photo.small{width:84px;flex:none}
+.photo-strip{display:flex;gap:6px;margin-top:6px;overflow-x:auto;scrollbar-width:none}
+/* 상세 맨 위 큰 사진: 옆으로 밀어 넘긴다 */
+.d-hero{position:relative;margin:10px -18px 4px}
+.d-hero-strip{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none;overscroll-behavior-x:contain}
+.d-hero-strip::-webkit-scrollbar,.photo-strip::-webkit-scrollbar{display:none}
+.photo.hero{flex:0 0 100%;border-radius:0;aspect-ratio:auto;height:min(260px,34dvh);scroll-snap-align:start}
+.d-hero-n{position:absolute;right:12px;bottom:10px;padding:2px 9px;border-radius:999px;background:rgba(15,20,40,.6);color:#FFFFFF;font-size:12px;font-weight:600;pointer-events:none}
+/* 기록 창의 사진 고르기 */
+.photo-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:8px;width:100%}
+.photo-cell{position:relative}
+.photo-thumb{display:block;width:100%;aspect-ratio:1;object-fit:cover;border-radius:8px;background:var(--paper)}
+.photo-rm{position:absolute;top:4px;right:4px;width:24px;height:24px;border:0;border-radius:50%;background:rgba(15,20,40,.7);color:#FFFFFF;font-size:16px;line-height:1;cursor:pointer}
+.photo-badge{position:absolute;left:4px;bottom:4px;padding:1px 7px;border-radius:999px;background:var(--blue);color:#FFFFFF;font-size:11px;font-weight:700}
+.photo-add{display:grid;place-items:center;align-content:center;gap:2px;aspect-ratio:1;border:1.5px dashed var(--line);border-radius:8px;background:transparent;color:var(--muted);font-size:12px;cursor:pointer}
+.photo-add b{font-size:24px;line-height:1;color:var(--blue)}
+.photo-pick{display:grid;gap:8px}
+/* 사진 크게 보기 */
+.pv{width:100vw;height:100dvh;max-width:none;max-height:none;margin:0;padding:0;border:0;background:#0B0F14;color:#FFFFFF}
+.pv::backdrop{background:#0B0F14}
+.pv-top{position:absolute;left:0;right:0;top:0;z-index:2;display:flex;justify-content:space-between;align-items:center;padding:calc(10px + env(safe-area-inset-top,0px)) 14px 10px;font-size:14px;font-weight:600}
+.pv-x{width:40px;height:40px;border:0;border-radius:50%;background:rgba(255,255,255,.14);color:#FFFFFF;font-size:24px;cursor:pointer}
+.pv-track{display:flex;width:100%;height:100%;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none}
+.pv-track::-webkit-scrollbar{display:none}
+.pv-item{flex:0 0 100%;height:100%;margin:0;display:grid;place-items:center;scroll-snap-align:start}
+.pv-item img{max-width:100%;max-height:100%;object-fit:contain}
+.pv-nav{position:absolute;top:50%;z-index:2;width:44px;height:44px;margin-top:-22px;border:0;border-radius:50%;background:rgba(255,255,255,.14);color:#FFFFFF;font-size:28px;line-height:1;cursor:pointer}
+.pv-nav[hidden]{display:none}
+.pv-nav.prev{left:12px}
+.pv-nav.next{right:12px}
+@media (hover:none){.pv-nav{display:none}} /* 휴대폰은 밀어서 넘긴다 */
 .add-hint{margin:0;font-size:12px;color:var(--muted);line-height:1.5}
 /* 소음 재기 */
 .meter{display:grid;gap:8px;margin-top:4px}
@@ -507,11 +536,20 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
   .d-handle span{width:40px;height:5px;border-radius:999px;background:var(--line)}
   .d-head{touch-action:none}
   /* 휴대폰: 세로 공간이 부족해서 '지도에 표시'를 지도 위쪽 가로 줄로, 색 안내는 그 아래로 */
-  .quick{top:14px;left:14px;right:100px;width:auto;flex-direction:row;align-items:center;gap:4px;padding:5px 6px;overflow-x:auto;scrollbar-width:none}
-  .quick::-webkit-scrollbar{display:none}
+  /* 휴대폰: 두 줄. 윗줄 큰 묶음(유형 / 공간 / 접근·동반), 아랫줄 그 묶음의 항목 */
+  .quick{top:14px;left:14px;right:100px;width:auto;flex-direction:column;align-items:stretch;gap:4px;padding:6px}
+  .quick-tabs{display:flex;align-items:center;gap:2px}
+  .quick-tab{display:inline-flex;align-items:center;gap:3px;border:0;background:transparent;padding:4px 8px;border-radius:6px;font-size:13px;font-weight:600;color:var(--muted);cursor:pointer}
+  .quick-tab.type[aria-pressed="true"]{background:var(--ink);color:var(--panel)}
+  .quick-tab.group[aria-current]{color:var(--ink);box-shadow:inset 0 -2px 0 var(--blue);border-radius:0}
+  .quick-tab-n{min-width:16px;padding:0 4px;border-radius:999px;background:var(--blue);color:#FFFFFF;font-size:10px;line-height:16px;text-align:center}
+  .quick-tab-help{margin-left:auto}
+  .quick-items{flex-direction:row;gap:1px;overflow-x:auto;scrollbar-width:none;padding-top:4px;border-top:1px solid var(--line)}
+  .quick-items::-webkit-scrollbar{display:none}
+  .quick-base,.quick .quick-sep{display:none}
+  .quick[data-group="space"] .quick-btn[data-group="access"],.quick[data-group="access"] .quick-btn[data-group="space"]{display:none}
   .quick-title{display:none}
-  .quick-btn{flex:none;padding:5px 9px}
-  .quick-sep{flex:none;margin:0 2px;padding:0 0 0 8px;border-top:0;border-left:1px solid var(--line);align-self:stretch;display:flex;align-items:center}
+  .quick-btn{flex:none;padding:5px 6px;font-size:12.5px}
   .quick-n{display:none}
   .legend{top:60px;max-width:calc(100% - 128px)}
   .legend-help{left:14px;right:14px;width:auto;max-height:42dvh}
@@ -638,6 +676,12 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
 <dialog class="add-dlg" id="addDlg" aria-labelledby="addTitle"><div class="add-body" id="addBody"></div></dialog>
 <dialog class="add-dlg" id="adminDlg" aria-labelledby="adminTitle"><div class="add-body" id="adminBody"></div></dialog>
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+<dialog class="pv" id="photoDlg" aria-label="사진 크게 보기">
+  <div class="pv-top"><span id="photoCount"></span><button class="pv-x" id="photoX" type="button" aria-label="닫기">×</button></div>
+  <div class="pv-track" id="photoTrack"></div>
+  <button class="pv-nav prev" id="photoPrev" type="button" aria-label="이전 사진">‹</button>
+  <button class="pv-nav next" id="photoNext" type="button" aria-label="다음 사진">›</button>
+</dialog>
 <dialog class="add-dlg" id="leaveDlg" aria-labelledby="leaveTitle"><div class="add-body" id="leaveBody"></div></dialog>
 <dialog class="add-dlg" id="installDlg" aria-labelledby="installTitle"><div class="add-body" id="installBody"></div></dialog>
 <dialog class="add-dlg" id="choiceDlg" aria-labelledby="choiceTitle">
@@ -691,6 +735,8 @@ const groupOf = k => ENUMS[k].group || 'space';
 const ACCESS_KEYS = Object.keys(ENUMS).filter(k => groupOf(k) === 'access');
 const dbCol = k => ENUMS[k].db || k;
 const PHOTO_PATH = /^[0-9a-f-]{36}\/[0-9a-f-]{36}\.jpg$/; // 사진 저장 위치 모양: 사용자 번호/임의 번호.jpg
+const PHOTO_LIMIT = 5; // 기록 하나에 사진 최대 5장 (서버 규칙과 같다)
+const validPhotos = a => (Array.isArray(a) ? a : []).filter(x => PHOTO_PATH.test(String(x))).slice(0, PHOTO_LIMIT);
 // 기록 기준: 사람마다 '조용함'을 다르게 고르지 않도록 값마다 기준을 정해 둔다(? 버튼으로 본다)
 // 값 순서는 ENUMS와 같다(좋음, 보통, 아쉬움)
 const CRITERIA = {
@@ -1085,7 +1131,7 @@ async function loadPublic(){
     const { places: [p] } = rowsToPlaces([SAMPLE_ROWS[0], [r.place_name, r.place_type, r.place_address, r.lat, r.lng, r.noise, r.spacing, r.light, r.outlet, r.stay, r.materials, r.furniture, r.note, r.visited_on, ...accessOf(r)]]);
     if (!p) continue;
     if (!groups.has(r.place_id)) groups.set(r.place_id, { pid: r.place_id, kid: r.kakao_id || '', name: p.name, type: p.type, addr: p.addr, lat: p.lat, lng: p.lng, recs: [] });
-    groups.get(r.place_id).recs.push({ ...p, rid: r.id, nickname: cleanText(r.nickname, 30), mineRec: !!r.mine, photo: PHOTO_PATH.test(r.photo_path || '') ? r.photo_path : '' }); // 닉네임은 관리자에게만 온다
+    groups.get(r.place_id).recs.push({ ...p, rid: r.id, nickname: cleanText(r.nickname, 30), mineRec: !!r.mine, photos: validPhotos(r.photo_paths) }); // 닉네임은 관리자에게만 온다
   }
   const first = !state.pub.length;
   state.pub = [...groups.values()];
@@ -1187,6 +1233,19 @@ function renderDetail(){
   share.append('공유'); share.addEventListener('click', () => sharePlace(p));
   const acts = el('div','d-head-acts'); acts.append(share, close);
   head.append(t, acts); d.appendChild(head);
+  // 사진이 있으면 맨 위에 크게: 내 사진 먼저, 그다음 다른 사람 공개 기록의 사진. 옆으로 밀어 넘기고, 누르면 화면 가득
+  const photos = [...new Set([...(p.mine ? p.photos || [] : []), ...(p.recs || []).flatMap(r => r.photos || [])])].slice(0, 20);
+  if (photos.length) {
+    const hero = el('div','d-hero'), strip = el('div','d-hero-strip');
+    photos.forEach((x, i) => strip.appendChild(photoImg(x, `${p.name} 사진 ${i + 1}`, 'hero', photos, i)));
+    hero.appendChild(strip);
+    if (photos.length > 1) {
+      const n = el('span','d-hero-n', `1 / ${photos.length}`); hero.appendChild(n);
+      strip.addEventListener('scroll', () => { n.textContent = `${Math.round(strip.scrollLeft / Math.max(1, strip.clientWidth)) + 1} / ${photos.length}`; }, { passive: true });
+    }
+    d.appendChild(hero);
+    fillPhotos(hero).then(() => { if (!hero.querySelector('.photo:not(.missing)')) hero.remove(); }); // 사진을 못 불러오면 빈 칸을 남기지 않는다
+  }
 
   const st = nearestStation(p);
   if (state.me || st) {
@@ -1241,15 +1300,6 @@ function renderDetail(){
     dl.appendChild(dd);
   }
   d.appendChild(dl);
-  // 사진: 내 사진 먼저, 그다음 다른 사람 공개 기록의 사진 (최대 6장)
-  const photos = [];
-  if (p.mine && p.photo) photos.push({ path: p.photo, label: '내 기록 사진' });
-  for (const r of p.recs || []) if (r.photo && !photos.some(x => x.path === r.photo)) photos.push({ path: r.photo, label: '공개 기록 사진' });
-  if (photos.length) {
-    const g = el('div','d-photos');
-    for (const x of photos.slice(0, 6)) g.appendChild(photoImg(x.path, `${p.name} ${x.label}`));
-    d.appendChild(g); fillPhotos(g);
-  }
   if (p.materials) { const b = el('div','d-block'); b.append(el('div','d-label','주요 자재'), el('div',null,p.materials)); d.appendChild(b); }
   if (p.furniture) { const b = el('div','d-block'); b.append(el('div','d-label','가구'), el('div',null,p.furniture)); d.appendChild(b); }
   if (p.note) { const b = el('div','d-block'); b.append(el('div','d-label','한 줄 기록'), el('p','d-note',p.note)); d.appendChild(b); }
@@ -1274,7 +1324,11 @@ function renderDetail(){
       li.appendChild(head);
       if (vals) li.appendChild(el('div','rec-vals', vals));
       if (r.note) li.appendChild(el('div','rec-note', r.note));
-      if (r.photo) li.appendChild(photoImg(r.photo, '이 기록의 사진', 'small')); // 신고할 때 어느 기록의 사진인지 알 수 있게
+      if (r.photos.length) { // 신고할 때 어느 기록의 사진인지 알 수 있게
+        const strip = el('div','photo-strip');
+        r.photos.forEach((x, i) => strip.appendChild(photoImg(x, `이 기록의 사진 ${i + 1}`, 'small', r.photos, i)));
+        li.appendChild(strip);
+      }
       if (auth.user && !r.mineRec) li.appendChild(reportUI(r));
       list.appendChild(li);
     }
@@ -1420,6 +1474,7 @@ function centerAboveDetail(id){
 
 /* ---------- 네이버 지도 ---------- */
 let map = null;
+let pinTapAt = 0; // 핀을 누른 시각: 같은 누름이 지도 빈 곳 누름으로도 잡히면 무시한다
 const markers = new Map();
 
 function mapMessage(text){ $('mapmsgText').textContent = text; $('mapmsg').hidden = false; hideSplash(); }
@@ -1447,6 +1502,16 @@ function initMap(){
   });
   naver.maps.Event.addListener(map, 'zoom_changed', () => { renderMap(state.places.filter(matches)); renderNearMarkers(); renderLegend(); });
   naver.maps.Event.addListener(map, 'idle', queueNearby); // 지도가 멈추면 화면 안의 주변 카페를 불러온다
+  // 지도의 빈 곳을 짧게 누르면(끌지 않고) 고른 장소를 닫는다. 핀·점을 누를 때는 그 장소가 열린다
+  let down = null;
+  const mapEl = $('map');
+  mapEl.addEventListener('pointerdown', e => { down = e.isPrimary ? { x: e.clientX, y: e.clientY, t: Date.now() } : null; });
+  mapEl.addEventListener('pointerup', e => {
+    const d = down; down = null;
+    if (!d || !state.sel || Math.hypot(e.clientX - d.x, e.clientY - d.y) > 8 || Date.now() - d.t > 600) return;
+    if (e.target.closest && e.target.closest('.pin, .near-dot, .pin-label, .pin-badge')) return;
+    setTimeout(() => { if (Date.now() - pinTapAt > 300) select(null); }, 60); // 같은 누름으로 핀이 열렸으면 두지 않는다
+  });
   syncMarkers(); syncExtMarkers(); fitAll(); renderAll();
   if (state.sel && isPhone()) centerAboveDetail(state.sel); // 새로고침 뒤 다시 열린 장소
   naver.maps.Event.once(map, 'tilesloaded', hideSplash);
@@ -1466,7 +1531,7 @@ function syncMarkers(){
   markers.clear();
   for (const p of state.places) {
     const mk = new naver.maps.Marker({ map, position: new naver.maps.LatLng(p.lat, p.lng), title: p.name });
-    naver.maps.Event.addListener(mk, 'click', () => { if (matches(p)) select(p.id); });
+    naver.maps.Event.addListener(mk, 'click', () => { pinTapAt = Date.now(); if (matches(p)) select(p.id); });
     markers.set(p.id, mk);
   }
 }
@@ -1597,19 +1662,44 @@ function renderQuick(){
   const qt = el('div','quick-title with-help'); qt.appendChild(el('span', null, state.badges.length ? '지도에 표시' : '지도에 표시 · 여러 개'));
   if (state.badges.length) qt.appendChild(critButton(toggleLegendHelp, state.legendHelp)); // 고른 조건의 기준 보기
   q.appendChild(qt);
-  const base = el('button','quick-btn'); base.type = 'button'; base.setAttribute('aria-pressed', String(!state.badges.length));
+  const base = el('button','quick-btn quick-base'); base.type = 'button'; base.setAttribute('aria-pressed', String(!state.badges.length));
   base.appendChild(el('span','quick-name','유형'));
   base.addEventListener('click', () => { state.purpose = null; setBadges([]); }); // 조건을 모두 풀고 유형 색으로
   q.appendChild(base);
-  for (const k of Object.keys(ENUMS)) {
-    if (k === ACCESS_KEYS[0]) q.appendChild(el('div','quick-sep', '접근·동반'));
-    const on = state.badges.includes(k);
-    const b = el('button','quick-btn'); b.type = 'button'; b.setAttribute('aria-pressed', String(on));
-    b.append(el('span','quick-name', ENUMS[k].label), el('span','quick-n', `${SHORT[k][0]} ${state.places.filter(p => level(p, k) === 0).length}`)); // 좋은 값인 곳 수
-    b.addEventListener('click', () => setBadges(on ? state.badges.filter(x => x !== k) : [...state.badges, k]));
-    q.appendChild(b);
+  // 휴대폰: 윗줄은 큰 묶음(유형 / 공간 / 접근·동반), 아랫줄은 고른 묶음의 항목만. 컴퓨터에서는 윗줄을 숨기고 세로 목록 그대로
+  const group = state.quickGroup || 'space';
+  const tabs = el('div','quick-tabs');
+  const t0 = el('button','quick-tab type', '유형'); t0.type = 'button'; t0.setAttribute('aria-pressed', String(!state.badges.length));
+  t0.addEventListener('click', () => { state.purpose = null; setBadges([]); }); tabs.appendChild(t0);
+  for (const g of GROUPS) {
+    const n = state.badges.filter(k => groupOf(k) === g.id).length;
+    const b = el('button','quick-tab group', g.label); b.type = 'button'; if (group === g.id) b.setAttribute('aria-current', 'true');
+    if (n) b.appendChild(el('span','quick-tab-n', String(n))); // 이 묶음에서 고른 조건 수
+    b.addEventListener('click', () => { state.quickGroup = g.id; renderQuick(); placeLegend(); });
+    tabs.appendChild(b);
   }
+  if (state.badges.length) { const hb = critButton(toggleLegendHelp, state.legendHelp); hb.classList.add('quick-tab-help'); tabs.appendChild(hb); }
+  q.prepend(tabs);
+  q.dataset.group = group;
+  const items = el('div','quick-items');
+  for (const k of Object.keys(ENUMS)) {
+    if (k === ACCESS_KEYS[0]) items.appendChild(el('div','quick-sep', '접근·동반'));
+    const on = state.badges.includes(k);
+    const b = el('button','quick-btn'); b.type = 'button'; b.setAttribute('aria-pressed', String(on)); b.dataset.group = groupOf(k);
+    b.append(el('span','quick-name', ENUMS[k].label), el('span','quick-n', `${SHORT[k][0]} ${state.places.filter(p => level(p, k) === 0).length}`)); // 좋은 값인 곳 수
+    b.addEventListener('click', () => { state.quickGroup = groupOf(k); setBadges(on ? state.badges.filter(x => x !== k) : [...state.badges, k]); });
+    items.appendChild(b);
+  }
+  q.appendChild(items);
   q.hidden = !map;
+  placeLegend();
+}
+// 휴대폰: '지도에 표시'가 두 줄이 되어 높이가 달라지므로, 색 안내를 그 바로 아래에 붙인다
+function placeLegend(){
+  const q = $('quick'), lg = $('legend');
+  if (!lg) return;
+  lg.style.top = isPhone() && !q.hidden ? (q.offsetTop + q.offsetHeight + 8) + 'px' : '';
+  if (!$('legendHelp').hidden) renderLegendHelp();
 }
 
 /* ---------- 한눈에 보기 (요약) ---------- */
@@ -2138,7 +2228,7 @@ function syncExtMarkers(){
   if (!map) return;
   for (const p of state.ext.results) {
     const mk = new naver.maps.Marker({ map, position: new naver.maps.LatLng(p.lat, p.lng), title: p.name });
-    naver.maps.Event.addListener(mk, 'click', () => select(p.id));
+    naver.maps.Event.addListener(mk, 'click', () => { pinTapAt = Date.now(); select(p.id); });
     extMarkers.set(p.id, mk);
   }
 }
@@ -2147,20 +2237,21 @@ function syncExtMarkers(){
 // 점을 누르면 검색 결과의 흰 핀처럼 기본 정보와 '이 장소 기록하기'가 열린다. 칸마다 한 번만 불러온다.
 // 카카오는 한 번에 45곳까지만 주므로, 더 많은 칸은 중계 서버가 split을 돌려주고 여기서 4등분해 다시 묻는다(두 번까지).
 const NEAR_KINDS = [
-  { code: 'CE7', label: '카페',     color: '#7A8494', zoom: 16 },
-  { code: 'FD6', label: '음식점',   color: '#E8742C', zoom: 17 }, // 가게가 많아서 한 단계 더 확대했을 때만
-  { code: 'CT1', label: '문화시설', color: '#9B5DE5', zoom: 16 },
-  { code: 'LIB', label: '도서관',   color: '#00A6A6', zoom: 16 },
+  { code: 'CE7', label: '카페',     color: '#7A8494', zoom: 15 },
+  { code: 'FD6', label: '음식점',   color: '#E8742C', zoom: 16 }, // 가게가 많아서 한 단계 더 확대했을 때만
+  { code: 'CT1', label: '문화시설', color: '#9B5DE5', zoom: 15 },
+  { code: 'LIB', label: '도서관',   color: '#00A6A6', zoom: 15 },
 ];
 const NEAR_KIND = Object.fromEntries(NEAR_KINDS.map(k => [k.code, k]));
-const NEAR_TW = 0.006, NEAR_TH = 0.0045, NEAR_MAX_TILES = 12, NEAR_MAX_DEPTH = 2, NEAR_PARALLEL = 4;
+const NEAR_TW = 0.006, NEAR_TH = 0.0045, NEAR_MAX_TILES = 24, NEAR_MAX_DEPTH = 2, NEAR_PARALLEL = 4;
 const NEAR_PREF = 'gongan-sillok:near';
 state.near = new Map(); // id → 장소
 state.nearKinds = (() => { try { const v = JSON.parse(localStorage.getItem(NEAR_PREF)); if (Array.isArray(v)) return new Set(v.filter(c => NEAR_KIND[c])); } catch {} return new Set(NEAR_KINDS.map(k => k.code)); })();
 const nearTiles = new Map(); // 종류:칸 → 'loading' | 'done'
 const nearMarkers = new Map();
 let nearTimer = null, nearOff = false;
-const NEAR_ZOOM_BASE = 16; // 이보다 멀리 보면 주변 장소를 숨긴다
+const NEAR_ZOOM_BASE = 15; // 이보다 멀리 보면 주변 장소 점을 숨긴다
+const NEAR_ROW_ZOOM = 14;  // 범례의 '주변' 줄은 한 단계 더 멀리서부터 보여 준다(있는 줄 알도록)
 const nearShown = () => !!map && map.getZoom() >= NEAR_ZOOM_BASE && !Object.keys(ENUMS).some(k => state.filters[k].size) && !state.filters.view.size;
 function queueNearby(){ clearTimeout(nearTimer); nearTimer = setTimeout(loadNearby, 350); }
 function toggleNearKind(code){
@@ -2232,7 +2323,7 @@ function syncNearMarkers(){
   for (const p of state.near.values()) {
     if (nearMarkers.has(p.id)) continue;
     const mk = new naver.maps.Marker({ map, position: new naver.maps.LatLng(p.lat, p.lng), title: p.name, zIndex: 50 });
-    naver.maps.Event.addListener(mk, 'click', () => select(p.id, true));
+    naver.maps.Event.addListener(mk, 'click', () => { pinTapAt = Date.now(); select(p.id, true); });
     nearMarkers.set(p.id, mk);
   }
   renderNearMarkers(); renderLegend();
@@ -2253,9 +2344,10 @@ function renderNearMarkers(){
 }
 // 범례 아래 줄: 주변 장소 종류 켜고 끄기 (확대했을 때만)
 function nearLegendRow(lg){
-  if (!nearShown() || nearOff) return;
+  if (!map || nearOff || map.getZoom() < NEAR_ROW_ZOOM || Object.keys(ENUMS).some(k => state.filters[k].size) || state.filters.view.size) return;
   const row = el('div','near-row'); row.appendChild(el('b', null, '주변'));
   const z = map.getZoom();
+  if (z < NEAR_ZOOM_BASE) row.appendChild(el('span','near-hint', '한 번 더 확대하면 보여요'));
   for (const k of NEAR_KINDS) {
     const b = el('button','near-chip'); b.type = 'button';
     const on = state.nearKinds.has(k.code);
@@ -2307,7 +2399,7 @@ function renderExtList(){
 // 이름으로 검색해서 고르면 주소와 좌표가 채워지고, 공간 기록을 입력해 저장한다.
 // 저장은 엑셀 불러오기와 같은 방식(이 브라우저)으로 하고, 엑셀 불러오기와 같은 검사(rowsToPlaces)를 거친다.
 const addState = { step: 'search', query: '', results: [], picked: null, status: '', err: false, values: {}, texts: {}, editId: null };
-const freshAdd = () => ({ step: 'search', results: [], picked: null, status: '', err: false, values: {}, texts: {}, editId: null, server: null, busy: false, lidx: -1, photo: {} });
+const freshAdd = () => ({ step: 'search', results: [], picked: null, status: '', err: false, values: {}, texts: {}, editId: null, server: null, busy: false, lidx: -1, photos: [] });
 // 같은 곳: 거의 같은 좌표(5m 안)이거나, 이름이 같고 100m 안
 const sameSpot = (a, b) => distM(a, b) < 5 || (a.name === b.name && distM(a, b) < 100);
 // prefill이 있으면(지도에서 고른 기록 안 된 장소) 검색을 건너뛰고 바로 기록 입력으로 간다
@@ -2323,8 +2415,8 @@ function editState(p){
     picked: { name: p.name, type: p.type, address: p.addr, lat: p.lat, lng: p.lng, category: '' },
     values: Object.fromEntries(Object.keys(ENUMS).map(k => [k, p[k] || ''])),
     texts: { materials: p.materials, furniture: p.furniture, note: p.note, date: p.date },
-    server: p.rid ? { rid: p.rid, pid: p.pid, pub: !!p.pub, photo: p.photo || '' } : null, // 계정에 저장된 기록이면 서버 번호를 함께 둔다
-    photo: p.photo ? { path: p.photo } : {} };
+    server: p.rid ? { rid: p.rid, pid: p.pid, pub: !!p.pub, photos: p.photos || [] } : null, // 계정에 저장된 기록이면 서버 번호를 함께 둔다
+    photos: (p.photos || []).map(path => ({ path })) };
 }
 function openEdit(id){
   const p = state.places.find(x => x.id === id); if (!p) return;
@@ -2508,7 +2600,7 @@ const sb = window.supabase && SUPABASE_URL && SUPABASE_KEY
   ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { flowType: 'pkce', persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } })
   : null;
 const auth = { user: null, nickname: '', role: 'user', ready: false };
-const RECORD_COLS = 'id, is_public, noise, spacing, light, outlet, stay, materials, furniture, note, visited_on, entrance, floor_access, toilet, kids, pets, photo_path, places(id, kakao_id, name, type, address, lat, lng)';
+const RECORD_COLS = 'id, is_public, noise, spacing, light, outlet, stay, materials, furniture, note, visited_on, entrance, floor_access, toilet, kids, pets, photo_paths, places(id, kakao_id, name, type, address, lat, lng)';
 
 async function loadMine(){
   const { data, error } = await sb.from('records').select(RECORD_COLS).eq('user_id', auth.user.id).order('created_at');
@@ -2519,7 +2611,7 @@ async function loadMine(){
     const pl = r.places; if (!pl) continue;
     const { places: [p] } = rowsToPlaces([SAMPLE_ROWS[0], [pl.name, pl.type, pl.address, pl.lat, pl.lng, r.noise, r.spacing, r.light, r.outlet, r.stay, r.materials, r.furniture, r.note, r.visited_on, ...accessOf(r)]]);
     if (!p) continue;
-    places.push(Object.assign(p, { id: 'p' + places.length, rid: r.id, pid: pl.id, kid: pl.kakao_id || '', pub: !!r.is_public, photo: r.photo_path || '' }));
+    places.push(Object.assign(p, { id: 'p' + places.length, rid: r.id, pid: pl.id, kid: pl.kakao_id || '', pub: !!r.is_public, photos: validPhotos(r.photo_paths) }));
   }
   setMine(places, '내 기록(계정)', false);
   if (!places.length) setStatus('아직 내 기록이 없어요. + 장소 추가로 첫 기록을 남겨 보세요.', false);
@@ -2533,16 +2625,18 @@ async function saveToServer(row, picked, editing, isPublic){
   const vals = { noise: np.noise || null, spacing: np.spacing || null, light: np.light || null, outlet: np.outlet || null, stay: np.stay || null,
     materials: np.materials || null, furniture: np.furniture || null, note: np.note || null, visited_on: /^\d{4}-\d{2}-\d{2}$/.test(np.date) ? np.date : null, is_public: isPublic,
     ...Object.fromEntries(ACCESS_KEYS.map(k => [dbCol(k), np[k] || null])) };
-  // 사진: 새로 고른 사진은 먼저 올리고, 기록 저장이 실패하면 올린 사진을 지운다. 바꾸거나 뺐으면 저장 뒤 예전 사진을 지운다
-  const ph = addState.photo || {}, oldPath = (addState.server && addState.server.photo) || '';
-  let uploaded = '';
-  if (ph.blob) {
-    uploaded = `${auth.user.id}/${crypto.randomUUID()}.jpg`;
-    const { error } = await sb.storage.from('photos').upload(uploaded, ph.blob, { contentType: 'image/jpeg', upsert: false });
-    if (error) return fail('사진을 올리지 못했어요. 사진을 빼거나 잠시 뒤 다시 시도해 주세요.');
-    vals.photo_path = uploaded;
-  } else if (ph.removed) vals.photo_path = null;
-  else if (oldPath) vals.photo_path = oldPath;
+  // 사진: 새로 고른 사진은 먼저 올리고, 기록 저장이 실패하면 올린 사진을 지운다. 뺀 사진은 저장 뒤 지운다
+  const oldPaths = (addState.server && addState.server.photos) || [], uploaded = [], paths = [];
+  for (const ph of (addState.photos || []).slice(0, PHOTO_LIMIT)) {
+    if (ph.path) { paths.push(ph.path); continue; }
+    const path = `${auth.user.id}/${crypto.randomUUID()}.jpg`;
+    Object.assign(addState, { status: `사진 올리는 중이에요… (${uploaded.length + 1}/${addState.photos.filter(x => x.blob).length})` }); renderAddStatus();
+    const { error } = await sb.storage.from('photos').upload(path, ph.blob, { contentType: 'image/jpeg', upsert: false });
+    if (error) { if (uploaded.length) sb.storage.from('photos').remove(uploaded).catch(() => {}); return fail('사진을 올리지 못했어요. 사진을 줄이거나 잠시 뒤 다시 시도해 주세요.'); }
+    uploaded.push(path); paths.push(path);
+  }
+  vals.photo_paths = paths;
+  const dropped = oldPaths.filter(x => !paths.includes(x));
   try {
     let placeId;
     if (editing && addState.server) {
@@ -2565,7 +2659,8 @@ async function saveToServer(row, picked, editing, isPublic){
         if (r2.error) throw r2.error;
       } else if (error) throw error;
     }
-    if (oldPath && oldPath !== (vals.photo_path || '')) sb.storage.from('photos').remove([oldPath]).catch(() => {});
+    if (dropped.length) sb.storage.from('photos').remove(dropped).catch(() => {});
+    for (const ph of addState.photos || []) if (ph.preview) URL.revokeObjectURL(ph.preview);
     await loadMine(); await loadPublic(); // 공개로 바꿨거나 공개 기록을 더했으면 모아 보기도 바뀐다
     if (state.ext.results.length) { state.ext.results = state.ext.results.filter(r => !isRecorded(r)); syncExtMarkers(); renderAll(); }
     addState.busy = false; $('addDlg').close();
@@ -2573,7 +2668,7 @@ async function saveToServer(row, picked, editing, isPublic){
     setStatus(`'${np.name}'을(를) ${editing ? '고쳤어요' : '기록했어요'}. 계정에 저장돼서 다른 기기에서도 보여요.`, false);
     if (target) select(target.id, true);
   } catch (e) {
-    if (uploaded) sb.storage.from('photos').remove([uploaded]).catch(() => {});
+    if (uploaded.length) sb.storage.from('photos').remove(uploaded).catch(() => {});
     fail('저장하지 못했어요. 인터넷 연결을 확인하고 다시 시도해 주세요.' + (e && e.message ? ` (${cleanText(e.message, 80)})` : ''));
   }
 }
@@ -2581,7 +2676,7 @@ async function deleteFromServer(p){
   state.delAsk = null;
   const { error } = await sb.from('records').delete().eq('id', p.rid);
   if (error) { setStatus('지우지 못했어요. 잠시 뒤 다시 시도해 주세요.', true); renderDetail(); return; }
-  if (p.photo) sb.storage.from('photos').remove([p.photo]).catch(() => {});
+  if (p.photos && p.photos.length) sb.storage.from('photos').remove(p.photos).catch(() => {});
   select(null); await loadMine(); await loadPublic();
   setStatus(`'${p.name}' 기록을 지웠어요.`, false);
 }
@@ -2620,55 +2715,87 @@ async function signPhotos(paths){
   if (error || !data) return;
   for (const d of data) if (d.signedUrl && d.path) photoUrls.set(d.path, { url: d.signedUrl, exp: now + 50 * 60 * 1000 });
 }
-// 사진 자리(<img data-photo>)를 먼저 그려 두고, 주소를 받으면 채운다
-function photoImg(path, alt, cls){
-  const a = el('a','photo ' + (cls || '')); a.target = '_blank'; a.rel = 'noopener'; a.setAttribute('aria-label', alt + ' 크게 보기');
+// 사진 자리(<img data-photo>)를 먼저 그려 두고, 주소를 받으면 채운다. 누르면 크게 보기(list가 있으면 넘겨 보기)
+function photoImg(path, alt, cls, list, index){
+  const b = el('button','photo ' + (cls || '')); b.type = 'button'; b.setAttribute('aria-label', alt + ' 크게 보기');
   const img = el('img'); img.alt = alt; img.loading = 'lazy'; img.decoding = 'async'; img.dataset.photo = path;
-  a.appendChild(img); return a;
+  b.appendChild(img);
+  b.addEventListener('click', () => openViewer(list || [path], index || 0));
+  return b;
 }
 async function fillPhotos(root){
   const imgs = [...root.querySelectorAll('img[data-photo]')]; if (!imgs.length) return;
   await signPhotos(imgs.map(i => i.dataset.photo));
   for (const i of imgs) {
     const u = photoUrls.get(i.dataset.photo);
-    if (u) { i.src = u.url; i.closest('a').href = u.url; } else i.closest('a').classList.add('missing');
+    if (u) i.src = u.url; else (i.closest('.photo') || i).classList.add('missing');
   }
 }
-// 기록 창의 사진 칸 (로그인했을 때만). 고른 사진은 저장할 때 올린다
+// 크게 보기: 화면 가득, 옆으로 밀어 넘긴다
+async function openViewer(paths, start){
+  const dlg = $('photoDlg'), track = $('photoTrack'), count = $('photoCount');
+  track.replaceChildren();
+  for (const [i, path] of paths.entries()) {
+    const f = el('figure','pv-item'); const img = el('img'); img.alt = `사진 ${i + 1}/${paths.length}`; img.dataset.photo = path; img.decoding = 'async';
+    f.appendChild(img); track.appendChild(f);
+  }
+  const show = i => { count.textContent = paths.length > 1 ? `${i + 1} / ${paths.length}` : ''; };
+  track.onscroll = () => show(Math.round(track.scrollLeft / Math.max(1, track.clientWidth)));
+  $('photoPrev').hidden = $('photoNext').hidden = paths.length < 2;
+  dlg.showModal();
+  track.scrollLeft = track.clientWidth * start; show(start);
+  await fillPhotos(track);
+  track.scrollLeft = track.clientWidth * start;
+}
+function stepViewer(d){ const t = $('photoTrack'); t.scrollBy({ left: d * t.clientWidth, behavior: 'smooth' }); }
+// 기록 창의 사진 칸 (로그인했을 때만). 여러 장(최대 5장)을 고를 수 있고, 저장할 때 올린다
 function photoField(){
-  const w = el('div','add-field photo-field'); w.appendChild(el('span','lbl', '사진 한 장 (선택)'));
+  const w = el('div','add-field photo-field'); w.appendChild(el('span','lbl', `사진 (선택, 최대 ${PHOTO_LIMIT}장)`));
   const box = el('div','photo-pick'); w.appendChild(box);
-  w.appendChild(el('p','add-hint', '입구, 계단, 좌석, 화장실처럼 기록을 보여 주는 사진 한 장이면 충분해요. 사람 얼굴이나 차량 번호가 나오지 않게 찍어 주세요. 촬영 위치 정보는 지우고 올려요. 공개한 기록이면 사진도 함께 공개돼요.'));
+  w.appendChild(el('p','add-hint', '입구, 계단, 좌석, 화장실처럼 기록을 보여 주는 사진을 골라 주세요. 첫 장이 대표 사진이 돼요. 사람 얼굴이나 차량 번호가 나오지 않게 찍어 주세요. 촬영 위치 정보는 지우고 올려요. 공개한 기록이면 사진도 함께 공개돼요.'));
   const draw = () => {
     box.replaceChildren();
-    const ph = addState.photo || {};
-    const input = el('input'); input.type = 'file'; input.accept = 'image/*'; input.hidden = true;
+    const list = addState.photos || (addState.photos = []);
+    const grid = el('div','photo-grid');
+    list.forEach((ph, i) => {
+      const cell = el('div','photo-cell');
+      const img = el('img','photo-thumb'); img.alt = `고른 사진 ${i + 1}`;
+      if (ph.blob) img.src = ph.preview;
+      else { signPhotos([ph.path]).then(() => { const u = photoUrls.get(ph.path); if (u) img.src = u.url; }); }
+      const rm = el('button','photo-rm', '×'); rm.type = 'button'; rm.setAttribute('aria-label', `사진 ${i + 1} 빼기`);
+      rm.addEventListener('click', () => { if (ph.preview) URL.revokeObjectURL(ph.preview); list.splice(i, 1); draw(); });
+      cell.append(img, rm);
+      if (i === 0) cell.appendChild(el('span','photo-badge','대표'));
+      grid.appendChild(cell);
+    });
+    const input = el('input'); input.type = 'file'; input.accept = 'image/*'; input.multiple = true; input.hidden = true;
     input.addEventListener('change', async () => {
-      const f = input.files && input.files[0]; if (!f) return;
-      box.replaceChildren(el('span','muted','사진을 줄이는 중이에요…'));
-      try {
-        const blob = await shrinkPhoto(f);
-        if (ph.preview) URL.revokeObjectURL(ph.preview);
-        addState.photo = { ...addState.photo, blob, preview: URL.createObjectURL(blob), removed: false };
-      } catch (e) { addState.photo = { ...addState.photo }; toast('이 사진은 쓸 수 없어요. 다른 사진을 골라 주세요.'); }
+      const files = [...(input.files || [])]; if (!files.length) return;
+      const room = PHOTO_LIMIT - list.length;
+      if (files.length > room) toast(`사진은 최대 ${PHOTO_LIMIT}장이라 ${room}장만 넣었어요.`);
+      box.appendChild(el('span','muted','사진을 줄이는 중이에요…'));
+      let bad = 0;
+      for (const f of files.slice(0, room)) {
+        try { const blob = await shrinkPhoto(f); list.push({ blob, preview: URL.createObjectURL(blob) }); } catch { bad++; }
+      }
+      if (bad) toast(`쓸 수 없는 사진 ${bad}장은 뺐어요.`);
       draw();
     });
-    const pick = el('button','btn ghost', '사진 고르기'); pick.type = 'button'; pick.addEventListener('click', () => input.click());
-    const has = ph.blob || (ph.path && !ph.removed);
-    if (has) {
-      const img = el('img','photo-thumb'); img.alt = '고른 사진';
-      if (ph.blob) img.src = ph.preview;
-      else { img.dataset.photo = ph.path; signPhotos([ph.path]).then(() => { const u = photoUrls.get(ph.path); if (u) img.src = u.url; }); }
-      pick.textContent = '다른 사진으로';
-      const rm = el('button','btn ghost', '사진 빼기'); rm.type = 'button';
-      rm.addEventListener('click', () => { if (ph.preview) URL.revokeObjectURL(ph.preview); addState.photo = { path: ph.path, removed: true }; draw(); });
-      box.append(img, el('div','photo-acts'));
-      box.lastChild.append(pick, rm);
-    } else box.appendChild(pick);
-    box.appendChild(input);
+    if (list.length < PHOTO_LIMIT) {
+      const add = el('button','photo-add'); add.type = 'button';
+      add.append(el('b', null, '+'), el('span', null, list.length ? `추가 (${list.length}/${PHOTO_LIMIT})` : '사진 고르기'));
+      add.addEventListener('click', () => input.click());
+      grid.appendChild(add);
+    }
+    box.append(grid, input);
   };
   draw();
   return w;
+}
+// 저장 중 안내만 바꾼다 (기록 창 전체를 다시 그리지 않는다)
+function renderAddStatus(){
+  const s = $('addBody').querySelector('.add-status');
+  if (s) { s.textContent = addState.status; s.classList.toggle('err', !!addState.err); }
 }
 
 /* ---------- 소음 재기 (마이크) ---------- */
@@ -2810,7 +2937,8 @@ function renderAdmin(rows, note){
     const body2 = [r.note && `한 줄 기록: ${cleanText(r.note, 200)}`, r.materials && `자재: ${cleanText(r.materials, 80)}`, r.furniture && `가구: ${cleanText(r.furniture, 80)}`].filter(Boolean);
     for (const t of body2) card.appendChild(el('p','adm-rec', t));
     for (const dtl of (r.details || []).slice(0, 5)) card.appendChild(el('p','adm-detail', `신고 내용: ${cleanText(dtl, 200)}`));
-    if (PHOTO_PATH.test(r.photo_path || '')) { card.appendChild(photoImg(r.photo_path, '신고된 기록의 사진', 'small')); fillPhotos(card); }
+    const rp = validPhotos(r.photo_paths);
+    if (rp.length) { const strip = el('div','photo-strip'); rp.forEach((x, i) => strip.appendChild(photoImg(x, `신고된 기록의 사진 ${i + 1}`, 'small', rp, i))); card.appendChild(strip); fillPhotos(card); }
     const acts = el('div','rep-acts');
     const btn = (label, cls, fn) => { const b = el('button', 'btn ' + cls, label); b.type = 'button'; b.addEventListener('click', fn); return b; };
     if (r.hidden) acts.append(btn('다시 공개 (신고 무시)', 'ghost', () => moderate(r.record_id, false)));
@@ -3069,6 +3197,13 @@ $('file').addEventListener('change', e => { const f = e.target.files && e.target
 $('btnAdd').addEventListener('click', () => startAdd());
 $('btnInstall').addEventListener('click', () => { closeAcct(); addToHome(); });
 $('btnLeave').addEventListener('click', () => { closeAcct(); openLeave(); });
+// 사진 크게 보기: 닫기, 이전·다음, 사진 바깥(검은 부분)을 누르면 닫기, 키보드 화살표
+window.addEventListener('resize', placeLegend);
+$('photoX').addEventListener('click', () => $('photoDlg').close());
+$('photoPrev').addEventListener('click', () => stepViewer(-1));
+$('photoNext').addEventListener('click', () => stepViewer(1));
+$('photoTrack').addEventListener('click', e => { if (!e.target.closest('img')) $('photoDlg').close(); });
+$('photoDlg').addEventListener('keydown', e => { if (e.key === 'ArrowLeft') stepViewer(-1); if (e.key === 'ArrowRight') stepViewer(1); });
 // 계정 메뉴: 동그라미를 누르면 열고, 바깥을 누르거나 Esc면 닫는다
 $('acctBtn').addEventListener('click', () => { if ($('acctMenu').hidden) openAcct(); else closeAcct(); });
 document.addEventListener('pointerdown', e => { if (!$('acctMenu').hidden && !(e.target.closest && e.target.closest('#acctMenu, #acctBtn'))) closeAcct(); });
