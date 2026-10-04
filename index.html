@@ -4,6 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>공간실록 시제품</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="공간실록">
+<meta name="theme-color" content="#EEF1EE" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#141A1D" media="(prefers-color-scheme: dark)">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
 <style>
 :root{
@@ -61,6 +69,13 @@ button,input{font:inherit;color:inherit}
 .acct-sep{height:1px;background:var(--line);margin:6px 0}
 .acct-sep:first-child,.acct-sep:last-child{display:none}
 .auth{display:contents}
+/* 홈 화면에 추가 안내 */
+.inst-steps{margin:0;padding:0;list-style:none;display:grid;gap:10px;counter-reset:st}
+.inst-steps li{display:flex;align-items:center;gap:10px;font-size:15px;line-height:1.45;counter-increment:st}
+.inst-steps li::before{content:counter(st);flex:none;display:grid;place-items:center;width:24px;height:24px;border-radius:50%;background:var(--blue);color:#FFFFFF;font-size:13px;font-weight:700}
+.inst-ico{display:inline-grid;place-items:center;width:26px;height:26px;margin:0 2px;border-radius:6px;border:1px solid var(--line);vertical-align:middle;color:var(--blue)}
+.inst-ico svg{width:16px;height:16px}
+.inst-note{margin:0;padding:10px 12px;border-radius:8px;background:var(--paper);font-size:13px;color:var(--muted);line-height:1.5}
 /* 로그인 안 한 채 장소를 추가할 때: 어디에 저장할지 고른다 */
 .choice{display:grid;gap:10px}
 .choice-btn{display:grid;gap:2px;text-align:left;width:100%;padding:12px 14px;border-radius:10px;border:1px solid var(--line);background:var(--panel);color:var(--ink);cursor:pointer}
@@ -476,6 +491,7 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
       <div class="acct-menu" id="acctMenu" hidden>
         <div class="auth" id="auth"></div>
         <div class="acct-sep" id="acctSep"></div>
+        <button class="acct-item" id="btnInstall" type="button" hidden>홈 화면에 추가</button>
         <button class="acct-item" id="btnLoad" type="button">엑셀 파일 불러오기</button>
         <button class="acct-item" id="btnReset" type="button">예시 데이터로 되돌리기</button>
       </div>
@@ -550,6 +566,7 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
 
 <dialog class="add-dlg" id="addDlg" aria-labelledby="addTitle"><div class="add-body" id="addBody"></div></dialog>
 <dialog class="add-dlg" id="adminDlg" aria-labelledby="adminTitle"><div class="add-body" id="adminBody"></div></dialog>
+<dialog class="add-dlg" id="installDlg" aria-labelledby="installTitle"><div class="add-body" id="installBody"></div></dialog>
 <dialog class="add-dlg" id="choiceDlg" aria-labelledby="choiceTitle">
   <div class="add-body">
     <div class="add-head"><h2 id="choiceTitle">어디에 저장할까요?</h2><button class="d-close" id="choiceX" type="button" aria-label="닫기">×</button></div>
@@ -2283,10 +2300,11 @@ function renderAdmin(rows, note){
 function renderAuth(){
   const box = $('auth'); box.replaceChildren();
   renderAcctBtn();
+  $('btnInstall').hidden = isStandalone(); // 이미 홈 화면 아이콘으로 열었으면 숨긴다
   if (!sb) { $('acctSep').hidden = true; return; }
   const local = !auth.user;
   $('btnLoad').hidden = $('btnReset').hidden = !local; // 엑셀 불러오기·예시 되돌리기는 이 브라우저 저장용이라 로그인 중에는 숨긴다
-  $('acctSep').hidden = !local || !auth.ready;
+  $('acctSep').hidden = !auth.ready || (!local && $('btnInstall').hidden);
   if (!auth.ready) return;
   const item = (label, fn) => { const b = el('button','acct-item', label); b.type = 'button'; b.addEventListener('click', () => { closeAcct(); fn(); }); return b; };
   if (local) {
@@ -2311,6 +2329,48 @@ function renderAcctBtn(){
     b.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7"/></svg>';
     b.setAttribute('aria-label', sb ? '로그인과 계정 메뉴' : '메뉴');
   }
+}
+/* 홈 화면에 추가: 안드로이드·컴퓨터 크롬은 브라우저의 설치 창을 바로 띄우고, 아이폰은 방법을 알려 준다(사파리는 자동으로 띄울 수 없다) */
+const IS_IOS = /iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const isStandalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+let installEvt = null;
+window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvt = e; renderAuth(); });
+window.addEventListener('appinstalled', () => { installEvt = null; renderAuth(); setStatus('홈 화면에 추가했어요.', false); });
+async function addToHome(){
+  if (installEvt) {
+    const e = installEvt; installEvt = null;
+    e.prompt(); try { await e.userChoice; } catch {}
+    renderAuth(); return;
+  }
+  const body = $('installBody'); body.replaceChildren();
+  const head = el('div','add-head'); const h = el('h2', null, '홈 화면에 추가'); h.id = 'installTitle';
+  const x = el('button','d-close','×'); x.type = 'button'; x.setAttribute('aria-label','닫기'); x.addEventListener('click', () => $('installDlg').close());
+  head.append(h, x); body.appendChild(head);
+  const steps = el('ol','inst-steps');
+  const step = (...parts) => { const li = el('li'); const span = el('span'); for (const p of parts) span.append(p); li.appendChild(span); steps.appendChild(li); };
+  const ico = svg => { const i = el('span','inst-ico'); i.innerHTML = svg; return i; };
+  const SHARE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 8l5-5 5 5"/><path d="M5 12v8h14v-8"/></svg>';
+  const MORE = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>';
+  const DOTS = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>';
+  if (/KAKAOTALK/i.test(navigator.userAgent)) {
+    body.appendChild(el('p','add-src add-left','카카오톡 안에서는 홈 화면에 추가할 수 없어요. 사파리(안드로이드는 기본 브라우저)로 연 다음 다시 눌러 주세요.'));
+    const a = el('a','btn add', IS_ANDROID ? '브라우저로 열기' : '사파리로 열기'); a.href = $('inappBtn').href; a.style.textAlign = 'center'; body.appendChild(a);
+  } else if (IS_IOS) {
+    step('화면의 공유 버튼', ico(SHARE), '을 눌러요. 안 보이면 주소창 옆 ', ico(MORE), ' 버튼을 먼저 눌러요.');
+    step('목록을 내려 ', el('b', null, '홈 화면에 추가'), '를 눌러요.');
+    step('오른쪽 위 ', el('b', null, '추가'), '를 누르면 홈 화면에 공간실록 아이콘이 생겨요.');
+    body.appendChild(steps);
+    body.appendChild(el('p','inst-note','홈 화면 아이콘은 사파리와 저장 공간이 따로예요. 로그인하지 않고 이 브라우저에 저장한 기록은 아이콘으로 열면 보이지 않으니, 계속 쓰려면 로그인해 주세요.'));
+  } else if (IS_ANDROID) {
+    step('브라우저 오른쪽 위 메뉴', ico(DOTS), '를 눌러요.');
+    step(el('b', null, '홈 화면에 추가'), ' 또는 ', el('b', null, '앱 설치'), '를 눌러요.');
+    body.appendChild(steps);
+  } else {
+    step('크롬·엣지: 주소창 오른쪽의 설치 아이콘이나 메뉴', ico(DOTS), '의 ', el('b', null, '앱 설치'), '를 눌러요.');
+    step('맥 사파리: 메뉴 막대의 ', el('b', null, '파일 → Dock에 추가'), '를 눌러요.');
+    body.appendChild(steps);
+  }
+  $('installDlg').showModal();
 }
 function openAcct(){ $('acctMenu').hidden = false; $('acctBtn').setAttribute('aria-expanded','true'); }
 function closeAcct(){ $('acctMenu').hidden = true; $('acctBtn').setAttribute('aria-expanded','false'); }
@@ -2400,7 +2460,6 @@ function onFix(pos){
   }
   renderAll();
 }
-const IS_IOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
 function onFixError(err){
   navigator.geolocation.clearWatch(watchId); watchId = null; state.sortNear = false;
   const msg = err && err.code === 1
@@ -2432,6 +2491,7 @@ buildFilters(); bindSheets();
 $('btnLoad').addEventListener('click', () => { closeAcct(); $('file').click(); });
 $('file').addEventListener('change', e => { const f = e.target.files && e.target.files[0]; if (f) handleFile(f); e.target.value = ''; });
 $('btnAdd').addEventListener('click', () => startAdd());
+$('btnInstall').addEventListener('click', () => { closeAcct(); addToHome(); });
 // 계정 메뉴: 동그라미를 누르면 열고, 바깥을 누르거나 Esc면 닫는다
 $('acctBtn').addEventListener('click', () => { if ($('acctMenu').hidden) openAcct(); else closeAcct(); });
 document.addEventListener('pointerdown', e => { if (!$('acctMenu').hidden && !(e.target.closest && e.target.closest('#acctMenu, #acctBtn'))) closeAcct(); });
