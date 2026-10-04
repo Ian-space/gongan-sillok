@@ -1653,37 +1653,35 @@ function initMap(){
   naver.maps.Event.addListener(map, 'idle', queueNearby); // 지도가 멈추면 화면 안의 주변 카페를 불러온다
   naver.maps.Event.addListener(map, 'idle', () => renderPeek(state.places.filter(matches))); // '이 지역 n곳'은 보이는 범위가 바뀔 때마다
   // 지도의 빈 곳을 짧게 누르면(끌지 않고) 고른 장소를 닫는다. 핀·점을 누를 때는 그 장소가 열린다.
-  // 휴대폰에서 빈 곳을 0.5초 동안 누르고 있으면 지도만 보기를 켜고 끈다 (짧은 터치나 지도 끌기로는 바뀌지 않게)
-  const HOLD_MS = 500;
-  let down = null, holdTimer = null;
+  // 휴대폰에서 아무것도 안 열려 있을 때 빈 곳을 한 번 톡 누르면 지도만 보기를 켜고 끈다.
+  // 끌기·두 손가락·길게 누르기는 무시하고, 두 번 톡톡(확대)일 수 있으니 0.3초 기다렸다가 두 번째 터치가 없을 때만 바꾼다
+  const TAP_MS = 400, DOUBLE_MS = 300;
+  let down = null, tapTimer = null, lastTapAt = 0;
   const mapEl = $('map');
-  const cancelHold = () => { clearTimeout(holdTimer); holdTimer = null; };
+  const cancelTap = () => { clearTimeout(tapTimer); tapTimer = null; };
   const onBlank = e => !(e.target.closest && e.target.closest('.pin, .near-dot, .pin-label, .pin-badge'));
   mapEl.addEventListener('pointerdown', e => {
-    cancelHold();
-    if (!e.isPrimary) { down = null; return; } // 두 손가락(확대·축소)이면 취소
-    down = { x: e.clientX, y: e.clientY, t: Date.now(), held: false };
-    if (!isPhone() || state.sel || !onBlank(e)) return;
-    const d = down;
-    holdTimer = setTimeout(() => {
-      holdTimer = null;
-      if (down !== d || state.sel) return;
-      d.held = true;
-      setMapOnly(!document.body.classList.contains('map-only'));
-      if (navigator.vibrate) navigator.vibrate(12); // 진동을 지원하는 휴대폰은 살짝 떨어서 알려 준다
-    }, HOLD_MS);
+    cancelTap(); // 기다리는 중에 또 누르면(두 번 톡톡, 두 손가락) 바꾸지 않는다
+    down = e.isPrimary ? { x: e.clientX, y: e.clientY, t: Date.now() } : null;
   });
-  mapEl.addEventListener('pointermove', e => { if (down && e.isPrimary && Math.hypot(e.clientX - down.x, e.clientY - down.y) > 8) { cancelHold(); down.moved = true; } });
-  mapEl.addEventListener('pointercancel', () => { cancelHold(); down = null; });
+  mapEl.addEventListener('pointermove', e => { if (down && e.isPrimary && Math.hypot(e.clientX - down.x, e.clientY - down.y) > 8) down.moved = true; });
+  mapEl.addEventListener('pointercancel', () => { cancelTap(); down = null; });
   mapEl.addEventListener('pointerup', e => {
-    cancelHold();
     const d = down; down = null;
-    if (!d || d.held || d.moved || Math.hypot(e.clientX - d.x, e.clientY - d.y) > 8 || Date.now() - d.t > HOLD_MS) return;
+    if (!d || d.moved || Math.hypot(e.clientX - d.x, e.clientY - d.y) > 8 || Date.now() - d.t > TAP_MS) return;
     if (!onBlank(e)) return;
-    setTimeout(() => {
-      if (Date.now() - pinTapAt <= 300) return; // 같은 누름으로 핀이 열렸으면 두지 않는다
-      if (state.sel) select(null);              // 짧은 터치: 장소가 열려 있으면 닫기
-    }, 60);
+    if (state.sel) { // 장소가 열려 있으면 닫기
+      setTimeout(() => { if (Date.now() - pinTapAt > 300) select(null); }, 60); // 같은 누름으로 핀이 열렸으면 두지 않는다
+      return;
+    }
+    if (!isPhone()) return;
+    if (Date.now() - lastTapAt < DOUBLE_MS + 150) { lastTapAt = 0; return; } // 두 번째 톡(두 번 톡톡 확대)은 세지 않는다
+    lastTapAt = Date.now();
+    tapTimer = setTimeout(() => {
+      tapTimer = null;
+      if (state.sel || Date.now() - pinTapAt <= 400) return;
+      setMapOnly(!document.body.classList.contains('map-only'));
+    }, DOUBLE_MS);
   });
   mapEl.addEventListener('contextmenu', e => { if (isPhone()) e.preventDefault(); }); // 꾹 누를 때 뜨는 메뉴 막기
   syncMarkers(); syncExtMarkers(); fitAll(); renderAll();
@@ -3553,7 +3551,7 @@ const tourSteps = () => [
     ? { sel: '.peek', text: '아래 패널을 끌어 올리면 한눈에 보기, 목적별 추천, 장소 목록이 나와요.' }
     : { sel: '#list', text: '목록이나 지도의 핀을 누르면 그 장소의 기록이 열려요.' },
   { sel: '#zsaved', text: '장소를 열고 하트를 누르면 찜돼요. 이 버튼으로 찜한 곳과 내 기록만 모아 볼 수 있어요.' },
-  ...(isPhone() ? [{ sel: '#map', center: true, text: '지도를 0.5초 꾹 누르면 버튼이 숨고 지도만 보여요. 다시 꾹 누르면 돌아와요.' }] : []),
+  ...(isPhone() ? [{ sel: '#map', center: true, text: '지도의 빈 곳을 한 번 누르면 버튼이 숨고 지도만 보여요. 다시 누르면 돌아와요.' }] : []),
 ];
 let tourAt = -1;
 function startTour(force){
