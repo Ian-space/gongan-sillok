@@ -2,6 +2,7 @@
 // - 외부 서비스 키(TMAP, 카카오)를 사이트 코드 대신 여기 비밀 변수에만 둔다.
 //     TMAP_APP_KEY   : TMAP 대중교통·보행자 경로
 //     KAKAO_REST_KEY : 카카오 로컬 장소 검색 (REST API 키)
+// - 경로 결과 저장: KV 바인딩 ROUTE_CACHE (Settings → Bindings → KV namespace)
 // - 공간실록 사이트에서 온 요청만 받는다.
 //
 // 경로
@@ -10,7 +11,8 @@
 //   POST /search   { query, x?, y? }                            → 카카오 키워드 장소 검색 (x, y가 있으면 그 근처부터)
 
 const ALLOWED_ORIGINS = ['https://ian-space.github.io', 'http://localhost:8765'];
-const CACHE_SECONDS = 600; // 사용자 지정 도메인에서만 동작한다(workers.dev 주소에서는 저장되지 않음)
+// 경로 결과 저장 시간(초). KV 바인딩(ROUTE_CACHE)이 없으면 저장하지 않고 그대로 동작한다
+const CACHE_SECONDS = { transit: 600, walk: 86400 };
 
 const TMAP = {
   transit: 'https://apis.openapi.sk.com/transit/routes',
@@ -70,12 +72,16 @@ export default {
       ? { startX: String(sx), startY: String(sy), endX: String(ex), endY: String(ey), lang: 0, format: 'json', count: 10, ...(stamp && { searchDttm: stamp }) }
       : { startX: String(sx), startY: String(sy), endX: String(ex), endY: String(ey), startName: encodeURIComponent('출발'), endName: encodeURIComponent('도착') };
 
-    // 같은 구간(약 10m 단위)·같은 10분대 요청은 저장해 둔 결과를 준다
+    // 같은 구간(약 10m 단위) 요청은 저장해 둔 결과를 준다 (Cloudflare KV, 바인딩 이름 ROUTE_CACHE)
+    // 대중교통은 시각에 따라 달라서 같은 10분대만, 도보는 하루 동안 다시 쓴다. 누가 요청했는지는 저장하지 않는다
     const r4 = v => v.toFixed(4);
-    const cacheKey = new Request(`https://cache.gongan-sillok/${kind}?${r4(sx)},${r4(sy)},${r4(ex)},${r4(ey)},${stamp.slice(0, 11)}`);
-    const cache = caches.default;
-    const hit = await cache.match(cacheKey);
-    if (hit) return new Response(hit.body, { status: hit.status, headers: { ...cors, 'Content-Type': 'application/json; charset=utf-8', 'X-Cache': 'HIT' } });
+    const cacheKey = `${kind}:${r4(sx)},${r4(sy)},${r4(ex)},${r4(ey)}` + (kind === 'transit' ? `:${stamp.slice(0, 11)}` : '');
+    const kv = env.ROUTE_CACHE;
+    const json = (text, state) => new Response(text, { status: 200, headers: { ...cors, 'Content-Type': 'application/json; charset=utf-8', 'X-Cache': state } });
+    if (kv) {
+      const hit = await kv.get(cacheKey).catch(() => null);
+      if (hit) return json(hit, 'HIT');
+    }
 
     const upstream = await fetch(TMAP[kind], {
       method: 'POST',
@@ -83,10 +89,8 @@ export default {
       body: JSON.stringify(body),
     });
     const text = await upstream.text();
-    const res = new Response(text, { status: upstream.status, headers: { ...cors, 'Content-Type': 'application/json; charset=utf-8', 'X-Cache': 'MISS' } });
-    if (upstream.ok) {
-      ctx.waitUntil(cache.put(cacheKey, new Response(text, { status: 200, headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': `max-age=${CACHE_SECONDS}` } })));
-    }
-    return res;
+    if (!upstream.ok) return new Response(text, { status: upstream.status, headers: { ...cors, 'Content-Type': 'application/json; charset=utf-8', 'X-Cache': 'MISS' } });
+    if (kv) ctx.waitUntil(kv.put(cacheKey, text, { expirationTtl: CACHE_SECONDS[kind] }).catch(() => {}));
+    return json(text, kv ? 'MISS' : 'OFF');
   },
 };
