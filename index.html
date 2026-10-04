@@ -281,7 +281,7 @@ button.stat[aria-pressed="true"] span{color:#FFFFFF}
 .notes li{margin:3px 0}
 
 .mapwrap{position:relative;min-height:0;overflow:hidden}
-#map{width:100%;height:100%;background:var(--paper);isolation:isolate} /* 네이버 지도 내부 요소(로고, 축척)가 상세 패널 위로 올라오지 않게 가둔다 */
+#map{width:100%;height:100%;background:var(--paper);isolation:isolate;-webkit-touch-callout:none;-webkit-user-select:none;user-select:none} /* 꾹 눌러도 글자 선택·메뉴가 뜨지 않게 */ /* 네이버 지도 내부 요소(로고, 축척)가 상세 패널 위로 올라오지 않게 가둔다 */
 .mapctl{position:absolute;top:14px;right:14px;display:flex;flex-direction:column;gap:6px;z-index:10}
 .mapctl button{width:38px;height:38px;border:1px solid var(--line);background:var(--panel);border-radius:6px;cursor:pointer;font-size:18px}
 .mapctl .wide{width:auto;padding:0 10px;font-size:13px}
@@ -1636,20 +1636,40 @@ function initMap(){
   naver.maps.Event.addListener(map, 'zoom_changed', () => { renderMap(state.places.filter(matches)); renderNearMarkers(); renderLegend(); });
   naver.maps.Event.addListener(map, 'idle', queueNearby); // 지도가 멈추면 화면 안의 주변 카페를 불러온다
   naver.maps.Event.addListener(map, 'idle', () => renderPeek(state.places.filter(matches))); // '이 지역 n곳'은 보이는 범위가 바뀔 때마다
-  // 지도의 빈 곳을 짧게 누르면(끌지 않고) 고른 장소를 닫는다. 핀·점을 누를 때는 그 장소가 열린다
-  let down = null;
+  // 지도의 빈 곳을 짧게 누르면(끌지 않고) 고른 장소를 닫는다. 핀·점을 누를 때는 그 장소가 열린다.
+  // 휴대폰에서 빈 곳을 0.5초 동안 누르고 있으면 지도만 보기를 켜고 끈다 (짧은 터치나 지도 끌기로는 바뀌지 않게)
+  const HOLD_MS = 500;
+  let down = null, holdTimer = null;
   const mapEl = $('map');
-  mapEl.addEventListener('pointerdown', e => { down = e.isPrimary ? { x: e.clientX, y: e.clientY, t: Date.now() } : null; });
+  const cancelHold = () => { clearTimeout(holdTimer); holdTimer = null; };
+  const onBlank = e => !(e.target.closest && e.target.closest('.pin, .near-dot, .pin-label, .pin-badge'));
+  mapEl.addEventListener('pointerdown', e => {
+    cancelHold();
+    if (!e.isPrimary) { down = null; return; } // 두 손가락(확대·축소)이면 취소
+    down = { x: e.clientX, y: e.clientY, t: Date.now(), held: false };
+    if (!isPhone() || state.sel || !onBlank(e)) return;
+    const d = down;
+    holdTimer = setTimeout(() => {
+      holdTimer = null;
+      if (down !== d || state.sel) return;
+      d.held = true;
+      setMapOnly(!document.body.classList.contains('map-only'));
+      if (navigator.vibrate) navigator.vibrate(12); // 진동을 지원하는 휴대폰은 살짝 떨어서 알려 준다
+    }, HOLD_MS);
+  });
+  mapEl.addEventListener('pointermove', e => { if (down && e.isPrimary && Math.hypot(e.clientX - down.x, e.clientY - down.y) > 8) { cancelHold(); down.moved = true; } });
+  mapEl.addEventListener('pointercancel', () => { cancelHold(); down = null; });
   mapEl.addEventListener('pointerup', e => {
+    cancelHold();
     const d = down; down = null;
-    if (!d || Math.hypot(e.clientX - d.x, e.clientY - d.y) > 8 || Date.now() - d.t > 600) return;
-    if (e.target.closest && e.target.closest('.pin, .near-dot, .pin-label, .pin-badge')) return;
+    if (!d || d.held || d.moved || Math.hypot(e.clientX - d.x, e.clientY - d.y) > 8 || Date.now() - d.t > HOLD_MS) return;
+    if (!onBlank(e)) return;
     setTimeout(() => {
       if (Date.now() - pinTapAt <= 300) return; // 같은 누름으로 핀이 열렸으면 두지 않는다
-      if (state.sel) select(null);              // 장소가 열려 있으면 닫기
-      else if (isPhone()) setMapOnly(!document.body.classList.contains('map-only')); // 아니면 지도만 보기 켜고 끄기
+      if (state.sel) select(null);              // 짧은 터치: 장소가 열려 있으면 닫기
     }, 60);
   });
+  mapEl.addEventListener('contextmenu', e => { if (isPhone()) e.preventDefault(); }); // 꾹 누를 때 뜨는 메뉴 막기
   syncMarkers(); syncExtMarkers(); fitAll(); renderAll();
   if (state.sel && isPhone()) centerAboveDetail(state.sel); // 새로고침 뒤 다시 열린 장소
   naver.maps.Event.once(map, 'tilesloaded', hideSplash);
