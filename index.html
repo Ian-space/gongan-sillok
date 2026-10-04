@@ -2372,7 +2372,17 @@ async function addToHome(){
   }
   $('installDlg').showModal();
 }
-function openAcct(){ $('acctMenu').hidden = false; $('acctBtn').setAttribute('aria-expanded','true'); }
+function openAcct(){ $('acctMenu').hidden = false; $('acctBtn').setAttribute('aria-expanded','true'); placeAcct(); }
+// 휴대폰: 패널이 낮으면 메뉴 아래쪽이 화면 밖으로 잘리므로, 아래 자리가 모자라면 위(지도 쪽)로 연다
+function placeAcct(){
+  const m = $('acctMenu'); m.style.cssText = '';
+  if (!isPhone()) return;
+  const b = $('acctBtn').getBoundingClientRect(), vh = window.visualViewport ? visualViewport.height : innerHeight;
+  const h = m.scrollHeight, below = vh - b.bottom - 16, above = b.top - 16;
+  Object.assign(m.style, { position: 'fixed', right: '12px', overflowY: 'auto' });
+  if (below >= h || below >= above) Object.assign(m.style, { top: (b.bottom + 8) + 'px', maxHeight: below + 'px' });
+  else Object.assign(m.style, { top: 'auto', bottom: (innerHeight - b.top + 8) + 'px', maxHeight: above + 'px' });
+}
 function closeAcct(){ $('acctMenu').hidden = true; $('acctBtn').setAttribute('aria-expanded','false'); }
 // 장소 추가: 로그인했거나 로그인 기능이 없으면 바로, 아니면 어디에 저장할지 먼저 고른다
 const PENDING_ADD = 'gongan-sillok:pending-add';
