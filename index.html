@@ -451,6 +451,27 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
 .scale{margin:14px 0 0;display:grid;grid-template-columns:72px 1fr;row-gap:7px;font-size:13px}
 .scale dt{color:var(--muted)}
 .scale dd{margin:0;display:flex;gap:4px;flex-wrap:wrap}
+/* 사진 */
+.photo{display:block;border-radius:8px;overflow:hidden;background:var(--paper);aspect-ratio:4 / 3}
+.photo img{display:block;width:100%;height:100%;object-fit:cover}
+.photo.missing{display:none}
+.photo.small{width:96px;margin-top:6px}
+.d-photos{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:6px;margin:14px 0 0}
+.photo-pick{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.photo-thumb{width:120px;aspect-ratio:4 / 3;object-fit:cover;border-radius:8px;background:var(--paper)}
+.photo-acts{display:flex;gap:6px;flex-wrap:wrap}
+.add-hint{margin:0;font-size:12px;color:var(--muted);line-height:1.5}
+/* 소음 재기 */
+.meter{display:grid;gap:8px;margin-top:4px}
+.meter-btn{display:inline-flex;align-items:center;gap:6px;justify-self:start;font-size:13px;padding:6px 12px}
+.meter-btn svg{width:16px;height:16px;color:var(--blue)}
+.meter-out{display:grid;gap:6px;padding:10px 12px;border-radius:8px;background:var(--paper)}
+.meter-db{font-size:18px;font-weight:800}
+.meter-track{display:block;height:6px;border-radius:999px;background:var(--line);overflow:hidden}
+.meter-bar{display:block;height:100%;width:0;background:var(--blue);transition:width .1s linear}
+.meter-note{margin:0;font-size:12px;color:var(--muted);line-height:1.5}
+.meter-cal{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:12px;color:var(--muted)}
+.meter-calbtn{border:1px solid var(--line);background:var(--panel);border-radius:6px;padding:2px 8px;font-size:12px;cursor:pointer}
 /* 항목 묶음 제목 (공간 / 접근·동반) */
 .scale dt.scale-group{grid-column:1 / -1;margin-top:6px;font-size:12px;font-weight:700;color:var(--ink);letter-spacing:.02em}
 .scale dt.scale-group:first-child{margin-top:0}
@@ -669,6 +690,7 @@ const GROUPS = [{ id:'space', label:'공간' }, { id:'access', label:'접근·�
 const groupOf = k => ENUMS[k].group || 'space';
 const ACCESS_KEYS = Object.keys(ENUMS).filter(k => groupOf(k) === 'access');
 const dbCol = k => ENUMS[k].db || k;
+const PHOTO_PATH = /^[0-9a-f-]{36}\/[0-9a-f-]{36}\.jpg$/; // 사진 저장 위치 모양: 사용자 번호/임의 번호.jpg
 // 기록 기준: 사람마다 '조용함'을 다르게 고르지 않도록 값마다 기준을 정해 둔다(? 버튼으로 본다)
 // 값 순서는 ENUMS와 같다(좋음, 보통, 아쉬움)
 const CRITERIA = {
@@ -1063,7 +1085,7 @@ async function loadPublic(){
     const { places: [p] } = rowsToPlaces([SAMPLE_ROWS[0], [r.place_name, r.place_type, r.place_address, r.lat, r.lng, r.noise, r.spacing, r.light, r.outlet, r.stay, r.materials, r.furniture, r.note, r.visited_on, ...accessOf(r)]]);
     if (!p) continue;
     if (!groups.has(r.place_id)) groups.set(r.place_id, { pid: r.place_id, kid: r.kakao_id || '', name: p.name, type: p.type, addr: p.addr, lat: p.lat, lng: p.lng, recs: [] });
-    groups.get(r.place_id).recs.push({ ...p, rid: r.id, nickname: cleanText(r.nickname, 30), mineRec: !!r.mine }); // 닉네임은 관리자에게만 온다
+    groups.get(r.place_id).recs.push({ ...p, rid: r.id, nickname: cleanText(r.nickname, 30), mineRec: !!r.mine, photo: PHOTO_PATH.test(r.photo_path || '') ? r.photo_path : '' }); // 닉네임은 관리자에게만 온다
   }
   const first = !state.pub.length;
   state.pub = [...groups.values()];
@@ -1219,6 +1241,15 @@ function renderDetail(){
     dl.appendChild(dd);
   }
   d.appendChild(dl);
+  // 사진: 내 사진 먼저, 그다음 다른 사람 공개 기록의 사진 (최대 6장)
+  const photos = [];
+  if (p.mine && p.photo) photos.push({ path: p.photo, label: '내 기록 사진' });
+  for (const r of p.recs || []) if (r.photo && !photos.some(x => x.path === r.photo)) photos.push({ path: r.photo, label: '공개 기록 사진' });
+  if (photos.length) {
+    const g = el('div','d-photos');
+    for (const x of photos.slice(0, 6)) g.appendChild(photoImg(x.path, `${p.name} ${x.label}`));
+    d.appendChild(g); fillPhotos(g);
+  }
   if (p.materials) { const b = el('div','d-block'); b.append(el('div','d-label','주요 자재'), el('div',null,p.materials)); d.appendChild(b); }
   if (p.furniture) { const b = el('div','d-block'); b.append(el('div','d-label','가구'), el('div',null,p.furniture)); d.appendChild(b); }
   if (p.note) { const b = el('div','d-block'); b.append(el('div','d-label','한 줄 기록'), el('p','d-note',p.note)); d.appendChild(b); }
@@ -1243,10 +1274,11 @@ function renderDetail(){
       li.appendChild(head);
       if (vals) li.appendChild(el('div','rec-vals', vals));
       if (r.note) li.appendChild(el('div','rec-note', r.note));
+      if (r.photo) li.appendChild(photoImg(r.photo, '이 기록의 사진', 'small')); // 신고할 때 어느 기록의 사진인지 알 수 있게
       if (auth.user && !r.mineRec) li.appendChild(reportUI(r));
       list.appendChild(li);
     }
-    box.appendChild(list);
+    box.appendChild(list); fillPhotos(list);
     // '사실과 다름'은 신고 대신 내 기록을 더해 바로잡는다 (가장 많은 값으로 모아 보여 주므로)
     const fix = el('div','rec-fix');
     fix.appendChild(el('span', null, '실제와 다르다면 내 기록을 더해 바로잡아 주세요.'));
@@ -2275,7 +2307,7 @@ function renderExtList(){
 // 이름으로 검색해서 고르면 주소와 좌표가 채워지고, 공간 기록을 입력해 저장한다.
 // 저장은 엑셀 불러오기와 같은 방식(이 브라우저)으로 하고, 엑셀 불러오기와 같은 검사(rowsToPlaces)를 거친다.
 const addState = { step: 'search', query: '', results: [], picked: null, status: '', err: false, values: {}, texts: {}, editId: null };
-const freshAdd = () => ({ step: 'search', results: [], picked: null, status: '', err: false, values: {}, texts: {}, editId: null, server: null, busy: false, lidx: -1 });
+const freshAdd = () => ({ step: 'search', results: [], picked: null, status: '', err: false, values: {}, texts: {}, editId: null, server: null, busy: false, lidx: -1, photo: {} });
 // 같은 곳: 거의 같은 좌표(5m 안)이거나, 이름이 같고 100m 안
 const sameSpot = (a, b) => distM(a, b) < 5 || (a.name === b.name && distM(a, b) < 100);
 // prefill이 있으면(지도에서 고른 기록 안 된 장소) 검색을 건너뛰고 바로 기록 입력으로 간다
@@ -2291,7 +2323,8 @@ function editState(p){
     picked: { name: p.name, type: p.type, address: p.addr, lat: p.lat, lng: p.lng, category: '' },
     values: Object.fromEntries(Object.keys(ENUMS).map(k => [k, p[k] || ''])),
     texts: { materials: p.materials, furniture: p.furniture, note: p.note, date: p.date },
-    server: p.rid ? { rid: p.rid, pid: p.pid, pub: !!p.pub } : null }; // 계정에 저장된 기록이면 서버 번호를 함께 둔다
+    server: p.rid ? { rid: p.rid, pid: p.pid, pub: !!p.pub, photo: p.photo || '' } : null, // 계정에 저장된 기록이면 서버 번호를 함께 둔다
+    photo: p.photo ? { path: p.photo } : {} };
 }
 function openEdit(id){
   const p = state.places.find(x => x.id === id); if (!p) return;
@@ -2403,13 +2436,18 @@ function renderAdd(){
       b.addEventListener('click', () => { addState.values[k] = addState.values[k] === v ? '' : v; chips.querySelectorAll('.chip').forEach(c => c.setAttribute('aria-pressed', String(addState.values[k] === c.textContent))); });
       chips.appendChild(b);
     }
-    w.appendChild(chips); body.appendChild(w);
+    w.appendChild(chips);
+    // 소음은 마이크로 재서 값을 골라 줄 수 있다
+    if (k === 'noise') w.appendChild(noiseMeter(v => { addState.values[k] = v; chips.querySelectorAll('.chip').forEach(c => c.setAttribute('aria-pressed', String(addState.values[k] === c.textContent))); }));
+    body.appendChild(w);
   }
   const matI = text(tx.materials, 80), furI = text(tx.furniture, 80);
   const noteI = el('textarea'); noteI.maxLength = 200; noteI.placeholder = '예: 창가 자리는 오후 3시 이후 볕이 깊게 든다'; noteI.value = tx.note || '';
   const s = seoulNow().stamp; const dateI = el('input'); dateI.type = 'date';
   dateI.value = /^\d{4}-\d{2}-\d{2}$/.test(tx.date || '') ? tx.date : `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}`;
   body.append(field('주요 자재', matI), field('가구', furI), field('한 줄 기록', noteI), field('방문일', dateI));
+  if (auth.user) body.appendChild(photoField());
+  else if (sb) body.appendChild(el('p','add-hint', '로그인하면 사진도 한 장 함께 올릴 수 있어요.'));
   if (addState.status) body.appendChild(el('p','add-status' + (addState.err ? ' err' : ''), addState.status));
   // 로그인했으면 공개 여부를 고른다(기본은 나만 보기)
   let pubI = null;
@@ -2470,7 +2508,7 @@ const sb = window.supabase && SUPABASE_URL && SUPABASE_KEY
   ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { flowType: 'pkce', persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } })
   : null;
 const auth = { user: null, nickname: '', role: 'user', ready: false };
-const RECORD_COLS = 'id, is_public, noise, spacing, light, outlet, stay, materials, furniture, note, visited_on, entrance, floor_access, toilet, kids, pets, places(id, kakao_id, name, type, address, lat, lng)';
+const RECORD_COLS = 'id, is_public, noise, spacing, light, outlet, stay, materials, furniture, note, visited_on, entrance, floor_access, toilet, kids, pets, photo_path, places(id, kakao_id, name, type, address, lat, lng)';
 
 async function loadMine(){
   const { data, error } = await sb.from('records').select(RECORD_COLS).eq('user_id', auth.user.id).order('created_at');
@@ -2481,7 +2519,7 @@ async function loadMine(){
     const pl = r.places; if (!pl) continue;
     const { places: [p] } = rowsToPlaces([SAMPLE_ROWS[0], [pl.name, pl.type, pl.address, pl.lat, pl.lng, r.noise, r.spacing, r.light, r.outlet, r.stay, r.materials, r.furniture, r.note, r.visited_on, ...accessOf(r)]]);
     if (!p) continue;
-    places.push(Object.assign(p, { id: 'p' + places.length, rid: r.id, pid: pl.id, kid: pl.kakao_id || '', pub: !!r.is_public }));
+    places.push(Object.assign(p, { id: 'p' + places.length, rid: r.id, pid: pl.id, kid: pl.kakao_id || '', pub: !!r.is_public, photo: r.photo_path || '' }));
   }
   setMine(places, '내 기록(계정)', false);
   if (!places.length) setStatus('아직 내 기록이 없어요. + 장소 추가로 첫 기록을 남겨 보세요.', false);
@@ -2495,6 +2533,16 @@ async function saveToServer(row, picked, editing, isPublic){
   const vals = { noise: np.noise || null, spacing: np.spacing || null, light: np.light || null, outlet: np.outlet || null, stay: np.stay || null,
     materials: np.materials || null, furniture: np.furniture || null, note: np.note || null, visited_on: /^\d{4}-\d{2}-\d{2}$/.test(np.date) ? np.date : null, is_public: isPublic,
     ...Object.fromEntries(ACCESS_KEYS.map(k => [dbCol(k), np[k] || null])) };
+  // 사진: 새로 고른 사진은 먼저 올리고, 기록 저장이 실패하면 올린 사진을 지운다. 바꾸거나 뺐으면 저장 뒤 예전 사진을 지운다
+  const ph = addState.photo || {}, oldPath = (addState.server && addState.server.photo) || '';
+  let uploaded = '';
+  if (ph.blob) {
+    uploaded = `${auth.user.id}/${crypto.randomUUID()}.jpg`;
+    const { error } = await sb.storage.from('photos').upload(uploaded, ph.blob, { contentType: 'image/jpeg', upsert: false });
+    if (error) return fail('사진을 올리지 못했어요. 사진을 빼거나 잠시 뒤 다시 시도해 주세요.');
+    vals.photo_path = uploaded;
+  } else if (ph.removed) vals.photo_path = null;
+  else if (oldPath) vals.photo_path = oldPath;
   try {
     let placeId;
     if (editing && addState.server) {
@@ -2517,6 +2565,7 @@ async function saveToServer(row, picked, editing, isPublic){
         if (r2.error) throw r2.error;
       } else if (error) throw error;
     }
+    if (oldPath && oldPath !== (vals.photo_path || '')) sb.storage.from('photos').remove([oldPath]).catch(() => {});
     await loadMine(); await loadPublic(); // 공개로 바꿨거나 공개 기록을 더했으면 모아 보기도 바뀐다
     if (state.ext.results.length) { state.ext.results = state.ext.results.filter(r => !isRecorded(r)); syncExtMarkers(); renderAll(); }
     addState.busy = false; $('addDlg').close();
@@ -2524,6 +2573,7 @@ async function saveToServer(row, picked, editing, isPublic){
     setStatus(`'${np.name}'을(를) ${editing ? '고쳤어요' : '기록했어요'}. 계정에 저장돼서 다른 기기에서도 보여요.`, false);
     if (target) select(target.id, true);
   } catch (e) {
+    if (uploaded) sb.storage.from('photos').remove([uploaded]).catch(() => {});
     fail('저장하지 못했어요. 인터넷 연결을 확인하고 다시 시도해 주세요.' + (e && e.message ? ` (${cleanText(e.message, 80)})` : ''));
   }
 }
@@ -2531,8 +2581,160 @@ async function deleteFromServer(p){
   state.delAsk = null;
   const { error } = await sb.from('records').delete().eq('id', p.rid);
   if (error) { setStatus('지우지 못했어요. 잠시 뒤 다시 시도해 주세요.', true); renderDetail(); return; }
+  if (p.photo) sb.storage.from('photos').remove([p.photo]).catch(() => {});
   select(null); await loadMine(); await loadPublic();
   setStatus(`'${p.name}' 기록을 지웠어요.`, false);
+}
+
+/* ---------- 사진 (기록마다 한 장) ---------- */
+// 올리기 전에 휴대폰에서 긴 변 1600px JPEG로 줄인다. 캔버스로 다시 그리므로 촬영 위치(GPS) 같은 EXIF 정보는 남지 않는다
+const PHOTO_MAX = 1600;
+function loadImg(file){
+  return new Promise((ok, no) => {
+    const u = URL.createObjectURL(file), i = new Image();
+    i.onload = () => { URL.revokeObjectURL(u); ok(i); };
+    i.onerror = () => { URL.revokeObjectURL(u); no(new Error('decode')); };
+    i.src = u;
+  });
+}
+async function shrinkPhoto(file){
+  if (file.size > 30 * 1024 * 1024) throw new Error('너무 큰 파일이에요(30MB 넘음).');
+  let src;
+  try { src = await createImageBitmap(file, { imageOrientation: 'from-image' }); } catch { src = await loadImg(file); }
+  const s = Math.min(1, PHOTO_MAX / Math.max(src.width, src.height));
+  const c = document.createElement('canvas'); c.width = Math.max(1, Math.round(src.width * s)); c.height = Math.max(1, Math.round(src.height * s));
+  c.getContext('2d').drawImage(src, 0, 0, c.width, c.height);
+  if (src.close) src.close();
+  let q = 0.82, blob = null;
+  do { blob = await new Promise(r => c.toBlob(r, 'image/jpeg', q)); q -= 0.12; } while (blob && blob.size > 1.8 * 1024 * 1024 && q > 0.3);
+  if (!blob) throw new Error('사진을 바꾸지 못했어요.');
+  return blob;
+}
+// 비공개 저장소라 사진 주소는 1시간짜리 임시 주소로 받는다. 받은 주소는 50분 동안 다시 쓴다
+const photoUrls = new Map();
+async function signPhotos(paths){
+  if (!sb) return;
+  const now = Date.now(), need = [...new Set(paths)].filter(x => PHOTO_PATH.test(x) && !(photoUrls.get(x) && photoUrls.get(x).exp > now));
+  if (!need.length) return;
+  const { data, error } = await sb.storage.from('photos').createSignedUrls(need, 3600);
+  if (error || !data) return;
+  for (const d of data) if (d.signedUrl && d.path) photoUrls.set(d.path, { url: d.signedUrl, exp: now + 50 * 60 * 1000 });
+}
+// 사진 자리(<img data-photo>)를 먼저 그려 두고, 주소를 받으면 채운다
+function photoImg(path, alt, cls){
+  const a = el('a','photo ' + (cls || '')); a.target = '_blank'; a.rel = 'noopener'; a.setAttribute('aria-label', alt + ' 크게 보기');
+  const img = el('img'); img.alt = alt; img.loading = 'lazy'; img.decoding = 'async'; img.dataset.photo = path;
+  a.appendChild(img); return a;
+}
+async function fillPhotos(root){
+  const imgs = [...root.querySelectorAll('img[data-photo]')]; if (!imgs.length) return;
+  await signPhotos(imgs.map(i => i.dataset.photo));
+  for (const i of imgs) {
+    const u = photoUrls.get(i.dataset.photo);
+    if (u) { i.src = u.url; i.closest('a').href = u.url; } else i.closest('a').classList.add('missing');
+  }
+}
+// 기록 창의 사진 칸 (로그인했을 때만). 고른 사진은 저장할 때 올린다
+function photoField(){
+  const w = el('div','add-field photo-field'); w.appendChild(el('span','lbl', '사진 한 장 (선택)'));
+  const box = el('div','photo-pick'); w.appendChild(box);
+  w.appendChild(el('p','add-hint', '입구, 계단, 좌석, 화장실처럼 기록을 보여 주는 사진 한 장이면 충분해요. 사람 얼굴이나 차량 번호가 나오지 않게 찍어 주세요. 촬영 위치 정보는 지우고 올려요. 공개한 기록이면 사진도 함께 공개돼요.'));
+  const draw = () => {
+    box.replaceChildren();
+    const ph = addState.photo || {};
+    const input = el('input'); input.type = 'file'; input.accept = 'image/*'; input.hidden = true;
+    input.addEventListener('change', async () => {
+      const f = input.files && input.files[0]; if (!f) return;
+      box.replaceChildren(el('span','muted','사진을 줄이는 중이에요…'));
+      try {
+        const blob = await shrinkPhoto(f);
+        if (ph.preview) URL.revokeObjectURL(ph.preview);
+        addState.photo = { ...addState.photo, blob, preview: URL.createObjectURL(blob), removed: false };
+      } catch (e) { addState.photo = { ...addState.photo }; toast('이 사진은 쓸 수 없어요. 다른 사진을 골라 주세요.'); }
+      draw();
+    });
+    const pick = el('button','btn ghost', '사진 고르기'); pick.type = 'button'; pick.addEventListener('click', () => input.click());
+    const has = ph.blob || (ph.path && !ph.removed);
+    if (has) {
+      const img = el('img','photo-thumb'); img.alt = '고른 사진';
+      if (ph.blob) img.src = ph.preview;
+      else { img.dataset.photo = ph.path; signPhotos([ph.path]).then(() => { const u = photoUrls.get(ph.path); if (u) img.src = u.url; }); }
+      pick.textContent = '다른 사진으로';
+      const rm = el('button','btn ghost', '사진 빼기'); rm.type = 'button';
+      rm.addEventListener('click', () => { if (ph.preview) URL.revokeObjectURL(ph.preview); addState.photo = { path: ph.path, removed: true }; draw(); });
+      box.append(img, el('div','photo-acts'));
+      box.lastChild.append(pick, rm);
+    } else box.appendChild(pick);
+    box.appendChild(input);
+  };
+  draw();
+  return w;
+}
+
+/* ---------- 소음 재기 (마이크) ---------- */
+// 휴대폰 마이크로 10초 동안 소리 크기를 재서 평균(에너지 평균)을 dB로 어림한다. 녹음하거나 보내지 않고, 이 기기 안에서 크기만 계산한다.
+// 브라우저 마이크 값은 기준(dBFS)이 기기마다 달라서 보정값을 더한다. 소음 측정 앱과 비교해 사용자가 보정할 수 있다.
+const NOISE_SECONDS = 10, NOISE_OFFSET_KEY = 'gongan-sillok:noise-offset', NOISE_BASE = 100;
+const noiseOffset = () => { try { const v = Number(localStorage.getItem(NOISE_OFFSET_KEY)); return Number.isFinite(v) && Math.abs(v) <= 30 ? v : 0; } catch { return 0; } };
+const noiseValue = db => db <= 55 ? '조용함' : db <= 75 ? '보통' : '시끄러움'; // 기준(CRITERIA.noise)과 같은 경계
+function noiseMeter(onPick){
+  const w = el('div','meter'); let running = false;
+  const start = el('button','btn ghost meter-btn'); start.type = 'button';
+  start.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>';
+  start.append('소리 재기 (10초)');
+  const out = el('div','meter-out'); out.hidden = true;
+  w.append(start, out);
+  start.addEventListener('click', async () => {
+    if (running) return;
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { out.hidden = false; out.replaceChildren(el('p','meter-note','이 브라우저에서는 마이크를 쓸 수 없어요.')); return; }
+    running = true; start.disabled = true; out.hidden = false;
+    let stream, ac;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
+      ac = new (window.AudioContext || window.webkitAudioContext)(); await ac.resume();
+      const an = ac.createAnalyser(); an.fftSize = 2048; ac.createMediaStreamSource(stream).connect(an);
+      const buf = new Float32Array(an.fftSize), energies = [];
+      const big = el('b','meter-db','…'), bar = el('i','meter-bar'), note = el('p','meter-note', '자리에 앉은 그대로, 휴대폰을 테이블 위에 두고 기다려 주세요. 녹음하지 않아요.');
+      out.replaceChildren(big, el('span','meter-track', ''), note); out.children[1].appendChild(bar);
+      const t0 = performance.now();
+      await new Promise(done => {
+        const tick = () => {
+          an.getFloatTimeDomainData(buf);
+          let s = 0; for (const v of buf) s += v * v;
+          const rms = Math.sqrt(s / buf.length) || 1e-8;
+          const db = 20 * Math.log10(rms) + NOISE_BASE + noiseOffset();
+          energies.push(Math.pow(10, db / 10));
+          big.textContent = `약 ${Math.max(0, Math.round(db))}dB`;
+          const p = Math.min(1, (performance.now() - t0) / (NOISE_SECONDS * 1000)); bar.style.width = (p * 100) + '%';
+          if (p >= 1) done(); else setTimeout(tick, 100);
+        };
+        tick();
+      });
+      const leqRaw = 10 * Math.log10(energies.reduce((a, b) => a + b, 0) / energies.length) - noiseOffset(); // 보정 전 값
+      const show = () => {
+        const db = Math.round(leqRaw + noiseOffset()), v = noiseValue(db), off = noiseOffset();
+        onPick(v);
+        const cal = el('div','meter-cal'); cal.appendChild(el('span', null, `보정 ${off > 0 ? '+' : ''}${off}dB`));
+        for (const d of [-5, -1, 1, 5]) {
+          const b = el('button','meter-calbtn', (d > 0 ? '+' : '') + d); b.type = 'button';
+          b.addEventListener('click', () => { try { localStorage.setItem(NOISE_OFFSET_KEY, String(Math.max(-30, Math.min(30, noiseOffset() + d)))); } catch {} show(); });
+          cal.appendChild(b);
+        }
+        out.replaceChildren(el('b','meter-db', `평균 약 ${db}dB → ${v}`),
+          el('p','meter-note', `${v}으로 골라 뒀어요. 휴대폰마다 몇 dB씩 오차가 있으니 실제 느낌과 다르면 직접 바꿔 주세요. 소음 측정 앱과 비교해 차이가 나면 아래에서 보정할 수 있어요(이 기기에 기억해요).`), cal);
+      };
+      show();
+    } catch (e) {
+      out.replaceChildren(el('p','meter-note', e && e.name === 'NotAllowedError'
+        ? '마이크 권한이 막혀 있어요. 주소창 왼쪽의 사이트 설정(아이폰은 aA 버튼 → 웹 사이트 설정)에서 마이크를 허용해 주세요.'
+        : '소리를 재지 못했어요. 잠시 뒤 다시 시도해 주세요.'));
+    } finally {
+      if (stream) stream.getTracks().forEach(t => t.stop());
+      if (ac) ac.close().catch(() => {});
+      running = false; start.disabled = false;
+    }
+  });
+  return w;
 }
 
 /* ---------- 신고 (3단계) ---------- */
@@ -2608,6 +2810,7 @@ function renderAdmin(rows, note){
     const body2 = [r.note && `한 줄 기록: ${cleanText(r.note, 200)}`, r.materials && `자재: ${cleanText(r.materials, 80)}`, r.furniture && `가구: ${cleanText(r.furniture, 80)}`].filter(Boolean);
     for (const t of body2) card.appendChild(el('p','adm-rec', t));
     for (const dtl of (r.details || []).slice(0, 5)) card.appendChild(el('p','adm-detail', `신고 내용: ${cleanText(dtl, 200)}`));
+    if (PHOTO_PATH.test(r.photo_path || '')) { card.appendChild(photoImg(r.photo_path, '신고된 기록의 사진', 'small')); fillPhotos(card); }
     const acts = el('div','rep-acts');
     const btn = (label, cls, fn) => { const b = el('button', 'btn ' + cls, label); b.type = 'button'; b.addEventListener('click', fn); return b; };
     if (r.hidden) acts.append(btn('다시 공개 (신고 무시)', 'ghost', () => moderate(r.record_id, false)));
@@ -2704,7 +2907,7 @@ function openLeave(){
   body.appendChild(el('p','leave-lead','탈퇴하면 아래 정보가 바로 지워지고, 되돌릴 수 없어요.'));
   const ul = el('ul','leave-list');
   ul.append(el('li', null, `내 기록 ${mine.length}곳` + (pubN ? ` (공개 기록 ${pubN}곳 포함)` : '')),
-    el('li', null, '내가 한 신고'), el('li', null, '카카오 로그인으로 받은 정보 (닉네임 등)'));
+    el('li', null, '내가 올린 사진'), el('li', null, '내가 한 신고'), el('li', null, '카카오 로그인으로 받은 정보 (닉네임 등)'));
   body.appendChild(ul);
   body.appendChild(el('p','legal-note','카카오 쪽 연결은 카카오톡 → 설정 → 카카오계정 → 연결된 서비스 관리에서 따로 끊을 수 있어요.'));
   const lab = el('label','leave-check'); const cb = document.createElement('input'); cb.type = 'checkbox';
@@ -2716,6 +2919,11 @@ function openLeave(){
   cb.addEventListener('change', () => { go.disabled = !cb.checked; });
   go.addEventListener('click', async () => {
     go.disabled = cb.disabled = true; st.classList.remove('err'); st.textContent = '지우는 중이에요…';
+    // 사진 파일은 계정을 지워도 저장소에 남으므로 먼저 지운다
+    try {
+      const uid = auth.user.id, { data: files } = await sb.storage.from('photos').list(uid, { limit: 1000 });
+      if (files && files.length) await sb.storage.from('photos').remove(files.map(f => `${uid}/${f.name}`));
+    } catch {}
     const { error } = await sb.rpc('delete_my_account');
     if (error) {
       st.classList.add('err');
