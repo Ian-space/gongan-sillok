@@ -4,6 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>공간실록 시제품</title>
+<meta name="description" content="평점 대신 공간의 사실을 기록하는 지도. 소음, 좌석 간격, 채광, 콘센트, 머무르기를 기준에 따라 남기고 함께 봐요.">
+<!-- 카톡 등에 링크를 보냈을 때 미리보기 -->
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="공간실록">
+<meta property="og:title" content="공간실록 · 평점 대신 공간의 사실">
+<meta property="og:description" content="소음, 좌석 간격, 채광, 콘센트, 머무르기. 성수동 공간을 사실로 기록하는 지도예요.">
+<meta property="og:image" content="https://ian-space.github.io/gongan-sillok/icons/icon-512.png">
+<meta property="og:url" content="https://ian-space.github.io/gongan-sillok/">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -420,6 +428,13 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
 .d-name{font-family:var(--sans);font-weight:700;font-size:24px;line-height:1.2;margin:0}
 .d-meta{font-size:13px;color:var(--muted);margin:4px 0 0}
 .d-close{border:0;background:transparent;font-size:22px;line-height:1;cursor:pointer;color:var(--muted);padding:2px 4px}
+.d-head-acts{display:flex;align-items:center;gap:6px;flex:none}
+.d-share{display:inline-flex;align-items:center;gap:4px;border:0;border-radius:999px;padding:5px 11px 5px 9px;background:var(--blue-soft);color:var(--blue);font-size:13px;font-weight:700;cursor:pointer}
+.d-share svg{width:15px;height:15px}
+.d-share:hover{filter:brightness(.97)}
+/* 잠깐 떴다 사라지는 알림 (링크 복사 등) */
+.toast{position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom,0px));z-index:90;transform:translateX(-50%);max-width:calc(100% - 32px);padding:10px 16px;border-radius:999px;background:var(--ink);color:var(--panel);font-size:14px;font-weight:600;box-shadow:0 8px 24px rgba(15,20,40,.25);transition:opacity .2s ease-out}
+.toast[hidden]{display:block;opacity:0;pointer-events:none}
 .scale{margin:14px 0 0;display:grid;grid-template-columns:72px 1fr;row-gap:7px;font-size:13px}
 .scale dt{color:var(--muted)}
 .scale dd{margin:0;display:flex;gap:4px;flex-wrap:wrap}
@@ -579,6 +594,7 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
 
 <dialog class="add-dlg" id="addDlg" aria-labelledby="addTitle"><div class="add-body" id="addBody"></div></dialog>
 <dialog class="add-dlg" id="adminDlg" aria-labelledby="adminTitle"><div class="add-body" id="adminBody"></div></dialog>
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 <dialog class="add-dlg" id="leaveDlg" aria-labelledby="leaveTitle"><div class="add-body" id="leaveBody"></div></dialog>
 <dialog class="add-dlg" id="installDlg" aria-labelledby="installTitle"><div class="add-body" id="installBody"></div></dialog>
 <dialog class="add-dlg" id="choiceDlg" aria-labelledby="choiceTitle">
@@ -1074,7 +1090,11 @@ function renderDetail(){
   if (meta) t.appendChild(el('p','d-meta', meta));
   const close = el('button','d-close','×'); close.type = 'button'; close.setAttribute('aria-label','닫기');
   close.addEventListener('click', () => select(null));
-  head.append(t, close); d.appendChild(head);
+  const share = el('button','d-share'); share.type = 'button'; share.setAttribute('aria-label', `${p.name} 링크 공유하기`);
+  share.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 8l5-5 5 5"/><path d="M5 12v8h14v-8"/></svg>';
+  share.append('공유'); share.addEventListener('click', () => sharePlace(p));
+  const acts = el('div','d-head-acts'); acts.append(share, close);
+  head.append(t, acts); d.appendChild(head);
 
   const st = nearestStation(p);
   if (state.me || st) {
@@ -1099,7 +1119,7 @@ function renderDetail(){
     if (p.phone) { const ph = el('p','ext-phone'); ph.append('전화 ', el('span', null, p.phone)); box.appendChild(ph); }
     const acts = el('div','ext-acts');
     const rec = el('button','btn add','이 장소 기록하기'); rec.type = 'button';
-    rec.addEventListener('click', () => startAdd({ name: p.name, category: p.category, address: p.addr, lat: p.lat, lng: p.lng, kid: p.id.slice(1) }));
+    rec.addEventListener('click', () => startAdd({ name: p.name, category: p.category, address: p.addr, lat: p.lat, lng: p.lng, kid: /^\d+$/.test(p.id.slice(1)) ? p.id.slice(1) : '' }));
     acts.appendChild(rec);
     if (p.url) { const k = el('a','btn ghost','카카오맵에서 자세히'); k.href = p.url; k.target = '_blank'; k.rel = 'noopener'; acts.appendChild(k); }
     box.appendChild(acts);
@@ -1203,6 +1223,69 @@ function renderDetail(){
     : '위치를 켜지 않으면 네이버 지도에서 출발지를 직접 입력해야 해요.'));
   d.hidden = false;
 }
+/* ---------- 장소 공유 링크 ---------- */
+// 링크: ?n=이름&y=위도&x=경도 [&p=공용 장소 번호(공개 기록이 있을 때)] [&k=카카오 장소 번호]
+// 받은 사람 화면에 같은 장소가 있으면 그 장소를, 없으면(나만 보기 기록, 기록 안 된 가게) 흰 핀으로 열어 준다
+const SHARE_KEYS = ['n', 'y', 'x', 'p', 'k'];
+function shareUrl(p){
+  const q = new URLSearchParams({ n: p.name, y: p.lat.toFixed(6), x: p.lng.toFixed(6) });
+  if (p.pid && (p.pubCount > 0 || p.pub)) q.set('p', String(p.pid));
+  const kid = String(p.kid || (p.ext ? p.id.slice(1) : ''));
+  if (/^\d{1,20}$/.test(kid)) q.set('k', kid);
+  return location.origin + location.pathname + '?' + q;
+}
+async function sharePlace(p){
+  const url = shareUrl(p);
+  const facts = Object.keys(ENUMS).map(k => p[k]).filter(Boolean).join(' · ');
+  const text = `${p.name}${facts ? ` (${facts})` : ''} · 공간실록`;
+  if (navigator.share) {
+    try { await navigator.share({ title: `${p.name} · 공간실록`, text, url }); return; }
+    catch (e) { if (e && e.name === 'AbortError') return; } // 사용자가 닫았으면 그대로
+  }
+  try { await navigator.clipboard.writeText(url); toast('링크를 복사했어요. 카톡이나 메시지에 붙여 넣어 보내 주세요.'); }
+  catch { window.prompt('이 링크를 복사해서 보내 주세요', url); }
+}
+let toastTimer = null;
+function toast(msg){
+  const t = $('toast'); t.textContent = msg; t.hidden = false;
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.hidden = true; }, 2600);
+}
+let pendingShare = (() => {
+  const q = new URLSearchParams(location.search);
+  const name = cleanText(q.get('n'), 40), lat = toNum(q.get('y')), lng = toNum(q.get('x'));
+  if (!name || !(lat >= 33 && lat <= 39) || !(lng >= 124 && lng <= 132)) return null;
+  const pid = /^\d{1,15}$/.test(q.get('p') || '') ? Number(q.get('p')) : null;
+  const kid = /^\d{1,20}$/.test(q.get('k') || '') ? q.get('k') : '';
+  return { name, lat, lng, pid, kid };
+})();
+// final: 공개 기록까지 다 불러온 뒤. 그 전에는 찾으면 열고, 못 찾으면 기다린다
+function applyShare(final){
+  const s = pendingShare; if (!s) return;
+  const hit = state.places.find(x => (s.pid && x.pid === s.pid) || sameSpot(x, s));
+  if (!hit && !final) return;
+  pendingShare = null;
+  // 주소에서 공유 값만 지운다(로그인에 쓰는 다른 값은 남긴다)
+  const q = new URLSearchParams(location.search); for (const k of SHARE_KEYS) q.delete(k);
+  history.replaceState(null, '', location.pathname + (q.toString() ? '?' + q : '') + location.hash);
+  let id = hit && hit.id;
+  if (!id) {
+    const ext = { id: 'k' + (s.kid || 'shared'), ext: true, name: s.name, category: '', type: '', addr: '', phone: '',
+      url: s.kid ? `https://place.map.kakao.com/${s.kid}` : '', lat: s.lat, lng: s.lng };
+    state.ext = { query: '', status: '', results: [ext] }; syncExtMarkers();
+    id = ext.id;
+  }
+  state.focusShared = true;
+  select(id, true);
+  focusSelected();
+}
+// 공유로 연 장소는 지도를 그 장소로 가까이 옮긴다(지도가 아직 없으면 지도가 준비될 때)
+function focusSelected(){
+  if (!map || !state.focusShared) return;
+  const p = findPlace(state.sel); if (!p) return;
+  state.focusShared = false;
+  map.setZoom(16, false);
+  if (isPhone()) centerAboveDetail(p.id); else map.setCenter(new naver.maps.LatLng(p.lat, p.lng));
+}
 const SEL_KEY = 'gongan-sillok:sel';
 function select(id, center){
   if (state.sel !== id) state.delAsk = null; // 다른 장소로 넘어가면 삭제 확인을 접는다
@@ -1252,9 +1335,10 @@ function initMap(){
     zoomControl: false, mapDataControl: false, scaleControl: true, logoControl: true
   });
   naver.maps.Event.addListener(map, 'zoom_changed', () => renderMap(state.places.filter(matches)));
-  syncMarkers(); fitAll(); renderAll();
+  syncMarkers(); syncExtMarkers(); fitAll(); renderAll();
   if (state.sel && isPhone()) centerAboveDetail(state.sel); // 새로고침 뒤 다시 열린 장소
   naver.maps.Event.once(map, 'tilesloaded', hideSplash);
+  focusSelected(); // 공유 링크로 연 장소
   // 지도 영역 크기가 바뀌면 지도에 알려 준다. 크기가 0이던 상태(숨겨진 탭 등)에서 처음 보이면 범위도 다시 맞춘다.
   const box = $('map'); let wasEmpty = !box.clientWidth || !box.clientHeight;
   new ResizeObserver(() => {
@@ -2599,10 +2683,12 @@ if (/KAKAOTALK/i.test(navigator.userAgent)) {
 
 loadInitial();
 readAuthError();
-loadPublic(); // 다른 사람들의 공개 기록 (로그인과 상관없이)
+// 다른 사람들의 공개 기록 (로그인과 상관없이). 다 불러오면 공유 링크로 받은 장소를 연다
+(sb ? loadPublic().catch(() => {}) : Promise.resolve()).finally(() => applyShare(true));
 renderAuth();
 if (sb) sb.auth.onAuthStateChange((event, session) => { setTimeout(() => onAuth(session), 0); }); // 콜백 안에서 바로 DB를 부르면 멈출 수 있어 한 박자 늦춘다
-try { const id = sessionStorage.getItem(SEL_KEY); if (id && state.places.some(p => p.id === id)) { state.sel = id; renderAll(); } } catch {}
+try { const id = sessionStorage.getItem(SEL_KEY); if (!pendingShare && id && state.places.some(p => p.id === id)) { state.sel = id; renderAll(); } } catch {}
+applyShare(false); // 예시 장소처럼 이미 있는 곳이면 바로 연다
 loadNaver();
 setTimeout(hideSplash, 3500);
 // 예전에 위치 권한을 허용했다면 묻지 않고 미리 위치를 찾아 둔다 (지도는 움직이지 않음)
