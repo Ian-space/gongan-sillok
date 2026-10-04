@@ -512,6 +512,18 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
 .d-save svg{width:17px;height:17px}
 .d-save[aria-pressed="true"]{background:#FFE8EC;color:#E8364F}
 .d-save[aria-pressed="true"] svg path{fill:currentColor}
+/* 처음 온 사람 안내 (말풍선) */
+.tour{position:fixed;z-index:95;width:min(300px,calc(100vw - 24px));padding:14px 14px 12px;border-radius:14px;background:var(--ink);color:var(--panel);box-shadow:0 10px 30px rgba(15,20,40,.35);font-size:14px;line-height:1.55}
+.tour::before{content:"";position:absolute;left:var(--ax,24px);width:12px;height:12px;margin-left:-6px;background:var(--ink);transform:rotate(45deg)}
+.tour.below::before{top:-5px}
+.tour.above::before{bottom:-5px}
+.tour.center::before{display:none}
+.tour p{margin:0}
+.tour-row{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:10px}
+.tour-skip{border:0;background:none;color:inherit;opacity:.7;font-size:13px;cursor:pointer;padding:4px 0}
+.tour-next{border:0;border-radius:999px;background:var(--blue);color:#FFFFFF;padding:6px 14px;font-size:13px;font-weight:700;cursor:pointer}
+.tour-focus{outline:3px solid var(--mark) !important;outline-offset:3px}
+@media (prefers-reduced-motion:no-preference){ .tour{animation:spfade .2s ease-out both} }
 /* 사진 */
 .photo{display:block;padding:0;border:0;border-radius:8px;overflow:hidden;background:var(--paper);aspect-ratio:4 / 3;cursor:zoom-in}
 .photo img{display:block;width:100%;height:100%;object-fit:cover}
@@ -740,6 +752,7 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
           <div class="auth" id="auth"></div>
           <div class="acct-sep" id="acctSep"></div>
           <button class="acct-item" id="btnInstall" type="button" hidden>홈 화면에 추가</button>
+          <button class="acct-item" id="btnTour" type="button">사용법 다시 보기</button>
           <button class="acct-item" id="btnLoad" type="button">엑셀 파일 불러오기</button>
           <button class="acct-item" id="btnReset" type="button">예시 데이터로 되돌리기</button>
           <button class="acct-item leave" id="btnLeave" type="button" hidden>회원 탈퇴</button>
@@ -809,6 +822,8 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
 <script>
 /* ===== 설정: 네이버 클라우드 플랫폼에서 발급받은 Client ID를 따옴표 안에 넣으세요 ===== */
 const NAVER_CLIENT_ID = 'ffqv2bmvwg';
+/* ===== 설정: 처음 온 사람에게 사용법 안내를 한 번 보여 줄지. 빼려면 false ===== */
+const SHOW_TOUR = true;
 /* ===== 설정: 예시(가상) 장소 14곳을 보여 줄지. 실제 기록이 충분히 쌓이면 false로 바꾼다 ===== */
 const SHOW_SAMPLE = true;
 /* ===== 설정: TMAP 경로 중계 서버 주소 (TMAP 키는 이 서버의 비밀 변수에만 있다, 코드는 worker/worker.js) ===== */
@@ -1674,6 +1689,9 @@ function initMap(){
   syncMarkers(); syncExtMarkers(); fitAll(); renderAll();
   if (state.sel && isPhone()) centerAboveDetail(state.sel); // 새로고침 뒤 다시 열린 장소
   naver.maps.Event.once(map, 'tilesloaded', hideSplash);
+  // 처음 온 사람 안내: 로딩 화면이 걷힌 뒤에 (로딩 화면은 최대 3.5초)
+  naver.maps.Event.once(map, 'tilesloaded', () => setTimeout(() => startTour(), $('splash') ? 1900 : 500));
+  setTimeout(() => startTour(), 4500); // 지도 그림이 늦게 와도
   focusSelected(); // 공유 링크로 연 장소
   // 지도 영역 크기가 바뀌면 지도에 알려 준다. 크기가 0이던 상태(숨겨진 탭 등)에서 처음 보이면 범위도 다시 맞춘다.
   const box = $('map'); let wasEmpty = !box.clientWidth || !box.clientHeight;
@@ -3525,6 +3543,65 @@ function renderCollectBar(){
   placeLegend();
 }
 
+/* ---------- 처음 온 사람 안내 (한 번만, 말풍선 몇 장) ---------- */
+// 지도와 핵심 버튼을 하나씩 짚어 준다. 끝까지 보거나 건너뛰면 다시 띄우지 않고, 계정 메뉴에서 다시 볼 수 있다
+const TOUR_KEY = 'gongan-sillok:tour-v1';
+const tourSteps = () => [
+  { sel: '#qchips', text: '조용한 곳, 턱 없음 같은 조건을 누르면 그 조건에 맞는 곳만 남고, 핀 옆에 값이 보여요.' },
+  { sel: '.qchip.filter', text: '필터에서는 열 가지 항목을 모두 고를 수 있어요. ? 를 누르면 조용함, 보통 같은 값의 기준이 나와요.' },
+  isPhone()
+    ? { sel: '.peek', text: '아래 패널을 끌어 올리면 한눈에 보기, 목적별 추천, 장소 목록이 나와요.' }
+    : { sel: '#list', text: '목록이나 지도의 핀을 누르면 그 장소의 기록이 열려요.' },
+  { sel: '#zsaved', text: '장소를 열고 하트를 누르면 찜돼요. 이 버튼으로 찜한 곳과 내 기록만 모아 볼 수 있어요.' },
+  ...(isPhone() ? [{ sel: '#map', center: true, text: '지도를 0.5초 꾹 누르면 버튼이 숨고 지도만 보여요. 다시 꾹 누르면 돌아와요.' }] : []),
+];
+let tourAt = -1;
+function startTour(force){
+  if ((!SHOW_TOUR || tourAt >= 0) && !force) return; // 이미 보여 주는 중이면 다시 시작하지 않는다
+  if (!force) { try { if (localStorage.getItem(TOUR_KEY)) return; } catch { return; } }
+  if (state.sel || $('splash') || document.querySelector('dialog[open]')) { if (force) select(null); else return; } // 공유 링크로 장소가 열려 있으면 다음에
+  document.body.classList.remove('map-only');
+  tourStep(0);
+}
+function clearTour(){
+  document.querySelectorAll('.tour').forEach(x => x.remove());
+  document.querySelectorAll('.tour-focus').forEach(x => x.classList.remove('tour-focus'));
+}
+function endTour(){ clearTour(); tourAt = -1; try { localStorage.setItem(TOUR_KEY, '1'); } catch {} }
+function tourStep(i){
+  clearTour();
+  const steps = tourSteps();
+  if (i >= steps.length) return endTour();
+  const s = steps[i], target = document.querySelector(s.sel);
+  if (!target || !target.getClientRects().length) return tourStep(i + 1); // 화면에 없는 단계는 건너뛴다
+  tourAt = i;
+  if (!s.center) target.classList.add('tour-focus');
+  const box = el('div','tour'); box.setAttribute('role','dialog'); box.setAttribute('aria-live','polite'); box.setAttribute('aria-label', `사용법 ${i + 1}/${steps.length}`);
+  box.appendChild(el('p', null, s.text));
+  const row = el('div','tour-row');
+  const skip = el('button','tour-skip', '건너뛰기'); skip.type = 'button'; skip.addEventListener('click', endTour);
+  const last = i === steps.length - 1;
+  const next = el('button','tour-next', last ? '시작하기' : `다음 ${i + 1}/${steps.length}`); next.type = 'button';
+  next.addEventListener('click', () => tourStep(i + 1));
+  row.append(last ? el('span') : skip, next); box.appendChild(row);
+  document.body.appendChild(box);
+  placeTour(box, target, s.center);
+  next.focus({ preventScroll: true });
+}
+// 말풍선 자리: 대상이 화면 위쪽이면 그 아래, 아래쪽이면 그 위. 화면 밖으로 나가지 않게 좌우를 맞추고 꼬리를 대상 가운데로
+function placeTour(box, target, center){
+  const r = target.getBoundingClientRect(), bw = box.offsetWidth, bh = box.offsetHeight, m = 12;
+  if (center) { box.classList.add('center'); box.style.left = Math.round((innerWidth - bw) / 2) + 'px'; box.style.top = Math.round((innerHeight - bh) / 2) + 'px'; return; }
+  const cx = Math.min(r.left + r.width / 2, r.left + 80); // 넓은 대상(빠른 조건 줄 등)은 왼쪽 가까이를 가리킨다
+  const left = Math.max(m, Math.min(innerWidth - bw - m, cx - 40));
+  const below = r.top + r.height / 2 < innerHeight / 2;
+  box.classList.add(below ? 'below' : 'above');
+  box.style.left = Math.round(left) + 'px';
+  box.style.top = Math.round(below ? Math.min(innerHeight - bh - m, r.bottom + 12) : Math.max(m, r.top - bh - 12)) + 'px';
+  box.style.setProperty('--ax', Math.round(Math.max(16, Math.min(bw - 16, cx - left))) + 'px');
+}
+addEventListener('resize', () => { if (tourAt >= 0) tourStep(tourAt); });
+
 /* ---------- 시작 ---------- */
 buildFilters(); bindSheets();
 // 조건으로 찾기 제목 옆 ?: 값마다 기준을 펼쳐 본다
@@ -3537,6 +3614,7 @@ $('btnLoad').addEventListener('click', () => { closeAcct(); $('file').click(); }
 $('file').addEventListener('change', e => { const f = e.target.files && e.target.files[0]; if (f) handleFile(f); e.target.value = ''; });
 $('btnAdd').addEventListener('click', () => startAdd());
 $('btnInstall').addEventListener('click', () => { closeAcct(); addToHome(); });
+$('btnTour').addEventListener('click', () => { closeAcct(); startTour(true); });
 $('btnLeave').addEventListener('click', () => { closeAcct(); openLeave(); });
 // 사진 크게 보기: 닫기, 이전·다음, 사진 바깥(검은 부분)을 누르면 닫기, 키보드 화살표
 window.addEventListener('resize', placeLegend);
