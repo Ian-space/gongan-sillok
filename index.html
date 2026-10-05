@@ -438,9 +438,11 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
 .d-route.ghost{margin-top:8px;background:transparent;color:var(--ink);border:1px solid var(--line);font-weight:600;font-size:14px;padding:9px 14px}
 .d-route-note{margin:6px 0 0;font-size:12px;color:var(--muted);text-align:center}
 /* 길찾기 첫 버튼: 장소에서 가장 많이 누를 동작이라 크게. 그 아래 네이버 지도 링크는 작게 */
-.d-go{display:block;width:100%;padding:12px 14px;border:0;border-radius:8px;background:var(--route);color:var(--route-ink);font-weight:700;font-size:16px;cursor:pointer}
+.d-go{display:block;width:100%;padding:12px 14px;border:1.5px solid var(--route);border-radius:8px;background:var(--route);color:var(--route-ink);font-weight:700;font-size:16px;cursor:pointer}
 .d-go:hover{filter:brightness(1.06)}
 .d-go:disabled{opacity:.7;cursor:default}
+.d-go2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.d-go.ghost{background:var(--panel);color:var(--route)}
 .d-nlinks{display:flex;justify-content:center;gap:8px;margin:8px 0 0;font-size:13px;color:var(--muted)}
 .d-nlinks a{color:var(--muted);text-decoration:underline;text-underline-offset:2px}
 
@@ -519,6 +521,11 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
 .swap-btn{flex:none;display:grid;place-items:center;width:36px;height:36px;padding:0;border-radius:50%;border:1px solid var(--line);background:var(--panel);color:var(--ink);cursor:pointer}
 .ends-acts{display:flex;flex-wrap:wrap;gap:4px 14px;margin:-4px 0 10px;font-size:14px}
 #originList{max-height:50dvh;overflow:auto;margin:0}
+#originList li + li .item{border-top:1px solid var(--line);border-radius:0}
+.origin-me{display:flex;align-items:center;flex-wrap:wrap;gap:4px 10px;margin:-2px 0 6px}
+.me-pill{display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 14px 0 11px;border:1px solid var(--blue);border-radius:999px;background:var(--panel);color:var(--blue);font:inherit;font-size:14px;font-weight:700;cursor:pointer}
+.me-pill svg{width:16px;height:16px;flex:none}
+.origin-me-note{font-size:12px;color:var(--muted);line-height:1.4}
 .collect-bar span{flex:1;min-width:0}
 .collect-bar button{border:0;border-radius:999px;padding:4px 10px;background:rgba(255,255,255,.2);color:#FFFFFF;font-size:12px;font-weight:700;cursor:pointer}
 .mapctl .round{display:grid;place-items:center;padding:0}
@@ -688,6 +695,7 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
   .quick{display:none !important}
   .legend{left:12px;max-width:calc(100% - 24px)}
   .mapctl{top:auto;right:12px;bottom:calc(var(--sheet-h,104px) + 12px);gap:8px}
+  body:not(.has-detail).sheet-h-high .mapctl,body.has-detail.detail-h-high .mapctl{visibility:hidden}
   body.has-detail .mapctl{bottom:calc(var(--detail-h,55dvh) + 12px)}
   .mapctl #zin,.mapctl #zout,.mapctl #zfit{display:none}
   .mapctl .round{width:44px;height:44px;border:0;border-radius:50%;box-shadow:0 2px 10px rgba(15,20,40,.22)}
@@ -709,6 +717,10 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
   .detail:not([hidden]){animation:rise .18s ease-out}
   @keyframes rise{from{transform:translateY(8px);opacity:0}to{transform:none;opacity:1}}
 }
+/* 아이폰: 16px보다 작은 입력칸을 누르면 화면이 확대된 채로 남고, 빠르게 두 번 누르면 또 확대된다.
+   입력칸 글자를 16px로 맞추고 두 번 눌러 확대만 끈다(손가락 두 개로 벌리는 확대는 그대로 된다) */
+html{touch-action:manipulation}
+@media (pointer:coarse){ input, textarea, select{font-size:16px !important} }
 </style>
 </head>
 <body>
@@ -850,6 +862,7 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
       </div>
       <button class="swap-btn" id="originSwap" type="button" aria-label="출발지와 도착지 바꾸기" title="출발지와 도착지 바꾸기"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4v16M3 8l4-4 4 4M17 20V4M13 16l4 4 4-4"/></svg></button>
     </div>
+    <div class="origin-me"><button class="me-pill" id="originMe" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg><span id="originMeText">내 위치에서 출발</span></button><span class="origin-me-note" id="originMeNote"></span></div>
     <p class="add-status" id="originStatus" role="status"></p>
     <ul class="list" id="originList"></ul>
   </div>
@@ -1824,7 +1837,8 @@ const vh = f => Math.round(innerHeight * f);
 function makeSheet({ panel, varName, snaps, isGrab, onSettle, onDismiss }){
   let h = null, drag = null;
   // 높이는 문서 전체에도 알려 둔다(지도 위 둥근 버튼이 패널 바로 위에 붙도록)
-  const set = (px, animate) => { panel.classList.toggle('anim', !!animate); h = px; panel.style.setProperty(varName, px + 'px'); document.documentElement.style.setProperty(varName, px + 'px'); };
+  const set = (px, animate) => { panel.classList.toggle('anim', !!animate); h = px; panel.style.setProperty(varName, px + 'px'); document.documentElement.style.setProperty(varName, px + 'px');
+    document.body.classList.toggle(varName.slice(2) + '-high', px > innerHeight * 0.6); }; // 패널을 높이 올리면 지도 둥근 버튼이 검색창 줄과 겹치지 않게 숨긴다
   const settle = px => { set(px, true); if (onSettle) onSettle(px); };
   const cycle = () => { // 손잡이를 탭하면 다음 높이로
     const s = snaps(), cur = h ?? panel.getBoundingClientRect().height;
@@ -2324,16 +2338,17 @@ function renderRouteBar(){
     : state.routeFrom ? `출발: ${state.routeFrom.name} · 도착할 장소를 열어 주세요` : `출발: ${dest.name}`));
   const b = el('button', null, '취소'); b.type = 'button'; b.addEventListener('click', () => { state.routeSwap = null; setRouteFrom(null); }); bar.appendChild(b);
 }
-// 출발지(바꾼 뒤에는 도착지) 고르기: 내 위치, 또는 이름으로 찾은 장소(공간실록 기록 + 카카오 검색)
-let originFor = null, originTimer = null;
-function openOriginPicker(dest){
-  originFor = dest;
+// 출발지(바꾼 뒤에는 도착지) 고르기: 검색칸 바로 아래 '내 위치' 버튼, 또는 이름으로 찾은 장소(공간실록 기록 + 카카오 검색)
+// 창 안에서 ⇅로 바꾼 방향(originSwap)은 장소를 골라야 적용된다. 그냥 닫으면 아무것도 바뀌지 않는다
+let originFor = null, originTimer = null, originSwap = false;
+function openOriginPicker(dest, swap = isSwapped(dest)){
+  originFor = dest; originSwap = !!swap;
   const input = $('originQ');
   input.value = ''; renderOriginHead(); renderOriginList([], '');
   $('originDlg').showModal(); setTimeout(() => input.focus(), 50);
 }
 function renderOriginHead(){
-  const p = originFor, sw = isSwapped(p);
+  const p = originFor, sw = originSwap;
   $('originTitle').textContent = sw ? '어디로 갈까요?' : '어디서 출발할까요?';
   $('originRows').classList.toggle('rev', sw); // 바꾸면 열린 장소가 위(출발), 검색칸이 아래(도착)
   $('originQK').textContent = sw ? '도착' : '출발'; $('originQK').classList.toggle('to', sw);
@@ -2341,17 +2356,20 @@ function renderOriginHead(){
   $('originQ').setAttribute('aria-label', sw ? '도착지 이름으로 찾기' : '출발지 이름으로 찾기');
   $('originFixName').textContent = p ? p.name : '';
   $('originFixAddr').textContent = (p && p.addr) || '';
+  $('originMeText').textContent = sw ? '내 위치로 도착' : '내 위치에서 출발';
+  $('originMeNote').textContent = state.me ? '' : '누르면 위치 사용을 물어봐요. 경로를 찾는 데만 쓰고 저장하지 않아요.';
+}
+// 고른 방향을 적용하고 길을 찾는다
+function applyOriginSwap(){ if (originFor) state.routeSwap = originSwap ? originFor.id : null; }
+function pickMyLocation(){
+  $('originDlg').close(); applyOriginSwap();
+  if (state.me) setRouteFrom(null);
+  else { state.routeFrom = null; state.transit = null; clearRoute(); if (originFor) state.routeAfterFix = originFor.id; locate(false, true); renderAll(); }
 }
 function renderOriginList(list, status){
   const ul = $('originList'); ul.replaceChildren();
   const item = (title, sub, fn) => { const li = el('li'), b = el('button','item'); b.type = 'button'; b.append(el('div','item-name', title)); if (sub) b.appendChild(el('div','item-sub', sub)); b.addEventListener('click', fn); li.appendChild(b); ul.appendChild(li); };
-  item('내 위치', !state.me ? '누르면 위치 사용을 물어봐요. 경로를 찾는 데만 쓰고 저장하지 않아요'
-    : isSwapped(originFor) ? '지금 있는 곳까지' : '지금 있는 곳에서 출발', () => {
-    $('originDlg').close();
-    if (state.me) setRouteFrom(null);
-    else { state.routeFrom = null; state.transit = null; clearRoute(); if (originFor) state.routeAfterFix = originFor.id; locate(false, true); renderAll(); }
-  });
-  const pick = x => () => { $('originDlg').close(); addRecentPlace(x); setRouteFrom(x); };
+  const pick = x => () => { $('originDlg').close(); addRecentPlace(x); applyOriginSwap(); setRouteFrom(x); };
   const notHere = x => !(originFor && sameSpot(originFor, x));
   // 아직 아무것도 찾지 않았으면 최근에 고른 곳을 보여 준다
   const recent = !list.length && !status && !$('originQ').value.trim() ? readRecentPlaces().filter(notHere) : [];
@@ -2441,10 +2459,15 @@ function renderTransit(d, p){
   }
   const sw = isSwapped(p), e = routeEnds(p);
   const auto = !t && !!e && (!!state.routeFrom || sw); // 출발지를 골라 두었거나 바꾼 길찾기 중이면 열자마자 찾는다
-  if (!t && !auto) { // 처음에는 제목 없이 길찾기 버튼 하나만. 누르면 출발지(내 위치 또는 검색)를 고른다
+  if (!t && !auto) { // 처음에는 제목 없이 [출발] [도착] 두 버튼 (네이버 지도처럼)
+    // 도착: 내 위치를 알면 바로 내 위치에서 찾고, 모르면 출발지를 고른다. 출발: 도착지를 고른다
     const finding = !o && watchId !== null && state.routeAfterFix === p.id;
-    const b = el('button','d-go', finding ? '내 위치를 찾는 중이에요…' : '길찾기'); b.type = 'button'; b.disabled = finding;
-    b.addEventListener('click', () => openOriginPicker(p)); box.appendChild(b);
+    const pair = el('div','d-go2');
+    const from = el('button','d-go ghost','출발'); from.type = 'button'; from.title = '이곳에서 출발해 다른 곳으로 가는 길 찾기';
+    from.addEventListener('click', () => openOriginPicker(p, true));
+    const to = el('button','d-go', finding ? '위치 찾는 중…' : '도착'); to.type = 'button'; to.disabled = finding; to.title = '다른 곳에서 이곳으로 오는 길 찾기';
+    to.addEventListener('click', () => { if (state.me) { state.routeSwap = null; setRouteFrom(null); } else openOriginPicker(p, false); });
+    pair.append(from, to); box.appendChild(pair);
     if (state.locError && state.routeAfterFix === p.id) box.appendChild(el('p','d-tnote err', state.locError));
     naverLinks(box, p, true);
     d.appendChild(box); return;
@@ -4053,7 +4076,8 @@ $('filterX').addEventListener('click', () => $('filterDlg').close());
 bindDragScroll($('qchips')); bindDragScroll($('nchips'));
 // 출발지 고르기 창
 $('originX').addEventListener('click', () => $('originDlg').close());
-$('originSwap').addEventListener('click', () => { if (!originFor) return; swapRoute(originFor, false); renderOriginHead(); searchOrigin($('originQ').value); $('originQ').focus(); });
+$('originSwap').addEventListener('click', () => { if (!originFor) return; originSwap = !originSwap; renderOriginHead(); searchOrigin($('originQ').value); $('originQ').focus(); });
+$('originMe').addEventListener('click', pickMyLocation);
 $('originQ').addEventListener('input', e => { clearTimeout(originTimer); originTimer = setTimeout(() => searchOrigin(e.target.value), 400); });
 $('qchips').addEventListener('scroll', markChipOverflow, { passive: true });
 $('fdDone').addEventListener('click', () => $('filterDlg').close());
@@ -4062,11 +4086,12 @@ $('filterDlg').addEventListener('click', e => { if (e.target === $('filterDlg'))
 $('zsaved').addEventListener('click', () => setCollect(!state.collect));
 $('btnFit').addEventListener('click', () => { fitAll(); if (isPhone() && listSheet) listSheet.set(PEEK_H, true); });
 state.saves = loadLocalSaves(); // 로그인 상태가 확인되면 계정의 찜으로 바꾼다
-// 휴대폰: 검색창을 누르면 열린 장소를 닫고 목록 패널을 반쯤 올려 검색 결과가 보이게 한다
+// 휴대폰: 검색창을 누르면 열린 장소를 닫고 목록 패널을 검색창 바로 아래까지 올린다.
+// 반만 올리면 아이폰 키보드(와 그 위 ∧ ∨ ✓ 줄)에 패널 윗부분이 가려 결과도 손잡이도 안 보인다
 $('q').addEventListener('focus', () => {
   if (!isPhone()) return;
   if (state.sel) select(null);
-  if (listSheet && (listSheet.height || 0) < vh(0.5) - 10) listSheet.set(vh(0.5), true);
+  if (listSheet && (listSheet.height || 0) < sheetMax() - 10) listSheet.set(sheetMax(), true);
 });
 $('photoX').addEventListener('click', () => $('photoDlg').close());
 $('photoPrev').addEventListener('click', () => stepViewer(-1));
