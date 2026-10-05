@@ -10,17 +10,20 @@
 //   POST /walk     { startX, startY, endX, endY }               → TMAP 보행자 경로
 //   POST /search   { query, x?, y? }                            → 카카오 키워드 장소 검색 (x, y가 있으면 그 근처부터)
 //   POST /station  { x, y }                                     → 1.5km 안 지하철역 (가까운 순)
-//   POST /nearby   { rect: "왼쪽X,아래Y,오른쪽X,위Y", code? }      → 지도 한 칸 안의 장소 (code: CE7 카페, FD6 음식점, CT1 문화시설, LIB 도서관)
+//   POST /nearby   { rect: "왼쪽X,아래Y,오른쪽X,위Y", code? }      → 지도 한 칸 안의 장소 (code: CS2 편의점, CE7 카페, FD6 음식점, PM9 약국, BK9 은행, CT1 문화시설, LIB 도서관)
 
 const ALLOWED_ORIGINS = ['https://ian-space.github.io', 'http://localhost:8765'];
-const VERSION = '2026-10-05.1'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
+const VERSION = '2026-10-06.1'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
 // 경로 결과 저장 시간(초). KV 바인딩(ROUTE_CACHE)이 없으면 저장하지 않고 그대로 동작한다
 const CACHE_SECONDS = { transit: 600, walk: 86400 };
 // 주변 장소 종류. 카카오 업종 코드(CE7 카페, FD6 음식점, CT1 문화시설)로 찾고,
 // 업종 분류가 없는 도서관은 검색어로 찾은 뒤 분류에 '도서관'이 있는 곳만 남긴다
 const NEARBY = {
+  CS2: { api: 'category', params: { category_group_code: 'CS2' } },
   CE7: { api: 'category', params: { category_group_code: 'CE7' } },
   FD6: { api: 'category', params: { category_group_code: 'FD6' } },
+  PM9: { api: 'category', params: { category_group_code: 'PM9' } },
+  BK9: { api: 'category', params: { category_group_code: 'BK9' } },
   CT1: { api: 'category', params: { category_group_code: 'CT1' } },
   LIB: { api: 'keyword', params: { query: '도서관' }, keep: d => /도서관/.test(d.category_name || '') },
 };
