@@ -700,6 +700,7 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
       <div class="source" id="source"></div>
     </div>
     <div class="scroll">
+      <section class="sec" id="extList" hidden aria-label="검색 결과: 기록 안 된 장소"></section>
       <section class="sec" id="summary" aria-label="한눈에 보기"></section>
       <section class="sec" id="picks" aria-label="목적별 추천"></section>
       <h3 class="sec-title sec-pad">목록</h3>
@@ -712,7 +713,6 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
         </span>
       </div>
       <ul class="list" id="list"></ul>
-      <section class="sec" id="extList" hidden aria-label="기록 안 된 장소"></section>
       <div class="notes">
         <details>
           <summary>엑셀 양식 안내</summary>
@@ -2265,7 +2265,12 @@ function renderTransit(d, p){
   const box = el('div','d-transit');
   box.appendChild(el('h3','sec-title','어떻게 갈까요'));
   const t = state.transit && state.transit.placeId === p.id ? state.transit : null;
-  if (!state.me) box.appendChild(el('p','d-tnote','내 위치를 켜면 지금 있는 곳에서 가는 경로를 볼 수 있어요.'));
+  if (!state.me) { // 위치를 아직 모르면: 누르면 위치를 묻고, 찾자마자 바로 경로를 찾는다
+    const finding = watchId !== null;
+    const b = el('button','d-tbtn', finding ? '내 위치를 찾는 중이에요…' : '내 위치에서 경로 찾기 (대중교통·도보)'); b.type = 'button'; b.disabled = finding;
+    b.addEventListener('click', () => { state.routeAfterFix = p.id; locate(false, true); });
+    box.append(b, el('p','d-tnote', '누르면 위치 사용을 물어봐요. 위치는 거리와 경로를 찾는 데만 쓰고 저장하지 않아요.'));
+  }
   else if (!t) {
     const b = el('button','d-tbtn','경로 찾기 (대중교통·도보)'); b.type = 'button';
     b.addEventListener('click', () => findTransit(p)); box.appendChild(b);
@@ -2418,8 +2423,12 @@ async function runExtSearch(query){
   }
   extCache.set(key, { results });
   if (state.ext.query !== query) return; // 그사이 다른 검색어로 바뀌었다
-  const fresh = results.filter(r => !isRecorded(r));
+  // 지도에 이미 불러온 주변 장소(회색 점) 중 이름이 맞는 곳을 앞에 붙인다
+  const low = query.toLowerCase(), hits = [...state.near.values()].filter(p => p.name.toLowerCase().includes(low)).slice(0, 10);
+  const fresh = [...hits, ...results.filter(r => !hits.some(h => h.id === r.id))].filter(r => !isRecorded(r));
   setExt({ query, status: fresh.length ? '' : 'none', results: fresh });
+  // 휴대폰: 결과가 보이도록 목록 패널을 반쯤 올린다 (검색 결과는 패널 맨 위에 있다)
+  if (fresh.length && isPhone() && listSheet && !state.sel && (listSheet.height || 0) < vh(0.5) - 10) listSheet.set(vh(0.5), true);
 }
 function setExt(next){
   state.ext = next; syncExtMarkers();
@@ -2585,7 +2594,7 @@ function renderExtList(){
   if (!x.query) return;
   box.appendChild(el('h3','sec-title', '기록 안 된 장소'));
   if (x.status === 'loading' && !x.results.length) box.appendChild(el('p','near-line muted', `'${x.query}'을(를) 카카오에서 찾는 중이에요…`));
-  else if (x.status === 'none') box.appendChild(el('p','near-line muted', '지금 보고 있는 지도 근처에서 더 찾은 곳이 없어요.'));
+  else if (x.status === 'none') box.appendChild(el('p','near-line muted', `'${x.query}'에 맞는 기록 안 된 장소를 찾지 못했어요. 가게 이름이나 '동네 + 가게 이름'으로 찾아보세요.`));
   else if (x.status === 'error') box.appendChild(el('p','near-line muted', '장소를 찾지 못했어요. 잠시 뒤 다시 시도해 주세요.'));
   if (x.results.length) {
     const ul = el('ul','list ext-list');
@@ -3360,7 +3369,7 @@ function onFix(pos){
   const next = { lat: pos.coords.latitude, lng: pos.coords.longitude, acc: pos.coords.accuracy };
   if (!first && distM(state.me, next) < 20) return; // 20m 미만 움직임은 화면을 다시 그리지 않는다
   state.me = next;
-  if (first) setStatus('내 위치를 찾았어요. 위치는 이 화면에서 거리 계산에만 써요.', false);
+  if (first) setStatus('내 위치를 찾았어요.', false);
   if (map) {
     const ll = new naver.maps.LatLng(state.me.lat, state.me.lng);
     if (!meMarker) {
@@ -3372,9 +3381,11 @@ function onFix(pos){
     if (first && panOnFix) map.panTo(ll);
   }
   renderAll();
+  // '내 위치에서 경로 찾기'를 눌러 위치를 찾은 거라면 바로 경로를 찾는다
+  if (first && state.routeAfterFix && state.routeAfterFix === state.sel) { const p = findPlace(state.sel); state.routeAfterFix = null; if (p) findTransit(p); }
 }
 function onFixError(err){
-  navigator.geolocation.clearWatch(watchId); watchId = null; state.sortNear = false;
+  navigator.geolocation.clearWatch(watchId); watchId = null; state.sortNear = false; state.routeAfterFix = null;
   const msg = err && err.code === 1
     ? (IS_IOS
         ? '위치 권한이 막혀 있어요. 아이폰 설정 → 개인정보 보호 및 보안 → 위치 서비스 → Safari 웹사이트를 "앱을 사용하는 동안"으로 바꾸고, 사파리 주소창 왼쪽 메뉴의 웹 사이트 설정에서 위치를 허용한 뒤 다시 눌러 주세요.'
@@ -3392,6 +3403,7 @@ function renderAll(){
   $('zloc').setAttribute('aria-pressed', String(!!state.me));
   renderSummary(); renderPicks(vis); renderList(vis); renderExtList(); renderMap(vis); renderExtMarkers(); renderLegend(); renderQuick(); renderDetail();
   renderQuickChips(); renderPeek(vis); syncFilterChips(); renderCollectBar(); if ($('filterDlg').open) renderFilterExtras();
+  $('summary').hidden = $('picks').hidden = !!state.ext.query; // 검색 중에는 검색 결과가 맨 위에 오도록 요약·추천을 접는다
 }
 
 /* ---------- 빠른 조건 한 줄, 필터 화면, 패널 요약 ---------- */
