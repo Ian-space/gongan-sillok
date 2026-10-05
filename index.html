@@ -441,7 +441,7 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
 .d-route.ghost{margin-top:8px;background:transparent;color:var(--ink);border:1px solid var(--line);font-weight:600;font-size:14px;padding:9px 14px}
 .d-route-note{margin:6px 0 0;font-size:12px;color:var(--muted);text-align:center}
 
-.detail{position:absolute;left:16px;bottom:16px;width:min(360px,calc(100% - 32px));max-height:calc(100% - 80px);overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:18px 18px 16px;box-shadow:0 10px 30px rgba(20,30,35,.18);z-index:10}
+.detail{position:absolute;left:16px;bottom:16px;width:min(360px,calc(100% - 32px));max-height:calc(100% - var(--tb-bottom,80px) - 24px);overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:18px 18px 16px;box-shadow:0 10px 30px rgba(20,30,35,.18);z-index:10}
 .detail[hidden]{display:none}
 .d-head{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
 .d-name{font-family:var(--sans);font-weight:700;font-size:24px;line-height:1.2;margin:0}
@@ -458,7 +458,7 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
 .scale dt{color:var(--muted)}
 .scale dd{margin:0;display:flex;gap:4px;flex-wrap:wrap}
 /* 지도 위 윗줄: 검색창 + 계정, 빠른 조건 한 줄, 모아 보기 안내 */
-.topbar{position:absolute;left:14px;top:14px;z-index:13;width:min(460px,calc(100% - 190px));display:grid;gap:8px}
+.topbar{position:absolute;left:14px;top:14px;z-index:13;width:min(700px,calc(100% - 190px));display:grid;gap:8px}
 .tb-row{position:relative;display:flex;gap:8px;align-items:center}
 .tb-search{flex:1;min-width:0;display:flex;align-items:center;gap:8px;height:46px;padding:0 16px;background:var(--panel);border-radius:999px;box-shadow:0 2px 10px rgba(15,20,40,.2)}
 .tb-search svg{width:18px;height:18px;color:var(--muted);flex:none}
@@ -467,6 +467,10 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
 .topbar .acct{width:46px;height:46px;border:0;box-shadow:0 2px 10px rgba(15,20,40,.2)}
 .tb-row .acct-menu{right:0;top:54px}
 .qchips{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;padding:2px 2px 4px}
+/* 넘칠 때만 오른쪽 끝을 흐리게: 잘린 게 아니라 더 있다는 표시 */
+.qchips.more{-webkit-mask-image:linear-gradient(90deg,#000 calc(100% - 44px),transparent);mask-image:linear-gradient(90deg,#000 calc(100% - 44px),transparent)}
+.qchips.more.end{-webkit-mask-image:none;mask-image:none}
+@media (min-width:900px){ body.has-detail .legend,body.has-detail .legend-help{display:none} } /* 컴퓨터: 장소를 열면 색 안내가 상세 패널과 겹치지 않게 */
 .qchips::-webkit-scrollbar{display:none}
 @media (hover:hover) and (pointer:fine){ .qchips{cursor:grab} .qchips.dragging{cursor:grabbing;user-select:none} .qchips.dragging .qchip{pointer-events:none} }
 .qchip{flex:none;display:inline-flex;align-items:center;gap:5px;height:34px;padding:0 13px;border:0;border-radius:999px;background:var(--panel);color:var(--ink);font-size:13px;font-weight:600;box-shadow:0 1px 5px rgba(15,20,40,.2);cursor:pointer;white-space:nowrap}
@@ -1795,13 +1799,13 @@ const detailHeight = () => (isPhone() && detailSheet && detailSheet.height) || $
 function bindSheets(){
   listSheet = makeSheet({
     panel: $('side'), varName: '--sheet-h',
-    snaps: () => [PEEK_H, vh(0.5), vh(0.88)], // 한 줄(요약), 반, 거의 전체
+    snaps: () => [PEEK_H, vh(0.5), sheetMax()], // 한 줄(요약), 반, 검색창 바로 아래까지
     isGrab: t => !!t.closest('.sheet-handle, .side-head'),
     onSettle: () => renderLegendHelp() // 패널 높이가 바뀌면 지도 위 기준 상자 높이도 맞춘다
   });
   detailSheet = makeSheet({
     panel: $('detail'), varName: '--detail-h',
-    snaps: () => [170, vh(0.55), vh(0.88)], // 이름만, 반, 거의 전체
+    snaps: () => [170, vh(0.55), sheetMax()], // 이름만, 반, 검색창 바로 아래까지
     isGrab: t => !!t.closest('.d-handle, .d-head'),
     // 높이를 바꾼 뒤에도 고른 장소(또는 경로)가 보이도록 다시 맞춘다
     onSettle: () => { if (state.transit && (state.transit.status === 'ok' || state.transit.status === 'near')) drawTransit(); else if (state.sel && map) centerAboveDetail(state.sel); },
@@ -1812,6 +1816,8 @@ function bindSheets(){
   if (isPhone()) listSheet.set(PEEK_H, false); // 처음에는 한 줄로 접어 두고 지도를 넓게
 }
 const PEEK_H = 104; // 접힌 목록 패널 높이: 손잡이 + 요약 한 줄 + 기록 버튼
+// 휴대폰 패널을 가장 높이 올렸을 때: 위쪽 검색창·빠른 조건 줄을 가리지 않는 높이
+const sheetMax = () => { const tb = $('topbar'); const top = tb && !document.body.classList.contains('map-only') ? tb.getBoundingClientRect().bottom + 8 : 0; return Math.min(vh(0.88), Math.round(innerHeight - top)); };
 function renderMap(vis){
   if (!map) return;
   const visSet = new Set(vis.map(p => p.id));
@@ -1901,7 +1907,10 @@ function renderQuick(){
 function placeLegend(){
   const tb = $('topbar'), lg = $('legend');
   if (!lg || !tb) return;
-  lg.style.top = Math.round(tb.getBoundingClientRect().bottom - lg.parentElement.getBoundingClientRect().top + 6) + 'px';
+  const tbBottom = Math.round(tb.getBoundingClientRect().bottom - lg.parentElement.getBoundingClientRect().top);
+  lg.style.top = (tbBottom + 6) + 'px';
+  lg.parentElement.style.setProperty('--tb-bottom', tbBottom + 'px'); // 컴퓨터: 장소 상세 패널이 이 아래까지만 올라온다
+  markChipOverflow();
   if (!$('legendHelp').hidden) renderLegendHelp();
 }
 
@@ -3447,6 +3456,13 @@ function renderQuickChips(){
   });
   box.appendChild(nb);
 }
+// 빠른 조건 줄이 넘칠 때만 오른쪽 끝을 흐리게, 끝까지 넘기면 흐림을 뺀다
+function markChipOverflow(){
+  const q = $('qchips'); if (!q) return;
+  const more = q.scrollWidth > q.clientWidth + 2;
+  q.classList.toggle('more', more);
+  q.classList.toggle('end', more && q.scrollLeft + q.clientWidth >= q.scrollWidth - 4);
+}
 // 컴퓨터: 빠른 조건 줄을 마우스로 끌거나 휠을 굴려 옆으로 넘긴다 (손가락으로 미는 건 브라우저가 해 준다)
 function bindDragScroll(box){
   let drag = null;
@@ -3674,6 +3690,7 @@ window.addEventListener('resize', placeLegend);
 // 필터 화면, 모아 보기, 지도 전체 보기
 $('filterX').addEventListener('click', () => $('filterDlg').close());
 bindDragScroll($('qchips'));
+$('qchips').addEventListener('scroll', markChipOverflow, { passive: true });
 $('fdDone').addEventListener('click', () => $('filterDlg').close());
 $('fdClear').addEventListener('click', () => { $('btnClear').click(); setBadges([]); });
 $('filterDlg').addEventListener('click', e => { if (e.target === $('filterDlg')) $('filterDlg').close(); }); // 바깥(어두운 부분)을 누르면 닫기
