@@ -301,7 +301,7 @@ button.stat[aria-pressed="true"] span{color:#FFFFFF}
 .pin-label{position:absolute;left:30px;top:3px;white-space:nowrap;font-size:12px;font-weight:600;color:var(--ink);background:var(--panel);border-radius:999px;padding:2px 8px;box-shadow:0 1px 4px rgba(15,20,40,.25)}
 .pin.sel .pin-label{font-size:11px;font-weight:700;background:var(--c);color:#FFFFFF}
 
-.legend{position:absolute;left:14px;top:14px;z-index:10;display:flex;flex-wrap:wrap;gap:6px 12px;max-width:calc(100% - 140px);background:var(--panel);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:500;box-shadow:0 1px 6px rgba(15,20,40,.18)}
+.legend{position:absolute;left:14px;top:14px;z-index:10;display:flex;flex-wrap:wrap;gap:6px 12px;width:max-content;max-width:calc(100% - 140px);background:var(--panel);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:500;box-shadow:0 1px 6px rgba(15,20,40,.18)}
 .legend[hidden]{display:none}
 .legend b{font-weight:700}
 .legend i.lv0{background:var(--blue)}
@@ -338,7 +338,10 @@ button.stat[aria-pressed="true"] span{color:#FFFFFF}
 .near-chip[aria-pressed="true"]{border-color:var(--nc-on,var(--ink));color:var(--ink)}
 .near-chip[aria-pressed="false"]{opacity:.55;text-decoration:line-through}
 .near-chip.later{border-style:dashed}
-.near-hint{flex-basis:100%;order:9;font-size:11px;color:var(--muted)}
+.near-hint{margin-top:-2px;font-size:11px;color:var(--muted)}
+.legend.stacked{flex-direction:column;flex-wrap:nowrap;align-items:stretch;gap:6px}
+.lg-main{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px}
+.legend.stacked .near-row{flex-basis:auto}
 .near-dot:hover i{transform:scale(1.3)}
 .near-dot span{position:absolute;left:18px;top:-2px;white-space:nowrap;font-size:11px;font-weight:600;color:#4A5262;text-shadow:0 0 3px #FFFFFF,0 0 3px #FFFFFF,0 0 3px #FFFFFF}
 .ext-tag{flex:none;font-size:11px;font-weight:600;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:0 7px;margin-left:auto}
@@ -465,6 +468,7 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
 .tb-row .acct-menu{right:0;top:54px}
 .qchips{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;padding:2px 2px 4px}
 .qchips::-webkit-scrollbar{display:none}
+@media (hover:hover) and (pointer:fine){ .qchips{cursor:grab} .qchips.dragging{cursor:grabbing;user-select:none} .qchips.dragging .qchip{pointer-events:none} }
 .qchip{flex:none;display:inline-flex;align-items:center;gap:5px;height:34px;padding:0 13px;border:0;border-radius:999px;background:var(--panel);color:var(--ink);font-size:13px;font-weight:600;box-shadow:0 1px 5px rgba(15,20,40,.2);cursor:pointer;white-space:nowrap}
 .qchip svg{width:16px;height:16px;flex:none}
 .qchip[aria-pressed="true"]{background:var(--ink);color:var(--panel)}
@@ -2056,7 +2060,7 @@ function renderLegendHelp(){
   } else box.style.maxHeight = '';
 }
 function renderLegend(){
-  const lg = $('legend'); lg.replaceChildren();
+  const lg = $('legend'); lg.replaceChildren(); lg.classList.remove('stacked');
   const ks = state.badges;
   const helpBtn = () => { const b = critButton(toggleLegendHelp, state.legendHelp); b.classList.add('lg-help'); return b; };
   if (ks.length === 1) { // 조건 하나: 그 값 기준 진하기
@@ -2549,7 +2553,7 @@ function nearLegendRow(lg){
   if (!map || nearOff || isPhone() || state.collect || map.getZoom() < NEAR_ROW_ZOOM || Object.keys(ENUMS).some(k => state.filters[k].size) || state.filters.view.size) return;
   const row = el('div','near-row'); row.appendChild(el('b', null, '주변'));
   const z = map.getZoom();
-  if (z < NEAR_ZOOM_BASE) row.appendChild(el('span','near-hint', '한 번 더 확대하면 보여요'));
+  const hint = z < NEAR_ZOOM_BASE ? el('span','near-hint', '한 번 더 확대하면 보여요') : null;
   for (const k of NEAR_KINDS) {
     const b = el('button','near-chip'); b.type = 'button';
     const on = state.nearKinds.has(k.code);
@@ -2560,7 +2564,9 @@ function nearLegendRow(lg){
     b.addEventListener('click', () => toggleNearKind(k.code));
     row.appendChild(b);
   }
-  lg.appendChild(row);
+  // 윗줄(색 안내)과 '주변' 줄을 따로 쌓아서, 상자 폭이 두 줄 중 긴 쪽에 맞게 한다
+  const main = el('div','lg-main'); main.append(...lg.childNodes);
+  lg.append(main, row); if (hint) lg.appendChild(hint); lg.classList.add('stacked');
 }
 function renderExtMarkers(){
   renderNearMarkers();
@@ -3429,6 +3435,29 @@ function renderQuickChips(){
   });
   box.appendChild(nb);
 }
+// 컴퓨터: 빠른 조건 줄을 마우스로 끌거나 휠을 굴려 옆으로 넘긴다 (손가락으로 미는 건 브라우저가 해 준다)
+function bindDragScroll(box){
+  let drag = null;
+  box.addEventListener('pointerdown', e => {
+    if (e.pointerType !== 'mouse' || e.button !== 0 || box.scrollWidth <= box.clientWidth) return;
+    drag = { x: e.clientX, left: box.scrollLeft, moved: false, id: e.pointerId };
+  });
+  box.addEventListener('pointermove', e => {
+    if (!drag) return;
+    const dx = e.clientX - drag.x;
+    if (!drag.moved && Math.abs(dx) > 4) { drag.moved = true; try { box.setPointerCapture(drag.id); } catch {} box.classList.add('dragging'); }
+    if (drag.moved) box.scrollLeft = drag.left - dx;
+  });
+  const end = () => { if (!drag) return; const moved = drag.moved; drag = null; box.classList.remove('dragging'); if (moved) { box.dataset.dragged = '1'; setTimeout(() => delete box.dataset.dragged, 0); } };
+  box.addEventListener('pointerup', end); box.addEventListener('pointercancel', end);
+  // 끌다가 놓은 자리의 버튼이 눌리지 않게
+  box.addEventListener('click', e => { if (box.dataset.dragged) { e.stopPropagation(); e.preventDefault(); } }, true);
+  // 세로 휠도 옆으로 넘긴다
+  box.addEventListener('wheel', e => {
+    if (box.scrollWidth <= box.clientWidth || Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
+    e.preventDefault(); box.scrollLeft += e.deltaY;
+  }, { passive: false });
+}
 // 조건으로 찾기(필터 화면)의 칩 눌림 상태를 지금 조건에 맞춘다 (빠른 조건으로 바꿨을 때)
 function syncFilterChips(){
   document.querySelectorAll('#fgroups .chip[data-k]').forEach(b => {
@@ -3632,6 +3661,7 @@ $('btnLeave').addEventListener('click', () => { closeAcct(); openLeave(); });
 window.addEventListener('resize', placeLegend);
 // 필터 화면, 모아 보기, 지도 전체 보기
 $('filterX').addEventListener('click', () => $('filterDlg').close());
+bindDragScroll($('qchips'));
 $('fdDone').addEventListener('click', () => $('filterDlg').close());
 $('fdClear').addEventListener('click', () => { $('btnClear').click(); setBadges([]); });
 $('filterDlg').addEventListener('click', e => { if (e.target === $('filterDlg')) $('filterDlg').close(); }); // 바깥(어두운 부분)을 누르면 닫기
