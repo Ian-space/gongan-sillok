@@ -158,6 +158,12 @@ button,input{font:inherit;color:inherit}
 .add-picked{padding:10px 12px;border-radius:8px;background:var(--paper);font-size:13px}
 .add-picked b{display:block;font-size:16px}
 .add-field{display:grid;gap:5px}
+.add-field[hidden]{display:none}
+.add-more{justify-self:start;font-size:13px}
+.visit-row{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.visit-row select{width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:6px;background:var(--paper);font:inherit;color:inherit}
+.step-row{display:flex;align-items:center;flex-wrap:wrap;gap:4px 8px;font-size:13px;color:var(--muted)}
+.add-field .step-row input{width:72px;padding:6px 10px}
 .add-field > label,.add-field > .lbl{font-size:12px;font-weight:600;color:var(--muted)}
 .add-field input,.add-field textarea{width:100%;padding:9px 12px;border:1px solid var(--line);border-radius:6px;background:var(--paper);font:inherit;color:inherit}
 .add-field textarea{min-height:64px;resize:vertical}
@@ -640,6 +646,7 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
 .opt{padding:1px 7px;border-radius:4px;color:var(--muted)}
 .opt.on{background:var(--mark);color:var(--mark-ink);font-weight:600}
 .opt.none{font-style:italic}
+.opt-measure{white-space:pre-line;flex-basis:100%;margin-top:3px;font-size:12px;color:var(--ink);font-weight:600}
 .d-block{margin-top:14px;font-size:14px}
 .d-label{font-size:12px;color:var(--muted)}
 .d-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:5px}
@@ -782,7 +789,7 @@ html{touch-action:manipulation}
           <summary>엑셀 양식 안내</summary>
           <ul>
             <li>필수 열: 이름, 위도, 경도</li>
-            <li>선택 열: 유형, 주소, 소음, 좌석간격, 채광, 콘센트, 체류, 주요자재(눈에 보이는 마감, 쉼표로 여러 개), 가구(좌석 종류, 쉼표로 여러 개), 한줄기록, 방문일, 입구, 층이동, 화장실, 아이동반, 반려동물</li>
+            <li>선택 열: 유형, 주소, 소음, 좌석간격, 채광, 콘센트, 체류, 주요자재(눈에 보이는 마감, 쉼표로 여러 개), 가구(좌석 종류, 쉼표로 여러 개), 한줄기록, 방문일, 입구, 층이동, 화장실, 아이동반, 반려동물, 주차, 배기, 단차cm(숫자), 소음dB(숫자)</li>
             <li>소음: 조용함, 보통, 시끄러움 / 좌석간격: 넓음, 보통, 좁음 / 채광: 밝음, 보통, 어두움 / 콘센트: 많음, 일부, 없음 / 체류: 장시간 가능, 2시간 내외, 회전 빠름</li>
             <li>입구: 턱 없음, 경사로 있음, 계단 있음 / 층이동: 1층, 엘리베이터 있음, 계단만 / 화장실: 매장 안, 건물 공용, 없음 / 아이동반: 유아 의자 있음, 동반 가능, 노키즈존 / 반려동물: 실내 가능, 야외만, 불가</li>
             <li>.xlsx 또는 .csv, 최대 2MB, 1,000곳까지</li>
@@ -936,14 +943,19 @@ const ENUMS = {
   light:   { label:'채광',      col:'채광',     values:['밝음','보통','어두움'] },
   outlet:  { label:'콘센트',    col:'콘센트',   values:['많음','일부','없음'] },
   stay:    { label:'머무르기',  col:'체류',     values:['장시간 가능','2시간 내외','회전 빠름'] },
+  // 배기: 고기 굽는 곳에서 연기·냄새가 옷에 배는지. 기록 창에는 고기·구이 가게일 때만 바로 보인다
+  hood:    { label:'배기 방식', col:'배기',     values:['하향식','상향식','후드 없음'], grill:true },
   // 접근·동반: 휠체어·유아차·아이·반려동물과 함께 갈 수 있는지 (서버 칸 이름은 db)
   entrance:{ label:'입구',      col:'입구',     values:['턱 없음','경사로 있음','계단 있음'], group:'access' },
   floor:   { label:'층 이동',   col:'층이동',   values:['1층','엘리베이터 있음','계단만'], group:'access', db:'floor_access' },
   toilet:  { label:'화장실',    col:'화장실',   values:['매장 안','건물 공용','없음'], group:'access' },
   kids:    { label:'아이 동반', col:'아이동반', values:['유아 의자 있음','동반 가능','노키즈존'], group:'access' },
-  pets:    { label:'반려동물',  col:'반려동물', values:['실내 가능','야외만','불가'], group:'access' }
+  pets:    { label:'반려동물',  col:'반려동물', values:['실내 가능','야외만','불가'], group:'access' },
+  parking: { label:'주차',      col:'주차',     values:['전용 주차장','근처 유료 주차','주차 불가'], group:'access' }
 };
 // 항목 묶음: 화면(기록 창, 조건으로 찾기, 상세, 지도에 표시)을 이 두 묶음으로 나눠 보여 준다
+// 고기·구이 가게(배기 방식을 바로 펼쳐 둘 곳): 카카오 업종 이름이나 유형으로 판단한다
+const GRILL = /고기|육류|구이|갈비|삼겹|곱창|막창|대창|양꼬치|바비큐|바베큐|BBQ|숯불|화로|정육|오리|닭갈비|스테이크|焼肉/i;
 const GROUPS = [{ id:'space', label:'공간' }, { id:'access', label:'접근·동반' }];
 const groupOf = k => ENUMS[k].group || 'space';
 const ACCESS_KEYS = Object.keys(ENUMS).filter(k => groupOf(k) === 'access');
@@ -976,6 +988,10 @@ const CRITERIA = {
              v: ['시간 제한이 없고, 3시간 이상 머물러도 눈치가 보이지 않아요.',
                  '이용 시간 안내가 있거나, 2시간 안팎이 자연스러운 분위기예요.',
                  '자리가 적고 기다리는 사람이 많아 1시간 안쪽이 자연스러워요.'] },
+  hood:    { how: '고기를 굽는 가게에서 연기를 어디로 빼는지예요. 불판 둘레나 아래로 빨아들이면 하향식, 테이블 위로 내려온 후드로 빨아올리면 상향식이에요.',
+             v: ['불판 둘레·아래로 연기를 빨아들여요. 연기가 거의 올라오지 않아 옷에 냄새가 덜 배요.',
+                 '테이블 위로 내려온 후드가 연기를 빨아올려요.',
+                 '테이블마다 후드가 없고 천장 환기만 있거나 따로 없어요.'] },
   entrance:{ how: '길에서 매장 안 좌석까지, 휠체어나 유아차가 그대로 들어갈 수 있는지예요. 2cm 이하 문턱은 턱이 없는 것으로 봐요.',
              v: ['계단이나 높은 문턱 없이 바로 들어갈 수 있어요.',
                  '계단이 있지만 경사로나 리프트로 들어갈 수 있어요.',
@@ -995,7 +1011,11 @@ const CRITERIA = {
   pets:    { how: '매장이 밝힌 정책 기준이에요. 크기·종류 제한이 있으면 한 줄 기록에 남겨 주세요.',
              v: ['반려동물과 함께 실내에 들어갈 수 있어요.',
                  '테라스 등 야외 자리에서만 함께할 수 있어요.',
-                 '반려동물과 함께 갈 수 없어요(보조견 제외).'] }
+                 '반려동물과 함께 갈 수 없어요(보조견 제외).'] },
+  parking: { how: '차를 가져갈 때 기준이에요. 장애인 주차 구역이 있으면 한 줄 기록에 남겨 주세요.',
+             v: ['가게나 건물에 손님이 쓸 수 있는 주차장이 있어요.',
+                 '가게 주차장은 없지만 가까운 곳에 유료(공영) 주차장이 있어요.',
+                 '가까이에 주차할 곳이 마땅치 않아요.'] },
 };
 // keys를 주면 그 항목만 보여 준다(지도에서 고른 조건의 기준만 볼 때)
 function critPanel(keys, lead){
@@ -1022,7 +1042,7 @@ function critButton(onToggle, open){
   return b;
 }
 const TEXTS = { name:['이름',40], type:['유형',20], addr:['주소',60], materials:['주요자재',80], furniture:['가구',80], note:['한줄기록',200], date:['방문일',20] };
-const HEADER_MAP = new Map([['이름','name'],['유형','type'],['주소','addr'],['위도','lat'],['경도','lng'],['소음','noise'],['좌석간격','spacing'],['채광','light'],['콘센트','outlet'],['체류','stay'],['주요자재','materials'],['마감','materials'],['가구','furniture'],['좌석종류','furniture'],['한줄기록','note'],['방문일','date'],['입구','entrance'],['층이동','floor'],['화장실','toilet'],['아이동반','kids'],['반려동물','pets']]);
+const HEADER_MAP = new Map([['이름','name'],['유형','type'],['주소','addr'],['위도','lat'],['경도','lng'],['소음','noise'],['좌석간격','spacing'],['채광','light'],['콘센트','outlet'],['체류','stay'],['주요자재','materials'],['마감','materials'],['가구','furniture'],['좌석종류','furniture'],['한줄기록','note'],['방문일','date'],['입구','entrance'],['층이동','floor'],['화장실','toilet'],['아이동반','kids'],['반려동물','pets'],['주차','parking'],['배기','hood'],['단차cm','stepCm'],['소음dB','noiseDb'],['방문시각','visitHour']]);
 
 // 예시 데이터: 가상의 장소입니다.
 const SAMPLE = [
@@ -1061,9 +1081,34 @@ const SAMPLE_ACCESS = [
  ['경사로 있음','1층','매장 안','동반 가능','실내 가능'], ['계단 있음','계단만','매장 안','노키즈존','불가']
 ];
 // 열 순서: 처음 14개는 예전과 같고, 접근·동반 5개는 맨 뒤에 붙인다(예전에 저장한 기록도 그대로 읽힌다)
-const SAMPLE_ROWS = [['이름','유형','주소','위도','경도','소음','좌석간격','채광','콘센트','체류','주요자재','가구','한줄기록','방문일','입구','층이동','화장실','아이동반','반려동물'],
+const SAMPLE_ROWS = [['이름','유형','주소','위도','경도','소음','좌석간격','채광','콘센트','체류','주요자재','가구','한줄기록','방문일','입구','층이동','화장실','아이동반','반려동물','주차','배기','단차cm','소음dB','방문시각'],
   ...SAMPLE.map((r, i) => [...r, ...(SAMPLE_ACCESS[i] || [])])];
-const accessOf = o => ACCESS_KEYS.map(k => o[dbCol(k)] || o[k] || ''); // 서버 줄이나 장소에서 접근·동반 값 5개를 열 순서대로
+const accessOf = o => ACCESS_KEYS.map(k => o[dbCol(k)] || o[k] || ''); // 서버 줄이나 장소에서 접근·동반 값(입구…주차)을 열 순서대로
+// 접근·동반 뒤의 열: 배기 방식, 입구 단차(cm), 잰 소음(dB), 방문 시각(0~23시). 서버 줄(step_cm)과 장소(stepCm) 둘 다 받는다
+const extraOf = o => [o.hood || '', o.step_cm ?? o.stepCm ?? '', o.noise_db ?? o.noiseDb ?? '', o.visit_hour ?? o.visitHour ?? ''];
+// 이 장소에서 잰 숫자들(내 기록 + 다른 사람 공개 기록) → "측정 3회 · 가운데값 46dB (42~51)"
+// 평균 대신 가운데값: 붐비는 시간에 한 번 잰 값 같은 튀는 값에 덜 흔들린다.
+// byTime이면 방문 시각이 있는 값을 시간대별로 한 줄 더: "점심 64dB(2회) · 저녁 48dB". 시각이 없는 값은 전체에만 들어간다
+const median = xs => xs.length % 2 ? xs[(xs.length - 1) / 2] : Math.round((xs[xs.length / 2 - 1] + xs[xs.length / 2]) / 2);
+const TIME_BANDS = [['아침', 6, 11], ['점심', 11, 14], ['오후', 14, 18], ['저녁', 18, 22], ['밤', 22, 30]];
+const bandOf = h => { const x = h < 6 ? h + 24 : h; return (TIME_BANDS.find(([, a, b]) => x >= a && x < b) || TIME_BANDS[4])[0]; };
+const hourLabel = h => h < 12 ? `오전 ${h || 12}시` : `오후 ${h === 12 ? 12 : h - 12}시`;
+function measureText(p, key, unit, what = '측정', byTime = false){
+  const pts = [...(p.mine ? [p] : []), ...(p.recs || [])].filter(r => typeof r[key] === 'number').map(r => ({ v: r[key], h: r.visitHour }));
+  if (!pts.length) return '';
+  const xs = pts.map(x => x.v).sort((a, b) => a - b);
+  let out = xs.length === 1 ? `${what} 약 ${xs[0]}${unit}` : `${what} ${xs.length}회 · 가운데값 ${median(xs)}${unit} (${xs[0]}~${xs[xs.length - 1]})`;
+  if (byTime && pts.some(x => typeof x.h === 'number')) {
+    const parts = TIME_BANDS.map(([name]) => {
+      const vs = pts.filter(x => typeof x.h === 'number' && bandOf(x.h) === name).map(x => x.v).sort((a, b) => a - b);
+      return vs.length ? `${name} ${median(vs)}${unit}${vs.length > 1 ? `(${vs.length}회)` : ''}` : '';
+    }).filter(Boolean);
+    if (xs.length === 1) out = `${what} 약 ${xs[0]}${unit} · ${hourLabel(pts[0].h)}`; // 하나뿐이면 몇 시에 쟀는지만
+    else out += `\n시간대별: ${parts.join(' · ')}`;
+  }
+  return out;
+}
+const intIn = (v, lo, hi) => { const s = String(v ?? '').trim(); if (!/^\d{1,3}$/.test(s)) return ''; const n = +s; return n >= lo && n <= hi ? n : ''; };
 
 /* ---------- 입력 정리(보안) ---------- */
 const BAD_CHARS = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F​-‏‪-‮⁦-⁩﻿]/g;
@@ -1174,6 +1219,7 @@ function rowsToPlaces(rows){
     const p = { id:'p' + places.length, name, lat, lng };
     for (const k of ['type','addr','materials','furniture','note']) p[k] = cleanText(get(k), TEXTS[k][1]);
     p.date = normDate(get('date'));
+    p.stepCm = intIn(get('stepCm'), 0, 100); p.noiseDb = intIn(get('noiseDb'), 20, 130); p.visitHour = intIn(get('visitHour'), 0, 23); // 직접 잰 숫자·방문 시각(없으면 '')
     for (const k of Object.keys(ENUMS)) {
       const raw = cleanText(get(k), 20);
       p[k] = cleanEnum(raw, k);
@@ -1385,7 +1431,7 @@ async function loadPublic(){
   const groups = new Map();
   for (const r of rows) {
     // 서버 값도 엑셀 불러오기와 같은 검사를 거친다
-    const { places: [p] } = rowsToPlaces([SAMPLE_ROWS[0], [r.place_name, r.place_type, r.place_address, r.lat, r.lng, r.noise, r.spacing, r.light, r.outlet, r.stay, r.materials, r.furniture, r.note, r.visited_on, ...accessOf(r)]]);
+    const { places: [p] } = rowsToPlaces([SAMPLE_ROWS[0], [r.place_name, r.place_type, r.place_address, r.lat, r.lng, r.noise, r.spacing, r.light, r.outlet, r.stay, r.materials, r.furniture, r.note, r.visited_on, ...accessOf(r), ...extraOf(r)]]);
     if (!p) continue;
     if (!groups.has(r.place_id)) groups.set(r.place_id, { pid: r.place_id, kid: r.kakao_id || '', name: p.name, type: p.type, addr: p.addr, lat: p.lat, lng: p.lng, recs: [] });
     groups.get(r.place_id).recs.push({ ...p, rid: r.id, nickname: cleanText(r.nickname, 30), mineRec: !!r.mine, photos: validPhotos(r.photo_paths) }); // 닉네임은 관리자에게만 온다
@@ -1395,7 +1441,7 @@ async function loadPublic(){
   rebuild({ fit: first && !state.sel });
 }
 function placesToRows(places){
-  return [SAMPLE_ROWS[0], ...places.map(p => [p.name,p.type,p.addr,p.lat,p.lng,p.noise,p.spacing,p.light,p.outlet,p.stay,p.materials,p.furniture,p.note,p.date, ...accessOf(p)])];
+  return [SAMPLE_ROWS[0], ...places.map(p => [p.name,p.type,p.addr,p.lat,p.lng,p.noise,p.spacing,p.light,p.outlet,p.stay,p.materials,p.furniture,p.note,p.date, ...accessOf(p), ...extraOf(p)])];
 }
 function loadInitial(){
   try {
@@ -1403,7 +1449,7 @@ function loadInitial(){
     if (raw) {
       const saved = JSON.parse(raw);
       if (saved && Array.isArray(saved.rows)) { // 저장된 데이터도 다시 검증
-        const { places } = rowsToPlaces(saved.rows.slice(0, MAX_ROWS + 1).map(r => Array.isArray(r) ? r.slice(0, 20) : []));
+        const { places } = rowsToPlaces(saved.rows.slice(0, MAX_ROWS + 1).map(r => Array.isArray(r) ? r.slice(0, 30) : []));
         if (places.length) return setMine(places, '이 브라우저의 내 기록', false);
       }
     }
@@ -1564,13 +1610,17 @@ function renderDetail(){
       lastGroup = groupOf(k);
       dl.appendChild(el('dt','scale-group', GROUPS.find(g => g.id === lastGroup).label));
       // 접근·동반은 예전 기록에는 없으므로, 하나도 없으면 줄 하나로 줄인다
-      if (lastGroup === 'access' && accessEmpty) { dl.appendChild(el('dd','scale-empty', '입구, 층 이동, 화장실, 아이·반려동물 동반은 아직 기록이 없어요.')); }
+      if (lastGroup === 'access' && accessEmpty) { dl.appendChild(el('dd','scale-empty', '입구, 층 이동, 화장실, 아이·반려동물 동반, 주차는 아직 기록이 없어요.')); }
     }
     if (groupOf(k) === 'access' && accessEmpty) continue;
+    if (def.grill && !p[k]) continue; // 배기 방식은 남긴 곳에서만 보여 준다(카페 등에는 해당 없음)
     dl.appendChild(el('dt', null, def.label));
     const dd = el('dd');
     if (!p[k]) dd.appendChild(el('span','opt none', groupOf(k) === 'access' ? '모름' : '기록 없음'));
     else for (const v of def.values) dd.appendChild(el('span', 'opt' + (v === p[k] ? ' on' : ''), v));
+    // 직접 잰 숫자: 소음(dB), 입구 단차(cm). 여러 사람이 쟀으면 가운데값과 범위
+    const m = k === 'noise' ? measureText(p, 'noiseDb', 'dB', '측정', true) : k === 'entrance' ? measureText(p, 'stepCm', 'cm', '단차') : '';
+    if (m) dd.appendChild(el('span','opt-measure', m));
     dl.appendChild(dd);
   }
   d.appendChild(dl);
@@ -1581,7 +1631,7 @@ function renderDetail(){
     b.append(el('div','d-label', TAGS[k].label), tags); d.appendChild(b);
   }
   if (p.note) { const b = el('div','d-block'); b.append(el('div','d-label','한 줄 기록'), el('p','d-note',p.note)); d.appendChild(b); }
-  if (p.date) d.appendChild(el('div','d-date', `방문일 ${p.date}`));
+  if (p.date) d.appendChild(el('div','d-date', `방문일 ${p.date}` + (p.mine && typeof p.visitHour === 'number' ? ` · ${hourLabel(p.visitHour)}쯤` : '')));
   // 모두의 기록: 다른 사람 공개 기록이 있으면 항목별로 몇 명이 무엇을 골랐는지
   if (p.pubCount) {
     const box = el('div','all-recs'); box.appendChild(el('div','d-label', `모두의 기록 · 공개 ${p.pubCount}개`));
@@ -1933,7 +1983,8 @@ function renderMap(vis){
 /* ---------- 지도에 표시 (자주 찾는 메뉴) ---------- */
 // 고른 속성을 핀 옆 배지로 보여 준다. ENUMS 값은 좋은 것부터 아쉬운 것 순서라, 그 순서가 곧 진하기다.
 const SHORT = { noise:['조용','보통','시끄러움'], spacing:['넓음','보통','좁음'], light:['밝음','보통','어두움'], outlet:['많음','일부','없음'], stay:['장시간','2시간','회전 빠름'],
-  entrance:['턱 없음','경사로','계단'], floor:['1층','엘리베이터','계단만'], toilet:['매장 안','건물','없음'], kids:['유아 의자','아이 가능','노키즈'], pets:['실내 동반','야외만','불가'] };
+  hood:['하향식','상향식','후드 없음'], entrance:['턱 없음','경사로','계단'], floor:['1층','엘리베이터','계단만'], toilet:['매장 안','건물','없음'], kids:['유아 의자','아이 가능','노키즈'], pets:['실내 동반','야외만','불가'],
+  parking:['주차장','유료 주차','주차 불가'] };
 const BADGE_KEY = 'gongan-sillok:badges';
 // 여러 조건을 함께 고를 수 있다. 저장은 이 브라우저에만 한다
 state.badges = (() => { try { const v = JSON.parse(localStorage.getItem(BADGE_KEY) || '[]'); return Array.isArray(v) ? v.filter(k => ENUMS[k]) : []; } catch { return []; } })();
@@ -1942,7 +1993,8 @@ const level = (p, k) => ENUMS[k].values.indexOf(p[k]); // 0 좋음, 1 보통, 2 
 const FACT = { noise:['조용함','소음 보통','시끄러움'], spacing:['좌석 넓음','좌석 보통','좌석 좁음'], light:['밝음','채광 보통','어두움'],
   outlet:['콘센트 많음','콘센트 일부','콘센트 없음'], stay:['오래 머물기','2시간 내외','회전 빠름'],
   entrance:['턱 없음','경사로','입구 계단'], floor:['1층','엘리베이터','계단만'], toilet:['화장실 매장 안','화장실 건물','화장실 없음'],
-  kids:['유아 의자','아이 동반 가능','노키즈존'], pets:['반려동물 실내','반려동물 야외','반려동물 불가'] };
+  kids:['유아 의자','아이 동반 가능','노키즈존'], pets:['반려동물 실내','반려동물 야외','반려동물 불가'],
+  hood:['하향식 배기','상향식 후드','후드 없음'], parking:['주차장 있음','근처 유료 주차','주차 불가'] };
 // 배지 진하기: 조건이 하나면 그 값 그대로, 여럿이면 '모두 좋음 / 일부 좋음 / 하나도 없음'
 function badgeLevel(p){
   const ks = state.badges, ls = ks.map(k => level(p, k));
@@ -2900,8 +2952,8 @@ function renderExtList(){
 /* ---------- 장소 추가 (카카오 장소 검색) ---------- */
 // 이름으로 검색해서 고르면 주소와 좌표가 채워지고, 공간 기록을 입력해 저장한다.
 // 저장은 엑셀 불러오기와 같은 방식(이 브라우저)으로 하고, 엑셀 불러오기와 같은 검사(rowsToPlaces)를 거친다.
-const addState = { step: 'search', query: '', results: [], picked: null, status: '', err: false, values: {}, texts: {}, editId: null };
-const freshAdd = () => ({ step: 'search', results: [], picked: null, status: '', err: false, values: {}, texts: {}, editId: null, server: null, busy: false, lidx: -1, photos: [] });
+const addState = { step: 'search', query: '', results: [], picked: null, status: '', err: false, values: {}, texts: {}, nums: { stepCm: '', noiseDb: '', visitHour: '' }, editId: null };
+const freshAdd = () => ({ step: 'search', results: [], picked: null, status: '', err: false, values: {}, texts: {}, nums: { stepCm: '', noiseDb: '', visitHour: '' }, editId: null, server: null, busy: false, lidx: -1, photos: [] });
 // 같은 곳: 거의 같은 좌표(5m 안)이거나, 이름이 같고 100m 안
 const sameSpot = (a, b) => distM(a, b) < 5 || (a.name === b.name && distM(a, b) < 100);
 // prefill이 있으면(지도에서 고른 기록 안 된 장소) 검색을 건너뛰고 바로 기록 입력으로 간다
@@ -2917,6 +2969,7 @@ function editState(p){
     picked: { name: p.name, type: p.type, address: p.addr, lat: p.lat, lng: p.lng, category: '' },
     values: Object.fromEntries(Object.keys(ENUMS).map(k => [k, p[k] || ''])),
     texts: { materials: p.materials, furniture: p.furniture, note: p.note, date: p.date },
+    nums: { stepCm: p.mine ? (p.stepCm ?? '') : '', noiseDb: p.mine ? (p.noiseDb ?? '') : '', visitHour: p.mine ? (p.visitHour ?? '') : '' }, // 잰 숫자·시각은 내 기록 것만
     server: p.rid ? { rid: p.rid, pid: p.pid, pub: !!p.pub, photos: p.photos || [] } : null, // 계정에 저장된 기록이면 서버 번호를 함께 둔다
     photos: (p.photos || []).map(path => ({ path })) };
 }
@@ -3010,6 +3063,7 @@ function renderAdd(){
   const field = (label, input) => { const w = el('div','add-field'); const l = el('label', null, label); input.id = 'add-' + label.replace(/\s/g, ''); l.htmlFor = input.id; w.append(l, input); return w; };
   const text = (v, max) => { const i = el('input'); i.type = 'text'; i.maxLength = max; i.value = v || ''; return i; };
   const nameI = text(p.name, 40), typeI = text(p.type, 20);
+  let hourI = null; // 방문 시간 고르기(아래에서 만든다). 소리 재기가 시각을 채울 때 쓴다
   const row = el('div','add-row'); row.append(field('이름', nameI), field('유형', typeI)); body.appendChild(row);
   // 기준 보기: 입력 중인 내용이 지워지지 않도록 창을 다시 그리지 않고 펼치고 접기만 한다
   const critRow = el('div','crit-row'); critRow.appendChild(el('span', null, '조용함, 보통 같은 값의 기준'));
@@ -3024,9 +3078,16 @@ function renderAdd(){
       body.appendChild(el('h3','add-group', GROUPS.find(g => g.id === lastGroup).label));
     }
     const w = el('div','add-field'); w.appendChild(el('span','lbl', def.label));
+    // 배기 방식은 고기·구이 가게일 때만 펼쳐 둔다. 다른 가게는 누르면 펼쳐지는 작은 버튼만
+    if (def.grill && !addState.values[k] && !GRILL.test(`${p.category || ''} ${p.type || ''}`)) {
+      const more = el('button','linkbtn add-more', '+ 고기 굽는 곳이면 배기 방식도 남기기'); more.type = 'button';
+      more.addEventListener('click', () => { w.hidden = false; more.remove(); });
+      w.hidden = true; body.appendChild(more);
+    }
+    if (def.grill) w.appendChild(el('span','add-hint tag-hint', '불판 둘레·아래로 빨아들이면 하향식, 테이블 위 후드로 빨아올리면 상향식'));
     const chips = el('div','chips'); chips.setAttribute('role','group'); chips.setAttribute('aria-label', def.label);
-    // 접근·동반은 물어보지 않으면 모를 때가 많아 '모름'을 함께 둔다. 모름은 값 없음('')으로 저장한다(기록 안 함과 같다)
-    const unknown = groupOf(k) === 'access';
+    // 접근·동반(과 배기)은 물어보지 않으면 모를 때가 많아 '모름'을 함께 둔다. 모름은 값 없음('')으로 저장한다(기록 안 함과 같다)
+    const unknown = groupOf(k) === 'access' || def.grill;
     const sync = () => chips.querySelectorAll('.chip').forEach(c => c.setAttribute('aria-pressed', String(c.dataset.v === (addState.values[k] || ''))));
     for (const v of def.values) {
       const b = el('button','chip', v); b.type = 'button'; b.dataset.v = v;
@@ -3041,7 +3102,24 @@ function renderAdd(){
     sync();
     w.appendChild(chips);
     // 소음은 마이크로 재서 값을 골라 줄 수 있다
-    if (k === 'noise') w.appendChild(noiseMeter(v => { addState.values[k] = v; sync(); }));
+    if (k === 'noise') {
+      const saved = el('p','add-hint');
+      const showSaved = () => { saved.replaceChildren(); if (addState.nums.noiseDb === '') return;
+        saved.append(`저장할 측정값: 약 ${addState.nums.noiseDb}dB `);
+        const x = el('button','linkbtn', '빼기'); x.type = 'button'; x.addEventListener('click', () => { addState.nums.noiseDb = ''; showSaved(); }); saved.appendChild(x); };
+      w.appendChild(noiseMeter((v, db) => { addState.values[k] = v; sync(); if (db >= 20 && db <= 130) addState.nums.noiseDb = db;
+        if (addState.nums.visitHour === '') { addState.nums.visitHour = Math.floor(seoulNow().min / 60); if (hourI) hourI.value = String(addState.nums.visitHour); } // 잰 시각이 곧 방문 시각
+        showSaved(); }));
+      w.appendChild(saved); showSaved();
+    }
+    // 입구: 줄자로 잰 단차 높이(선택). 여러 사람이 남기면 상세에서 가운데값으로 보여 준다
+    if (k === 'entrance') {
+      const row = el('label','step-row'), inp = el('input'); inp.type = 'number'; inp.inputMode = 'numeric'; inp.min = '0'; inp.max = '100'; inp.step = '1';
+      inp.value = addState.nums.stepCm === '' ? '' : String(addState.nums.stepCm); inp.placeholder = '예: 3';
+      inp.addEventListener('input', () => { addState.nums.stepCm = intIn(inp.value, 0, 100); });
+      row.append(el('span', null, '입구 단차 높이 약'), inp, el('span', null, 'cm'), el('span','add-hint', '잰 경우만 · 2cm 이하는 턱 없음으로 봐요'));
+      w.appendChild(row);
+    }
     body.appendChild(w);
   }
   // 좌석 종류·마감: 여러 개 고르기 + '그 밖에' 짧은 칸. 예전에 글로 쓴 값 중 선택지에 없는 것은 '그 밖에'로 옮겨 보여 준다
@@ -3064,7 +3142,16 @@ function renderAdd(){
   const noteI = el('textarea'); noteI.maxLength = 200; noteI.placeholder = '예: 창가 자리는 오후 3시 이후 볕이 깊게 든다'; noteI.value = tx.note || '';
   const s = seoulNow().stamp; const dateI = el('input'); dateI.type = 'date';
   dateI.value = /^\d{4}-\d{2}-\d{2}$/.test(tx.date || '') ? tx.date : `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}`;
-  body.append(furT.node, matT.node, field('한 줄 기록', noteI), field('방문일', dateI));
+  // 방문 시각(선택): 소음·채광은 시간대마다 달라서 몇 시쯤 갔는지 남긴다. 소리 재기를 쓰면 그때 시각이 자동으로 들어간다
+  hourI = el('select'); hourI.id = 'add-방문시간'; hourI.setAttribute('aria-label', '방문 시간');
+  hourI.appendChild(new Option('시간 모름', ''));
+  for (const h of [6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,0,1,2,3,4,5]) hourI.appendChild(new Option(`${hourLabel(h)}쯤 (${bandOf(h)})`, String(h)));
+  hourI.value = addState.nums.visitHour === '' ? '' : String(addState.nums.visitHour);
+  hourI.addEventListener('change', () => { addState.nums.visitHour = intIn(hourI.value, 0, 23); });
+  const visitW = el('div','add-field'), visitL = el('label', null, '방문일 · 시간'); dateI.id = 'add-방문일'; visitL.htmlFor = dateI.id;
+  const visitRow = el('div','visit-row'); visitRow.append(dateI, hourI);
+  visitW.append(visitL, visitRow, el('span','add-hint', '시간은 선택이에요. 소음·채광은 시간대마다 달라서, 남기면 시간대별로 모아 보여 줘요.'));
+  body.append(furT.node, matT.node, field('한 줄 기록', noteI), visitW);
   if (auth.user) body.appendChild(photoField());
   else if (sb) body.appendChild(el('p','add-hint', '로그인하면 사진도 함께 올릴 수 있어요(최대 5장).'));
   if (addState.status) body.appendChild(el('p','add-status' + (addState.err ? ' err' : ''), addState.status));
@@ -3084,7 +3171,7 @@ function renderAdd(){
   if (same) { save.disabled = true; save.title = '이미 기록한 곳이라 새로 저장할 수 없어요'; }
   save.addEventListener('click', () => {
     const v = addState.values;
-    const newRow = [nameI.value, typeI.value, p.address, p.lat, p.lng, v.noise || '', v.spacing || '', v.light || '', v.outlet || '', v.stay || '', matI.value, furI.value, noteI.value, dateI.value, ...accessOf(v)];
+    const newRow = [nameI.value, typeI.value, p.address, p.lat, p.lng, v.noise || '', v.spacing || '', v.light || '', v.outlet || '', v.stay || '', matI.value, furI.value, noteI.value, dateI.value, ...accessOf(v), v.hood || '', addState.nums.stepCm, addState.nums.noiseDb, addState.nums.visitHour];
     if (auth.user) { saveToServer(newRow, p, editing, !!(pubI && pubI.checked)); return; } // 로그인: 계정(서버)에 저장
     // 이 브라우저의 '내 기록'만 고친다: 고칠 때는 같은 자리의 줄을 바꾸고, 새로 기록할 때는 맨 뒤에 붙인 다음, 엑셀 불러오기와 같은 검사로 다시 만든다
     // 예시(가상) 장소만 있던 상태에서 처음 기록하면 예시는 빼고 시작한다
@@ -3127,7 +3214,7 @@ const sb = window.supabase && SUPABASE_URL && SUPABASE_KEY
   ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { flowType: 'pkce', persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } })
   : null;
 const auth = { user: null, nickname: '', role: 'user', ready: false };
-const RECORD_COLS = 'id, is_public, noise, spacing, light, outlet, stay, materials, furniture, note, visited_on, entrance, floor_access, toilet, kids, pets, photo_paths, places(id, kakao_id, name, type, address, lat, lng)';
+const RECORD_COLS = 'id, is_public, noise, spacing, light, outlet, stay, materials, furniture, note, visited_on, entrance, floor_access, toilet, kids, pets, parking, hood, step_cm, noise_db, visit_hour, photo_paths, places(id, kakao_id, name, type, address, lat, lng)';
 
 async function loadMine(){
   const { data, error } = await sb.from('records').select(RECORD_COLS).eq('user_id', auth.user.id).order('created_at');
@@ -3136,7 +3223,7 @@ async function loadMine(){
   const places = [];
   for (const r of data) {
     const pl = r.places; if (!pl) continue;
-    const { places: [p] } = rowsToPlaces([SAMPLE_ROWS[0], [pl.name, pl.type, pl.address, pl.lat, pl.lng, r.noise, r.spacing, r.light, r.outlet, r.stay, r.materials, r.furniture, r.note, r.visited_on, ...accessOf(r)]]);
+    const { places: [p] } = rowsToPlaces([SAMPLE_ROWS[0], [pl.name, pl.type, pl.address, pl.lat, pl.lng, r.noise, r.spacing, r.light, r.outlet, r.stay, r.materials, r.furniture, r.note, r.visited_on, ...accessOf(r), ...extraOf(r)]]);
     if (!p) continue;
     places.push(Object.assign(p, { id: 'p' + places.length, rid: r.id, pid: pl.id, kid: pl.kakao_id || '', pub: !!r.is_public, photos: validPhotos(r.photo_paths) }));
   }
@@ -3145,7 +3232,8 @@ async function loadMine(){
 }
 const recordVals = (np, isPublic) => ({ noise: np.noise || null, spacing: np.spacing || null, light: np.light || null, outlet: np.outlet || null, stay: np.stay || null,
   materials: np.materials || null, furniture: np.furniture || null, note: np.note || null, visited_on: /^\d{4}-\d{2}-\d{2}$/.test(np.date) ? np.date : null, is_public: isPublic,
-  ...Object.fromEntries(ACCESS_KEYS.map(k => [dbCol(k), np[k] || null])) });
+  ...Object.fromEntries(ACCESS_KEYS.map(k => [dbCol(k), np[k] || null])),
+  hood: np.hood || null, step_cm: np.stepCm === '' ? null : np.stepCm, noise_db: np.noiseDb === '' ? null : np.noiseDb, visit_hour: np.visitHour === '' ? null : np.visitHour });
 async function saveToServer(row, picked, editing, isPublic){
   const fail = msg => { Object.assign(addState, { status: msg, err: true, busy: false }); renderAdd(); };
   const { places: [np] } = rowsToPlaces([SAMPLE_ROWS[0], row]); // 저장 전 검사
@@ -3219,7 +3307,7 @@ function localRecords(){
     const saved = JSON.parse(localStorage.getItem(STORE_KEY) || 'null');
     if (!saved || !Array.isArray(saved.rows)) return [];
     // 예시(가상) 장소는 고쳐서 저장됐더라도 옮기지 않는다
-    return rowsToPlaces(saved.rows.slice(0, MAX_ROWS + 1).map(r => Array.isArray(r) ? r.slice(0, 20) : [])).places.filter(p => !isSamplePlace(p));
+    return rowsToPlaces(saved.rows.slice(0, MAX_ROWS + 1).map(r => Array.isArray(r) ? r.slice(0, 30) : [])).places.filter(p => !isSamplePlace(p));
   } catch { return []; }
 }
 function offerMove(force){
@@ -3440,7 +3528,7 @@ function noiseMeter(onPick){
       const leqRaw = 10 * Math.log10(energies.reduce((a, b) => a + b, 0) / energies.length) - noiseOffset(); // 보정 전 값
       const show = () => {
         const db = Math.round(leqRaw + noiseOffset()), v = noiseValue(db), off = noiseOffset();
-        onPick(v);
+        onPick(v, db); // 단계와 함께 잰 숫자도 넘긴다
         const cal = el('div','meter-cal'); cal.appendChild(el('span', null, `보정 ${off > 0 ? '+' : ''}${off}dB`));
         for (const d of [-5, -1, 1, 5]) {
           const b = el('button','meter-calbtn', (d > 0 ? '+' : '') + d); b.type = 'button';
