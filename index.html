@@ -408,9 +408,6 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
 
 .d-route{margin-top:16px;display:flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:11px 14px;border-radius:8px;background:var(--route);color:var(--route-ink);font-weight:700;font-size:15px;text-decoration:none}
 .d-route:hover{filter:brightness(1.06)}
-.d-loc{margin-top:16px;width:100%;padding:10px 14px;border-radius:8px;border:1.5px solid var(--blue);background:transparent;color:var(--blue);font-weight:700;font-size:14px;cursor:pointer}
-.d-loc:disabled{opacity:.6;cursor:default}
-.d-loc + .d-route{margin-top:8px}
 .d-transit{margin-top:16px;display:grid;gap:8px}
 .d-tnote{margin:0;font-size:13px;color:var(--muted)}
 .d-ttabs{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;margin:0 -2px;padding:0 2px 2px}
@@ -440,6 +437,12 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
 .inapp-btn{flex:none;background:var(--mark);color:var(--mark-ink);font-weight:700;border-radius:999px;padding:6px 12px;text-decoration:none;white-space:nowrap}
 .d-route.ghost{margin-top:8px;background:transparent;color:var(--ink);border:1px solid var(--line);font-weight:600;font-size:14px;padding:9px 14px}
 .d-route-note{margin:6px 0 0;font-size:12px;color:var(--muted);text-align:center}
+/* 길찾기 첫 버튼: 장소에서 가장 많이 누를 동작이라 크게. 그 아래 네이버 지도 링크는 작게 */
+.d-go{display:block;width:100%;padding:12px 14px;border:0;border-radius:8px;background:var(--route);color:var(--route-ink);font-weight:700;font-size:16px;cursor:pointer}
+.d-go:hover{filter:brightness(1.06)}
+.d-go:disabled{opacity:.7;cursor:default}
+.d-nlinks{display:flex;justify-content:center;gap:8px;margin:8px 0 0;font-size:13px;color:var(--muted)}
+.d-nlinks a{color:var(--muted);text-decoration:underline;text-underline-offset:2px}
 
 .detail{position:absolute;left:16px;bottom:16px;width:min(360px,calc(100% - 32px));max-height:calc(100% - var(--tb-bottom,80px) - 24px);overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:18px 18px 16px;box-shadow:0 10px 30px rgba(20,30,35,.18);z-index:10}
 .detail[hidden]{display:none}
@@ -628,6 +631,11 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
 .opt.none{font-style:italic}
 .d-block{margin-top:14px;font-size:14px}
 .d-label{font-size:12px;color:var(--muted)}
+.d-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:5px}
+.d-tag{padding:3px 9px;border-radius:999px;background:var(--paper);border:1px solid var(--line);font-size:13px}
+.d-tag.free{background:transparent}
+.tag-hint{margin-top:-3px}
+.add-field .tag-other{margin-top:2px;padding:7px 12px;font-size:14px}
 .d-note{font-family:var(--sans);font-size:16px;line-height:1.7;margin:4px 0 0}
 .d-date{font-size:12px;color:var(--muted);margin-top:12px}
 
@@ -758,7 +766,7 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
           <summary>엑셀 양식 안내</summary>
           <ul>
             <li>필수 열: 이름, 위도, 경도</li>
-            <li>선택 열: 유형, 주소, 소음, 좌석간격, 채광, 콘센트, 체류, 주요자재, 가구, 한줄기록, 방문일, 입구, 층이동, 화장실, 아이동반, 반려동물</li>
+            <li>선택 열: 유형, 주소, 소음, 좌석간격, 채광, 콘센트, 체류, 주요자재(눈에 보이는 마감, 쉼표로 여러 개), 가구(좌석 종류, 쉼표로 여러 개), 한줄기록, 방문일, 입구, 층이동, 화장실, 아이동반, 반려동물</li>
             <li>소음: 조용함, 보통, 시끄러움 / 좌석간격: 넓음, 보통, 좁음 / 채광: 밝음, 보통, 어두움 / 콘센트: 많음, 일부, 없음 / 체류: 장시간 가능, 2시간 내외, 회전 빠름</li>
             <li>입구: 턱 없음, 경사로 있음, 계단 있음 / 층이동: 1층, 엘리베이터 있음, 계단만 / 화장실: 매장 안, 건물 공용, 없음 / 아이동반: 유아 의자 있음, 동반 가능, 노키즈존 / 반려동물: 실내 가능, 야외만, 불가</li>
             <li>.xlsx 또는 .csv, 최대 2MB, 1,000곳까지</li>
@@ -789,13 +797,14 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
       <div class="tb-row">
         <div class="tb-search">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
-          <input class="search" id="q" type="search" placeholder="장소, 동네, 자재로 찾기" aria-label="장소 이름, 동네, 자재, 가구로 찾기. 기록 안 된 가게도 함께 찾아요" maxlength="40" enterkeyhint="search">
+          <input class="search" id="q" type="search" placeholder="장소, 동네, 좌석·마감으로 찾기" aria-label="장소 이름, 동네, 좌석 종류, 마감으로 찾기. 기록 안 된 가게도 함께 찾아요" maxlength="40" enterkeyhint="search">
         </div>
         <button class="acct" id="acctBtn" type="button" aria-expanded="false" aria-controls="acctMenu" aria-label="계정 메뉴"></button>
         <div class="acct-menu" id="acctMenu" hidden>
           <div class="auth" id="auth"></div>
           <div class="acct-sep" id="acctSep"></div>
           <button class="acct-item" id="btnInstall" type="button" hidden>홈 화면에 추가</button>
+          <button class="acct-item" id="btnMove" type="button" hidden>이 브라우저 기록 계정으로 옮기기</button>
           <button class="acct-item" id="btnTour" type="button">사용법 다시 보기</button>
           <button class="acct-item" id="btnLoad" type="button">엑셀 파일 불러오기</button>
           <button class="acct-item" id="btnReset" type="button">예시 데이터로 되돌리기</button>
@@ -829,6 +838,7 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
 
 <dialog class="add-dlg" id="addDlg" aria-labelledby="addTitle"><div class="add-body" id="addBody"></div></dialog>
 <dialog class="add-dlg" id="adminDlg" aria-labelledby="adminTitle"><div class="add-body" id="adminBody"></div></dialog>
+<dialog class="add-dlg" id="moveDlg" aria-label="이 브라우저의 기록을 계정으로 옮기기"><div class="add-body" id="moveBody"></div></dialog>
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 <dialog class="add-dlg" id="originDlg" aria-labelledby="originTitle">
   <div class="add-body">
@@ -850,6 +860,8 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
     <h3 class="sec-title with-help" id="filterTitle">조건으로 찾기</h3>
     <div class="crit-wrap" id="filterCrit" hidden></div>
     <div class="filters"><div id="fgroups"></div></div>
+    <h3 class="sec-title fd-sec">좌석·마감 <span class="fd-note">고른 것 중 하나라도 있는 곳</span></h3>
+    <div id="fdTags"></div>
     <h3 class="sec-title fd-sec">지도에 표시 <span class="fd-note">거르지 않고 핀 옆에 값만 보여 줘요</span></h3>
     <div id="fdBadges"></div>
     <h3 class="sec-title fd-sec">주변 장소 <span class="fd-note">지도를 확대하면 기록 없는 곳이 점으로 보여요</span></h3>
@@ -872,7 +884,7 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
     <div class="add-head"><h2 id="choiceTitle">어디에 저장할까요?</h2><button class="d-close" id="choiceX" type="button" aria-label="닫기">×</button></div>
     <div class="choice">
       <button class="choice-btn kakao" id="choiceLogin" type="button"><b>카카오로 로그인하고 저장</b><span>휴대폰·컴퓨터 어디서나 보이고, 원하면 공개해서 함께 볼 수 있어요.</span></button>
-      <button class="choice-btn" id="choiceLocal" type="button"><b>로그인 없이 이 브라우저에만 저장</b><span>지금 이 기기, 이 브라우저에서만 보여요. 나중에 로그인해도 옮겨지지 않아요.</span></button>
+      <button class="choice-btn" id="choiceLocal" type="button"><b>로그인 없이 이 브라우저에만 저장</b><span>지금 이 기기, 이 브라우저에서만 보여요. 나중에 로그인하면 계정으로 옮길 수 있어요.</span></button>
     </div>
     <p class="legal-note">로그인하면 <a href="terms.html" target="_blank" rel="noopener">이용약관</a>과 <a href="privacy.html" target="_blank" rel="noopener">개인정보처리방침</a>에 동의하는 것으로 봐요.</p>
   </div>
@@ -993,7 +1005,7 @@ function critButton(onToggle, open){
   return b;
 }
 const TEXTS = { name:['이름',40], type:['유형',20], addr:['주소',60], materials:['주요자재',80], furniture:['가구',80], note:['한줄기록',200], date:['방문일',20] };
-const HEADER_MAP = new Map([['이름','name'],['유형','type'],['주소','addr'],['위도','lat'],['경도','lng'],['소음','noise'],['좌석간격','spacing'],['채광','light'],['콘센트','outlet'],['체류','stay'],['주요자재','materials'],['가구','furniture'],['한줄기록','note'],['방문일','date'],['입구','entrance'],['층이동','floor'],['화장실','toilet'],['아이동반','kids'],['반려동물','pets']]);
+const HEADER_MAP = new Map([['이름','name'],['유형','type'],['주소','addr'],['위도','lat'],['경도','lng'],['소음','noise'],['좌석간격','spacing'],['채광','light'],['콘센트','outlet'],['체류','stay'],['주요자재','materials'],['마감','materials'],['가구','furniture'],['좌석종류','furniture'],['한줄기록','note'],['방문일','date'],['입구','entrance'],['층이동','floor'],['화장실','toilet'],['아이동반','kids'],['반려동물','pets']]);
 
 // 예시 데이터: 가상의 장소입니다.
 const SAMPLE = [
@@ -1012,6 +1024,15 @@ const SAMPLE = [
  ['바람길 카페','카페','성수동2가 일대',37.5498,127.0612,'보통','넓음','밝음','일부','장시간 가능','폴딩 도어, 원목 데크','야외 테라스 좌석','날씨 좋은 날엔 문을 전면 개방한다','2026-09-21'],
  ['지하 음반실','카페','성수동2가 일대',37.5437,127.0520,'보통','좁음','어두움','많음','2시간 내외','흡음 패널, 카펫 타일','리스닝 소파','음악 감상 위주라 대화는 작게','2026-09-26']
 ];
+// 예시 장소의 마감·좌석 (SAMPLE과 같은 순서). 고르는 방식으로 바뀐 뒤의 값으로 덮어쓴다
+const SAMPLE_TAGS = [
+ ['콘크리트, 나무','큰 공용 테이블, 높은 바 좌석'], ['벽돌, 금속','스툴(등받이 없음)'], ['금속, 유리','등받이 의자'],
+ ['흰 벽, 나무','소파·쿠션, 1인석'], ['나무','좌식, 등받이 의자'], ['타일, 금속','높은 바 좌석'],
+ ['유리, 금속, 식물 많음','등받이 의자'], ['나무, 콘크리트','등받이 의자, 큰 공용 테이블'], ['콘크리트, 금속','소파·쿠션'],
+ ['나무','좌식'], ['돌, 금속','등받이 의자, 높은 바 좌석'], ['타일, 나무','스툴(등받이 없음)'],
+ ['나무, 유리','야외 자리, 등받이 의자'], ['패브릭·카펫','소파·쿠션']
+];
+SAMPLE.forEach((r, i) => { if (SAMPLE_TAGS[i]) [r[10], r[11]] = SAMPLE_TAGS[i]; });
 // 예시 장소의 접근·동반 값 (SAMPLE과 같은 순서): 입구, 층 이동, 화장실, 아이 동반, 반려동물
 const SAMPLE_ACCESS = [
  ['턱 없음','1층','매장 안','유아 의자 있음','야외만'], ['경사로 있음','1층','건물 공용','동반 가능','실내 가능'],
@@ -1244,6 +1265,18 @@ async function handleFile(file){
 
 /* ---------- 상태 ---------- */
 const state = { places:[], filters:{}, q:'', sel:null, me:null, sortNear:false };
+/* 마감·좌석: 글로 쓰면 머뭇거리게 되고 사람마다 달리 적어서, 눈으로 보고 고르는 선택지로 받는다.
+   저장은 예전 칸(materials, furniture)에 "나무, 콘크리트"처럼 쉼표로 이은 글자로 한다(DB는 그대로).
+   선택지에 없는 것은 '그 밖에' 칸에 적고, 예전에 글로 쓴 기록도 그대로 보여 준다 */
+const TAGS = {
+  furniture: { label: '좌석 종류', hint: '앉을 수 있는 자리를 모두 골라 주세요',
+    values: ['등받이 의자','스툴(등받이 없음)','소파·쿠션','높은 바 좌석','좌식','큰 공용 테이블','1인석','야외 자리'] },
+  materials: { label: '눈에 보이는 마감', hint: '바닥·벽·천장에서 눈에 띄는 재료를 골라 주세요',
+    values: ['나무','콘크리트','타일','벽돌','돌','유리','금속','흰 벽','패브릭·카펫','식물 많음'] },
+};
+const TAG_KEYS = Object.keys(TAGS);
+const tagList = s => String(s || '').split(/\s*,\s*/).map(x => x.trim()).filter(Boolean);
+state.tags = Object.fromEntries(TAG_KEYS.map(k => [k, new Set()])); // 필터: 고른 것 중 하나라도 있는 곳
 for (const k of Object.keys(ENUMS)) state.filters[k] = new Set();
 state.filters.view = new Set(); // 보기: 내 기록 / 공개 기록
 const $ = id => document.getElementById(id);
@@ -1361,6 +1394,7 @@ function matches(p){
   for (const k of Object.keys(ENUMS)) { const f = state.filters[k]; if (f.size && !f.has(p[k])) return false; }
   const vf = state.filters.view; // 내 기록만, 공개 기록만 골라 보기
   if (vf.size && !((vf.has('내 기록') && p.mine && !p.sample) || (vf.has('공개 기록') && (p.pubCount > 0 || p.pub)))) return false;
+  for (const k of TAG_KEYS) { const f = state.tags[k]; if (f.size && !tagList(p[k]).some(t => f.has(t))) return false; }
   if (state.q) { const hay = (p.name + ' ' + p.materials + ' ' + p.furniture + ' ' + p.type).toLowerCase(); if (!hay.includes(state.q)) return false; }
   return true;
 }
@@ -1518,8 +1552,12 @@ function renderDetail(){
     dl.appendChild(dd);
   }
   d.appendChild(dl);
-  if (p.materials) { const b = el('div','d-block'); b.append(el('div','d-label','주요 자재'), el('div',null,p.materials)); d.appendChild(b); }
-  if (p.furniture) { const b = el('div','d-block'); b.append(el('div','d-label','가구'), el('div',null,p.furniture)); d.appendChild(b); }
+  for (const k of TAG_KEYS) { // 좌석 종류, 눈에 보이는 마감: 고른 값은 작은 칩으로
+    const list = tagList(p[k]); if (!list.length) continue;
+    const b = el('div','d-block'), tags = el('div','d-tags');
+    for (const t of list) tags.appendChild(el('span', TAGS[k].values.includes(t) ? 'd-tag' : 'd-tag free', t));
+    b.append(el('div','d-label', TAGS[k].label), tags); d.appendChild(b);
+  }
   if (p.note) { const b = el('div','d-block'); b.append(el('div','d-label','한 줄 기록'), el('p','d-note',p.note)); d.appendChild(b); }
   if (p.date) d.appendChild(el('div','d-date', `방문일 ${p.date}`));
   // 모두의 기록: 다른 사람 공개 기록이 있으면 항목별로 몇 명이 무엇을 골랐는지
@@ -1582,29 +1620,6 @@ function renderDetail(){
   d.appendChild(manage);
   }
 
-  // 길찾기는 어떤 경우에도 이 창을 다른 페이지로 바꾸지 않는다. 앱은 앱으로, 웹은 새 탭으로 연다.
-  const ends = routeEnds(p);
-  const links = ends ? routeLinks(ends.to, ends.from) : routeLinks(p, null);
-  d.appendChild(el('h3','sec-title','길찾기'));
-  // 위치를 아직 모르면 길찾기 버튼 위에 눈에 띄게 먼저 권한다
-  if (!routeOrigin()) {
-    const loc = el('button','d-loc', watchId !== null ? '내 위치를 찾는 중이에요…' : '내 위치 켜고 출발지 자동으로 넣기'); loc.type = 'button';
-    loc.disabled = watchId !== null;
-    loc.addEventListener('click', () => locate(false, true));
-    d.appendChild(loc);
-    if (state.locError) d.appendChild(el('p','d-tnote err', state.locError));
-  }
-  if (IS_MOBILE) {
-    const app = el('a','d-route','네이버 지도 앱으로 길찾기'); app.href = links.app;
-    const web = el('a','d-route ghost','앱이 없으면 웹에서 보기'); web.href = links.web; web.target = '_blank'; web.rel = 'noopener';
-    d.append(app, web);
-  } else {
-    const web = el('a','d-route','네이버 지도로 길찾기'); web.href = links.web; web.target = '_blank'; web.rel = 'noopener';
-    d.appendChild(web);
-  }
-  d.appendChild(el('p','d-route-note', ends
-    ? `출발 '${ends.from.name}', 도착 '${ends.to.name}'(으)로 들어가 있어요.` + (IS_MOBILE ? ' 길찾기를 마치고 돌아오면 이 화면이 그대로 남아 있어요.' : '')
-    : '위치를 켜지 않으면 네이버 지도에서 출발지를 직접 입력해야 해요.'));
   d.hidden = false;
 }
 /* ---------- 장소 공유 링크 ---------- */
@@ -2426,10 +2441,12 @@ function renderTransit(d, p){
   }
   const sw = isSwapped(p), e = routeEnds(p);
   const auto = !t && !!e && (!!state.routeFrom || sw); // 출발지를 골라 두었거나 바꾼 길찾기 중이면 열자마자 찾는다
-  if (!t && !auto) { // 처음에는 길찾기 버튼 하나만. 누르면 출발지(내 위치 또는 검색)를 고른다
+  if (!t && !auto) { // 처음에는 제목 없이 길찾기 버튼 하나만. 누르면 출발지(내 위치 또는 검색)를 고른다
     const finding = !o && watchId !== null && state.routeAfterFix === p.id;
-    const b = el('button','d-tbtn', finding ? '내 위치를 찾는 중이에요…' : '길찾기'); b.type = 'button'; b.disabled = finding;
+    const b = el('button','d-go', finding ? '내 위치를 찾는 중이에요…' : '길찾기'); b.type = 'button'; b.disabled = finding;
     b.addEventListener('click', () => openOriginPicker(p)); box.appendChild(b);
+    if (state.locError && state.routeAfterFix === p.id) box.appendChild(el('p','d-tnote err', state.locError));
+    naverLinks(box, p, true);
     d.appendChild(box); return;
   }
   box.appendChild(el('h3','sec-title','길찾기'));
@@ -2478,7 +2495,24 @@ function renderTransit(d, p){
     if (hidden) box.appendChild(el('p','d-tnote', `지금 시간에 운행하지 않는 경로 ${hidden}개는 뺐어요.`));
     box.appendChild(el('p','d-tsrc', t.source === 'tmap' ? '경로 정보: TMAP (지금 시각 기준)' : '경로 정보: ODsay (막차·첫차 시간은 대략적으로 걸렀어요)'));
   }
+  naverLinks(box, p, false);
   d.appendChild(box);
+}
+// 네이버 지도로 넘기기. 이 창은 그대로 두고, 앱은 앱으로, 웹은 새 탭으로 연다.
+// 처음(경로 찾기 전)에는 길찾기 버튼 아래 작은 글자 링크, 경로를 찾은 뒤에는 목록 아래 버튼으로 둔다
+function naverLinks(box, p, small){
+  const ends = routeEnds(p);
+  const links = ends ? routeLinks(ends.to, ends.from) : routeLinks(p, null);
+  const a = (cls, text, href, tab) => { const x = el('a', cls, text); x.href = href; if (tab) { x.target = '_blank'; x.rel = 'noopener'; } return x; };
+  if (small) {
+    const row = el('p','d-nlinks');
+    if (IS_MOBILE) row.append(a(null, '네이버 지도 앱에서 열기', links.app), el('span', null, '·'), a(null, '웹에서 열기', links.web, true));
+    else row.appendChild(a(null, '네이버 지도에서 열기', links.web, true));
+    box.appendChild(row); return;
+  }
+  if (IS_MOBILE) box.append(a('d-route ghost', '네이버 지도 앱에서 이어 보기', links.app), a('d-route ghost', '앱이 없으면 웹에서 보기', links.web, true));
+  else box.appendChild(a('d-route ghost', '네이버 지도에서 이어 보기', links.web, true));
+  if (ends) box.appendChild(el('p','d-route-note', `출발 '${ends.from.name}', 도착 '${ends.to.name}'(으)로 들어가 있어요.` + (IS_MOBILE ? ' 다녀와도 이 화면은 그대로 남아 있어요.' : '')));
 }
 function walkOption(p, t){
   const w = t.walk;
@@ -2667,7 +2701,7 @@ function syncExtMarkers(){
 const NEAR_KINDS = [
   { code: 'CS2', label: '편의점',   color: '#2E9E6A', zoom: 16, on: true }, // 가게가 많아서 한 단계 더 확대했을 때만
   { code: 'CE7', label: '카페',     color: '#7A8494', zoom: 15, on: true },
-  { code: 'FD6', label: '음식점',   color: '#E8742C', zoom: 16, on: true },
+  { code: 'FD6', label: '음식점',   color: '#E8742C', zoom: 16 }, // 번화가는 수백 곳이라 처음에는 끄고, 필요할 때 켠다
   { code: 'PM9', label: '약국',     color: '#D9465F', zoom: 15, on: true },
   { code: 'BK9', label: '은행',     color: '#C99A06', zoom: 15, on: true },
   { code: 'CT1', label: '문화시설', color: '#9B5DE5', zoom: 15 },
@@ -2675,7 +2709,7 @@ const NEAR_KINDS = [
 ];
 const NEAR_KIND = Object.fromEntries(NEAR_KINDS.map(k => [k.code, k]));
 const NEAR_TW = 0.006, NEAR_TH = 0.0045, NEAR_MAX_TILES = 24, NEAR_MAX_DEPTH = 2, NEAR_PARALLEL = 4;
-const NEAR_PREF = 'gongan-sillok:near2'; // 종류가 늘어서(편의점·약국·은행) 예전에 기억한 값은 버리고 새로 시작한다
+const NEAR_PREF = 'gongan-sillok:near3'; // 처음 켜지는 종류가 바뀌면(편의점·약국·은행 추가, 음식점 빼기) 예전에 기억한 값은 버리고 새로 시작한다
 state.near = new Map(); // id → 장소
 // 주변 장소는 처음에는 꺼 둔다(내 기록 핀이 잘 보이도록). '주변 장소'를 직접 눌러야 켜지고,
 // 켤 때는 지난번에 골라 둔 종류(NEAR_PREF)를 쓴다
@@ -2686,7 +2720,7 @@ const nearMarkers = new Map();
 let nearTimer = null, nearOff = false;
 const NEAR_ZOOM_BASE = 15; // 이보다 멀리 보면 주변 장소 점을 숨긴다
 const NEAR_ROW_ZOOM = 14;  // 범례의 '주변' 줄은 한 단계 더 멀리서부터 보여 준다(있는 줄 알도록)
-const nearShown = () => !!map && !state.collect && map.getZoom() >= NEAR_ZOOM_BASE && !Object.keys(ENUMS).some(k => state.filters[k].size) && !state.filters.view.size;
+const nearShown = () => !!map && !state.collect && map.getZoom() >= NEAR_ZOOM_BASE && !filterCount();
 function queueNearby(){ clearTimeout(nearTimer); nearTimer = setTimeout(loadNearby, 350); }
 function toggleNearKind(code){
   if (state.nearKinds.has(code)) state.nearKinds.delete(code); else state.nearKinds.add(code);
@@ -2778,7 +2812,7 @@ function renderNearMarkers(){
 }
 // 범례 아래 줄: 주변 장소 종류 켜고 끄기 (확대했을 때만)
 function nearLegendRow(lg){
-  if (!map || nearOff || isPhone() || state.collect || map.getZoom() < NEAR_ROW_ZOOM || Object.keys(ENUMS).some(k => state.filters[k].size) || state.filters.view.size) return;
+  if (!map || nearOff || isPhone() || state.collect || map.getZoom() < NEAR_ROW_ZOOM || filterCount()) return;
   const row = el('div','near-row'); row.appendChild(el('b', null, '주변'));
   const z = map.getZoom();
   const hint = z < NEAR_ZOOM_BASE ? el('span','near-hint', '한 번 더 확대하면 보여요') : null;
@@ -2969,13 +3003,29 @@ function renderAdd(){
     if (k === 'noise') w.appendChild(noiseMeter(v => { addState.values[k] = v; chips.querySelectorAll('.chip').forEach(c => c.setAttribute('aria-pressed', String(addState.values[k] === c.textContent))); }));
     body.appendChild(w);
   }
-  const matI = text(tx.materials, 80), furI = text(tx.furniture, 80);
+  // 좌석 종류·마감: 여러 개 고르기 + '그 밖에' 짧은 칸. 예전에 글로 쓴 값 중 선택지에 없는 것은 '그 밖에'로 옮겨 보여 준다
+  const tagField = k => {
+    const def = TAGS[k], cur = tagList(tx[k]), on = new Set(cur.filter(t => def.values.includes(t)));
+    const w = el('div','add-field'); w.append(el('span','lbl', def.label), el('span','add-hint tag-hint', def.hint));
+    const chips = el('div','chips'); chips.setAttribute('role','group'); chips.setAttribute('aria-label', def.label);
+    for (const v of def.values) {
+      const b = el('button','chip', v); b.type = 'button'; b.setAttribute('aria-pressed', String(on.has(v)));
+      b.addEventListener('click', () => { if (on.has(v)) on.delete(v); else on.add(v); b.setAttribute('aria-pressed', String(on.has(v))); });
+      chips.appendChild(b);
+    }
+    const other = text(cur.filter(t => !def.values.includes(t)).join(', '), 40); other.placeholder = '그 밖에 (없으면 비워 두세요)'; other.className = 'tag-other';
+    other.setAttribute('aria-label', `${def.label} 그 밖에`);
+    w.append(chips, other);
+    return { node: w, get value(){ return cleanText([...def.values.filter(v => on.has(v)), ...tagList(other.value)].join(', '), 80); } };
+  };
+  const furT = tagField('furniture'), matT = tagField('materials');
+  const matI = matT, furI = furT;
   const noteI = el('textarea'); noteI.maxLength = 200; noteI.placeholder = '예: 창가 자리는 오후 3시 이후 볕이 깊게 든다'; noteI.value = tx.note || '';
   const s = seoulNow().stamp; const dateI = el('input'); dateI.type = 'date';
   dateI.value = /^\d{4}-\d{2}-\d{2}$/.test(tx.date || '') ? tx.date : `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}`;
-  body.append(field('주요 자재', matI), field('가구', furI), field('한 줄 기록', noteI), field('방문일', dateI));
+  body.append(furT.node, matT.node, field('한 줄 기록', noteI), field('방문일', dateI));
   if (auth.user) body.appendChild(photoField());
-  else if (sb) body.appendChild(el('p','add-hint', '로그인하면 사진도 한 장 함께 올릴 수 있어요.'));
+  else if (sb) body.appendChild(el('p','add-hint', '로그인하면 사진도 함께 올릴 수 있어요(최대 5장).'));
   if (addState.status) body.appendChild(el('p','add-status' + (addState.err ? ' err' : ''), addState.status));
   // 로그인했으면 공개 여부를 고른다(기본은 나만 보기)
   let pubI = null;
@@ -3052,15 +3102,16 @@ async function loadMine(){
   setMine(places, '내 기록(계정)', false);
   if (!places.length) setStatus('아직 내 기록이 없어요. + 장소 추가로 첫 기록을 남겨 보세요.', false);
 }
+const recordVals = (np, isPublic) => ({ noise: np.noise || null, spacing: np.spacing || null, light: np.light || null, outlet: np.outlet || null, stay: np.stay || null,
+  materials: np.materials || null, furniture: np.furniture || null, note: np.note || null, visited_on: /^\d{4}-\d{2}-\d{2}$/.test(np.date) ? np.date : null, is_public: isPublic,
+  ...Object.fromEntries(ACCESS_KEYS.map(k => [dbCol(k), np[k] || null])) });
 async function saveToServer(row, picked, editing, isPublic){
   const fail = msg => { Object.assign(addState, { status: msg, err: true, busy: false }); renderAdd(); };
   const { places: [np] } = rowsToPlaces([SAMPLE_ROWS[0], row]); // 저장 전 검사
   if (!np) return fail('저장하지 못했어요. 이름이 비어 있지 않은지 확인해 주세요.');
   if (addState.busy) return;
   Object.assign(addState, { busy: true, status: '저장하는 중이에요…', err: false }); renderAdd();
-  const vals = { noise: np.noise || null, spacing: np.spacing || null, light: np.light || null, outlet: np.outlet || null, stay: np.stay || null,
-    materials: np.materials || null, furniture: np.furniture || null, note: np.note || null, visited_on: /^\d{4}-\d{2}-\d{2}$/.test(np.date) ? np.date : null, is_public: isPublic,
-    ...Object.fromEntries(ACCESS_KEYS.map(k => [dbCol(k), np[k] || null])) };
+  const vals = recordVals(np, isPublic);
   // 사진: 새로 고른 사진은 먼저 올리고, 기록 저장이 실패하면 올린 사진을 지운다. 뺀 사진은 저장 뒤 지운다
   const oldPaths = (addState.server && addState.server.photos) || [], uploaded = [], paths = [];
   for (const ph of (addState.photos || []).slice(0, PHOTO_LIMIT)) {
@@ -3115,6 +3166,78 @@ async function deleteFromServer(p){
   if (p.photos && p.photos.length) sb.storage.from('photos').remove(p.photos).catch(() => {});
   select(null); await loadMine(); await loadPublic();
   setStatus(`'${p.name}' 기록을 지웠어요.`, false);
+}
+
+/* ---------- 이 브라우저 기록을 계정으로 옮기기 ---------- */
+// 로그인하지 않고 이 브라우저에 남긴 기록(엑셀로 불러온 것 포함)을 로그인한 뒤 계정으로 옮긴다.
+// 장소는 같은 이름·가까운 좌표의 공용 장소가 있으면 그곳을 쓰고, 없으면 새로 만든다.
+// 이미 계정에 기록이 있는 장소는 계정 쪽을 그대로 두고 건너뛴다. 옮기지 못한 것만 이 브라우저에 남긴다
+const MOVE_ASKED = 'gongan-sillok:move-asked';
+function localRecords(){
+  try {
+    const saved = JSON.parse(localStorage.getItem(STORE_KEY) || 'null');
+    if (!saved || !Array.isArray(saved.rows)) return [];
+    // 예시(가상) 장소는 고쳐서 저장됐더라도 옮기지 않는다
+    return rowsToPlaces(saved.rows.slice(0, MAX_ROWS + 1).map(r => Array.isArray(r) ? r.slice(0, 20) : [])).places.filter(p => !isSamplePlace(p));
+  } catch { return []; }
+}
+function offerMove(force){
+  const list = localRecords();
+  if (!auth.user || !sb || !list.length) return;
+  if (!force) { let asked = null; try { asked = sessionStorage.getItem(MOVE_ASKED); } catch {} if (asked || $('addDlg').open) return; }
+  const body = $('moveBody'); body.replaceChildren();
+  const head = el('div','add-head'); head.appendChild(el('h2', null, '이 브라우저의 기록을 계정으로 옮길까요?'));
+  const x = el('button','d-close','×'); x.type = 'button'; x.setAttribute('aria-label','닫기'); x.addEventListener('click', () => later());
+  head.appendChild(x);
+  const names = list.slice(0, 5).map(p => p.name).join(', ') + (list.length > 5 ? ` 외 ${list.length - 5}곳` : '');
+  const pubW = el('label','add-pub'), pubI = el('input'); pubI.type = 'checkbox';
+  pubW.append(pubI, el('span', null, '옮기면서 다른 사람에게도 공개하기'));
+  const status = el('p','add-status');
+  const act = el('div','add-actions');
+  const no = el('button','btn ghost','나중에'); no.type = 'button';
+  const go = el('button','btn add', `${list.length}곳 옮기기`); go.type = 'button';
+  const later = () => { try { sessionStorage.setItem(MOVE_ASKED, '1'); } catch {} $('moveDlg').close(); };
+  no.addEventListener('click', later);
+  go.addEventListener('click', async () => {
+    go.disabled = no.disabled = true;
+    const r = await moveRecords(list, pubI.checked, (i) => { status.textContent = `옮기는 중이에요… (${i}/${list.length})`; });
+    $('moveDlg').close();
+    setStatus(r.failed ? `${r.moved}곳을 옮겼어요. ${r.failed}곳은 옮기지 못해 이 브라우저에 남겨 뒀어요. 계정 메뉴에서 다시 옮길 수 있어요.`
+      : `${r.moved}곳을 계정으로 옮겼어요.` + (r.skipped ? ` ${r.skipped}곳은 이미 계정에 기록이 있어서 계정 쪽을 그대로 뒀어요.` : '') + ' 이제 다른 기기에서도 보여요.', !!r.failed);
+  });
+  act.append(no, go);
+  body.append(head,
+    el('p','add-hint', `로그인하기 전에 이 브라우저에 남긴 기록이 ${list.length}곳 있어요: ${names}`),
+    el('p','add-hint', '옮기면 계정에 저장돼 다른 기기에서도 보이고, 이 브라우저에서는 지워져요. 공개를 켜지 않으면 나만 볼 수 있어요.'),
+    pubW, status, act);
+  if (!$('moveDlg').open) $('moveDlg').showModal();
+}
+async function moveRecords(list, isPublic, progress){
+  let moved = 0, skipped = 0; const left = [];
+  const norm = s => String(s || '').replace(/\s/g, '').toLowerCase();
+  for (let i = 0; i < list.length; i++) {
+    const np = list[i]; progress(i + 1);
+    try {
+      // 같은 장소 찾기: 좌표 약 50m 안에서 이름이 같거나, 아주 가까운(5m) 곳
+      const { data: near, error: e1 } = await sb.from('places').select('id, name, lat, lng')
+        .gte('lat', np.lat - 0.0005).lte('lat', np.lat + 0.0005).gte('lng', np.lng - 0.0006).lte('lng', np.lng + 0.0006).limit(20);
+      if (e1) throw e1;
+      let place = (near || []).find(x => norm(x.name) === norm(np.name)) || (near || []).find(x => distM(x, np) < 5);
+      if (!place) {
+        const { data, error } = await sb.from('places').insert({ kakao_id: null, name: np.name, type: np.type || null, address: np.addr || null, lat: np.lat, lng: np.lng }).select('id').single();
+        if (error) throw error;
+        place = data;
+      }
+      const { error } = await sb.from('records').insert({ place_id: place.id, ...recordVals(np, isPublic), photo_paths: [] });
+      if (error && error.code === '23505') skipped++; // 이미 내 기록이 있는 장소
+      else if (error) throw error;
+      else moved++;
+    } catch (e) { left.push(np); }
+  }
+  // 옮기지 못한 것만 이 브라우저에 남긴다
+  try { if (left.length) localStorage.setItem(STORE_KEY, JSON.stringify({ source: '이 브라우저의 내 기록', rows: placesToRows(left) })); else localStorage.removeItem(STORE_KEY); } catch {}
+  await loadMine(); await loadPublic(); renderAuth();
+  return { moved, skipped, failed: left.length };
 }
 
 /* ---------- 사진 (기록마다 한 장) ---------- */
@@ -3370,7 +3493,7 @@ function renderAdmin(rows, note){
     // 이유별 건수
     const counts = {}; for (const reason of r.reasons || []) counts[reason] = (counts[reason] || 0) + 1;
     card.appendChild(el('p','adm-line', `신고 ${r.report_count}건 (처리 전 ${r.open_count}건) · ` + Object.entries(counts).map(([k, n]) => `${k} ${n}`).join(' · ')));
-    const body2 = [r.note && `한 줄 기록: ${cleanText(r.note, 200)}`, r.materials && `자재: ${cleanText(r.materials, 80)}`, r.furniture && `가구: ${cleanText(r.furniture, 80)}`].filter(Boolean);
+    const body2 = [r.note && `한 줄 기록: ${cleanText(r.note, 200)}`, r.materials && `마감: ${cleanText(r.materials, 80)}`, r.furniture && `좌석: ${cleanText(r.furniture, 80)}`].filter(Boolean);
     for (const t of body2) card.appendChild(el('p','adm-rec', t));
     for (const dtl of (r.details || []).slice(0, 5)) card.appendChild(el('p','adm-detail', `신고 내용: ${cleanText(dtl, 200)}`));
     const rp = validPhotos(r.photo_paths);
@@ -3389,6 +3512,7 @@ function renderAuth(){
   $('btnInstall').hidden = isStandalone(); // 이미 홈 화면 아이콘으로 열었으면 숨긴다
   if (!sb) { $('acctSep').hidden = true; return; }
   const local = !auth.user;
+  $('btnMove').hidden = local || !localRecords().length; // 로그인했는데 이 브라우저에 옮기지 않은 기록이 남아 있으면
   $('btnLoad').hidden = $('btnReset').hidden = !local; // 엑셀 불러오기·예시 되돌리기는 이 브라우저 저장용이라 로그인 중에는 숨긴다
   $('acctSep').hidden = !auth.ready || (!local && $('btnInstall').hidden);
   if (!auth.ready) return;
@@ -3557,7 +3681,7 @@ async function onAuth(session){
     } else { auth.nickname = ''; auth.role = 'user'; loadInitial(); }
   }
   renderAuth();
-  if (changed && user) resumePendingAdd();
+  if (changed && user) { resumePendingAdd(); offerMove(); }
   if (changed) loadSaves(); // 로그인하면 계정의 찜(이 기기의 찜은 계정으로 옮긴다), 로그아웃하면 이 기기의 찜
 }
 // 로그인하고 돌아왔는데 오류가 있으면(동의항목 설정 등) 알려 주고 주소를 정리한다
@@ -3642,7 +3766,7 @@ function toggleQuick(q){
   const rest = state.badges.filter(k => k !== q.k);
   setBadges(on ? rest : [...rest, q.k]); // 다시 그리기도 여기서 한다
 }
-const filterCount = () => Object.keys(ENUMS).reduce((n, k) => n + state.filters[k].size, 0) + state.filters.view.size;
+const filterCount = () => Object.keys(ENUMS).reduce((n, k) => n + state.filters[k].size, 0) + state.filters.view.size + TAG_KEYS.reduce((n, k) => n + state.tags[k].size, 0);
 const saveNearKinds = () => { if (state.nearKinds.size) try { localStorage.setItem(NEAR_PREF, JSON.stringify([...state.nearKinds])); } catch {} };
 let nearBefore = null; // '주변 장소'를 끄기 전에 켜 두었던 종류
 function renderQuickChips(){
@@ -3657,7 +3781,7 @@ function renderQuickChips(){
     b.addEventListener('click', () => toggleQuick(q)); box.appendChild(b);
   }
   const nb = el('button','qchip', '주변 장소'); nb.type = 'button'; nb.setAttribute('aria-pressed', String(state.nearKinds.size > 0));
-  nb.title = '지도를 확대하면 기록 없는 편의점·카페·음식점·약국·은행 등이 점으로 보여요';
+  nb.title = '지도를 확대하면 기록 없는 편의점·카페·약국·은행 등이 점으로 보여요';
   nb.addEventListener('click', () => {
     if (state.nearKinds.size) { nearBefore = [...state.nearKinds]; state.nearKinds = new Set(); }
     else state.nearKinds = new Set(nearBefore && nearBefore.length ? nearBefore : nearPref());
@@ -3678,7 +3802,7 @@ function renderQuickChips(){
 // 켰는데 지도가 너무 멀면 점이 안 보이니 확대하라고 알려 준다
 function nearZoomHint(k){
   if (!state.nearKinds.size || !map) return;
-  if (Object.keys(ENUMS).some(x => state.filters[x].size) || state.filters.view.size) { toast('조건으로 거르는 동안에는 주변 장소를 숨겨요. 조건을 풀면 보여요.'); return; }
+  if (filterCount()) { toast('조건으로 거르는 동안에는 주변 장소를 숨겨요. 조건을 풀면 보여요.'); return; }
   if (map.getZoom() < (k ? k.zoom : NEAR_ZOOM_BASE)) toast('지도를 조금 더 확대하면 주변 장소가 점으로 보여요.');
 }
 // 빠른 조건 줄이 넘칠 때만 오른쪽 끝을 흐리게, 끝까지 넘기면 흐림을 뺀다
@@ -3731,6 +3855,17 @@ function renderFilterExtras(){
       row.appendChild(b);
     }
     fb.appendChild(row);
+  }
+  const ftg = $('fdTags'); ftg.replaceChildren();
+  for (const k of TAG_KEYS) {
+    ftg.appendChild(el('div','fd-group', TAGS[k].label));
+    const row = el('div','fd-chips');
+    for (const v of TAGS[k].values) {
+      const b = el('button','chip', v); b.type = 'button'; b.setAttribute('aria-pressed', String(state.tags[k].has(v)));
+      b.addEventListener('click', () => { const s = state.tags[k]; if (s.has(v)) s.delete(v); else s.add(v); renderAll(); renderNearMarkers(); });
+      row.appendChild(b);
+    }
+    ftg.appendChild(row);
   }
   const fn = $('fdNear'); fn.replaceChildren();
   const nrow = el('div','fd-chips');
@@ -3909,6 +4044,7 @@ $('file').addEventListener('change', e => { const f = e.target.files && e.target
 $('btnAdd').addEventListener('click', () => startAdd());
 $('btnInstall').addEventListener('click', () => { closeAcct(); addToHome(); });
 $('btnTour').addEventListener('click', () => { closeAcct(); startTour(true); });
+$('btnMove').addEventListener('click', () => { closeAcct(); offerMove(true); });
 $('btnLeave').addEventListener('click', () => { closeAcct(); openLeave(); });
 // 사진 크게 보기: 닫기, 이전·다음, 사진 바깥(검은 부분)을 누르면 닫기, 키보드 화살표
 window.addEventListener('resize', placeLegend);
@@ -3956,6 +4092,7 @@ $('q').addEventListener('blur', () => setTimeout(() => { if (document.activeElem
 $('recent').addEventListener('pointerdown', e => e.preventDefault()); // 목록을 눌러도 검색창 포커스를 잃지 않게
 $('btnClear').addEventListener('click', () => {
   for (const s of Object.values(state.filters)) s.clear();
+  for (const s of Object.values(state.tags)) s.clear();
   document.querySelectorAll('.chip').forEach(c => c.setAttribute('aria-pressed','false'));
   $('q').value = ''; state.q = ''; renderAll(); queueExtSearch('');
 });
