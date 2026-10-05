@@ -4,12 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>공간실록 시제품</title>
-<meta name="description" content="평점 대신 공간의 사실을 기록하는 지도. 소음, 좌석 간격, 채광, 콘센트, 머무르기를 기준에 따라 남기고 함께 봐요.">
+<meta name="description" content="입구 계단, 화장실, 소음, 콘센트처럼 다녀온 사람만 아는 사실을 평점 대신 남기고 함께 보는 공간 지도예요.">
 <!-- 카톡 등에 링크를 보냈을 때 미리보기 -->
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="공간실록">
 <meta property="og:title" content="공간실록 · 평점 대신 공간의 사실">
-<meta property="og:description" content="소음, 좌석 간격, 콘센트부터 입구 계단, 화장실까지. 공간을 평점 대신 사실로 기록하는 지도예요.">
+<meta property="og:description" content="입구 계단, 화장실, 소음, 콘센트처럼 다녀온 사람만 아는 사실을 평점 대신 남기고 함께 보는 공간 지도예요.">
 <meta property="og:image" content="https://ian-space.github.io/gongan-sillok/icons/icon-512.png">
 <meta property="og:url" content="https://ian-space.github.io/gongan-sillok/">
 <link rel="manifest" href="manifest.webmanifest">
@@ -732,9 +732,9 @@ html{touch-action:manipulation}
   <div class="splash-in">
     <div class="splash-pin"><i></i><b></b></div>
     <p class="splash-name">공간실록</p>
-    <p class="splash-tag">평점 대신 공간의 사실을 기록합니다</p>
+    <p class="splash-tag">평점 대신 사실로 기록하는 공간 지도</p>
     <ul class="splash-attrs">
-      <li style="--d:#7B3FF2">소음</li><li style="--d:#00A6A6">좌석 간격</li><li style="--d:#FFB000">채광</li><li style="--d:#FF3D6E">콘센트</li><li style="--d:#1F5EFF">머무르기</li>
+      <li style="--d:#00B85C">입구 계단</li><li style="--d:#1F5EFF">화장실</li><li style="--d:#FFB000">아이·반려동물</li><li style="--d:#7B3FF2">소음</li><li style="--d:#FF3D6E">콘센트</li>
     </ul>
   </div>
 </div>
@@ -753,7 +753,7 @@ html{touch-action:manipulation}
       <div class="brand-row">
         <h1 class="brand">공간실록</h1>
       </div>
-      <p class="tagline">평점 대신 공간의 사실을 기록합니다. 시제품.</p>
+      <p class="tagline">평점 대신 사실로 기록하는 공간 지도. 시제품.</p>
       <input type="file" id="file" accept=".xlsx,.csv" hidden>
       <!-- 패널이 접혀 있을 때도 보이는 한 줄: 지금 지도에 보이는 곳 수와 사실 요약, 기록하기 -->
       <div class="peek">
@@ -4015,15 +4015,16 @@ function renderCollectBar(){
 
 /* ---------- 처음 온 사람 안내 (한 번만, 말풍선 몇 장) ---------- */
 // 지도와 핵심 버튼을 하나씩 짚어 준다. 끝까지 보거나 건너뛰면 다시 띄우지 않고, 계정 메뉴에서 다시 볼 수 있다
-const TOUR_KEY = 'gongan-sillok:tour-v1';
+// v2: 접근성·참여(기록하기)를 맨 앞에, 주변 장소와 출발·도착 길찾기를 더했다. 내용이 바뀌어 v1을 본 사람에게도 한 번 더 보여 준다
+const TOUR_KEY = 'gongan-sillok:tour-v2';
 const tourSteps = () => [
-  { sel: '#qchips', text: '조용한 곳, 턱 없음 같은 조건을 누르면 그 조건에 맞는 곳만 남고, 핀 옆에 값이 보여요.' },
-  { sel: '.qchip.filter', text: '필터에서는 열 가지 항목을 모두 고를 수 있어요. ? 를 누르면 조용함, 보통 같은 값의 기준이 나와요.' },
+  { sel: '#btnAdd', text: '공간실록은 다녀온 사람들이 남긴 사실로 만들어져요. 입구에 계단이 있는지, 화장실은 어디인지, 시끄러운지를 평점 대신 남겨요. 다녀온 곳이 있다면 + 기록으로 함께 남겨 주세요.' },
+  { sel: '#qchips', text: '턱 없음, 조용한 곳 같은 조건을 누르면 맞는 곳만 남아요. 필터에서는 모든 항목과 좌석·마감까지 고를 수 있어요.' },
+  { sel: isPhone() ? '#nchips' : '#qchips > .qchip:last-child', text: '주변 장소를 켜면 아직 기록이 없는 편의점·카페·약국·은행도 점으로 보여요. 눌러서 바로 기록할 수 있어요.' },
   isPhone()
-    ? { sel: '.peek', text: '아래 패널을 끌어 올리면 한눈에 보기, 목적별 추천, 장소 목록이 나와요.' }
-    : { sel: '#list', text: '목록이나 지도의 핀을 누르면 그 장소의 기록이 열려요.' },
+    ? { sel: '.peek', text: '아래 패널을 올리면 장소 목록이 나와요. 장소를 열면 기록과 함께 [출발]·[도착] 길찾기를 쓸 수 있어요.' }
+    : { sel: '#list', text: '목록이나 지도의 핀을 누르면 그 장소의 기록이 열리고, [출발]·[도착]으로 길찾기도 할 수 있어요.' },
   { sel: '#zsaved', text: '장소를 열고 하트를 누르면 찜돼요. 이 버튼으로 찜한 곳과 내 기록만 모아 볼 수 있어요.' },
-  ...(isPhone() ? [{ sel: '#map', center: true, text: '지도의 빈 곳을 한 번 누르면 버튼이 숨고 지도만 보여요. 다시 누르면 돌아와요.' }] : []),
 ];
 let tourAt = -1;
 function startTour(force){
