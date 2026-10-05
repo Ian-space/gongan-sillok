@@ -180,6 +180,10 @@ button,input{font:inherit;color:inherit}
 .chips{display:flex;flex-wrap:wrap;gap:6px}
 .chip{border:1px solid var(--line);background:transparent;border-radius:999px;padding:4px 11px;font-size:13px;cursor:pointer}
 .chip[aria-pressed="true"]{background:var(--mark);color:var(--mark-ink);border-color:var(--mark);font-weight:600}
+.chip.unknown{border-style:dashed;color:var(--muted)}
+.chip.unknown[aria-pressed="true"]{background:var(--paper);color:var(--ink);border:1px solid var(--muted);font-weight:600}
+.chip-ex{margin-left:4px;font-size:11px;color:var(--muted);font-weight:400}
+.chip[aria-pressed="true"] .chip-ex{color:inherit;opacity:.75}
 .count-row{display:flex;justify-content:space-between;align-items:baseline;padding:14px 22px 8px}
 .count{font-size:13px;color:var(--muted)}
 .linkbtn{background:none;border:0;color:var(--blue);cursor:pointer;font-size:13px;padding:0}
@@ -1040,7 +1044,7 @@ const SAMPLE = [
 // 예시 장소의 마감·좌석 (SAMPLE과 같은 순서). 고르는 방식으로 바뀐 뒤의 값으로 덮어쓴다
 const SAMPLE_TAGS = [
  ['콘크리트, 나무','큰 공용 테이블, 높은 바 좌석'], ['벽돌, 금속','스툴(등받이 없음)'], ['금속, 유리','등받이 의자'],
- ['흰 벽, 나무','소파·쿠션, 1인석'], ['나무','좌식, 등받이 의자'], ['타일, 금속','높은 바 좌석'],
+ ['페인트 벽, 나무','소파·쿠션, 1인석'], ['나무','좌식, 등받이 의자'], ['타일, 금속','높은 바 좌석'],
  ['유리, 금속, 식물 많음','등받이 의자'], ['나무, 콘크리트','등받이 의자, 큰 공용 테이블'], ['콘크리트, 금속','소파·쿠션'],
  ['나무','좌식'], ['돌, 금속','등받이 의자, 높은 바 좌석'], ['타일, 나무','스툴(등받이 없음)'],
  ['나무, 유리','야외 자리, 등받이 의자'], ['패브릭·카펫','소파·쿠션']
@@ -1285,10 +1289,15 @@ const TAGS = {
   furniture: { label: '좌석 종류', hint: '앉을 수 있는 자리를 모두 골라 주세요',
     values: ['등받이 의자','스툴(등받이 없음)','소파·쿠션','높은 바 좌석','좌식','큰 공용 테이블','1인석','야외 자리'] },
   materials: { label: '눈에 보이는 마감', hint: '바닥·벽·천장에서 눈에 띄는 재료를 골라 주세요',
-    values: ['나무','콘크리트','타일','벽돌','돌','유리','금속','흰 벽','패브릭·카펫','식물 많음'] },
+    values: ['나무','콘크리트','타일','벽돌','돌','유리','금속','페인트 벽','패브릭·카펫','식물 많음'],
+    // 칩 옆에 작게 붙이는 예. 저장은 앞의 짧은 이름만 한다
+    ex: { '나무':'원목·합판', '콘크리트':'노출 콘크리트', '벽돌':'적벽돌', '돌':'대리석·석재', '유리':'통창·유리벽', '금속':'철제·스테인리스', '페인트 벽':'흰 벽 등' } },
 };
 const TAG_KEYS = Object.keys(TAGS);
-const tagList = s => String(s || '').split(/\s*,\s*/).map(x => x.trim()).filter(Boolean);
+const TAG_ALIAS = { '흰 벽': '페인트 벽' }; // 이름을 바꾼 선택지: 예전 값도 새 이름으로 읽는다
+const tagList = s => [...new Set(String(s || '').split(/\s*,\s*/).map(x => x.trim()).filter(Boolean).map(x => TAG_ALIAS[x] || x))];
+// 선택지 칩 안의 글자: 이름 + 작은 예
+function tagChipLabel(b, k, v){ b.textContent = v; const ex = TAGS[k].ex && TAGS[k].ex[v]; if (ex) b.appendChild(el('small','chip-ex', ex)); }
 state.tags = Object.fromEntries(TAG_KEYS.map(k => [k, new Set()])); // 필터: 고른 것 중 하나라도 있는 곳
 for (const k of Object.keys(ENUMS)) state.filters[k] = new Set();
 state.filters.view = new Set(); // 보기: 내 기록 / 공개 기록
@@ -1560,7 +1569,7 @@ function renderDetail(){
     if (groupOf(k) === 'access' && accessEmpty) continue;
     dl.appendChild(el('dt', null, def.label));
     const dd = el('dd');
-    if (!p[k]) dd.appendChild(el('span','opt none','기록 없음'));
+    if (!p[k]) dd.appendChild(el('span','opt none', groupOf(k) === 'access' ? '모름' : '기록 없음'));
     else for (const v of def.values) dd.appendChild(el('span', 'opt' + (v === p[k] ? ' on' : ''), v));
     dl.appendChild(dd);
   }
@@ -3012,18 +3021,27 @@ function renderAdd(){
   for (const [k, def] of Object.entries(ENUMS)) {
     if (groupOf(k) !== lastGroup) {
       lastGroup = groupOf(k);
-      body.appendChild(el('h3','add-group', GROUPS.find(g => g.id === lastGroup).label + (lastGroup === 'access' ? ' · 아는 것만 골라도 돼요' : '')));
+      body.appendChild(el('h3','add-group', GROUPS.find(g => g.id === lastGroup).label));
     }
     const w = el('div','add-field'); w.appendChild(el('span','lbl', def.label));
     const chips = el('div','chips'); chips.setAttribute('role','group'); chips.setAttribute('aria-label', def.label);
+    // 접근·동반은 물어보지 않으면 모를 때가 많아 '모름'을 함께 둔다. 모름은 값 없음('')으로 저장한다(기록 안 함과 같다)
+    const unknown = groupOf(k) === 'access';
+    const sync = () => chips.querySelectorAll('.chip').forEach(c => c.setAttribute('aria-pressed', String(c.dataset.v === (addState.values[k] || ''))));
     for (const v of def.values) {
-      const b = el('button','chip', v); b.type = 'button'; b.setAttribute('aria-pressed', String(addState.values[k] === v));
-      b.addEventListener('click', () => { addState.values[k] = addState.values[k] === v ? '' : v; chips.querySelectorAll('.chip').forEach(c => c.setAttribute('aria-pressed', String(addState.values[k] === c.textContent))); });
+      const b = el('button','chip', v); b.type = 'button'; b.dataset.v = v;
+      b.addEventListener('click', () => { addState.values[k] = addState.values[k] === v ? '' : v; sync(); });
       chips.appendChild(b);
     }
+    if (unknown) {
+      const b = el('button','chip unknown', '모름'); b.type = 'button'; b.dataset.v = '';
+      b.addEventListener('click', () => { addState.values[k] = ''; sync(); });
+      chips.appendChild(b);
+    }
+    sync();
     w.appendChild(chips);
     // 소음은 마이크로 재서 값을 골라 줄 수 있다
-    if (k === 'noise') w.appendChild(noiseMeter(v => { addState.values[k] = v; chips.querySelectorAll('.chip').forEach(c => c.setAttribute('aria-pressed', String(addState.values[k] === c.textContent))); }));
+    if (k === 'noise') w.appendChild(noiseMeter(v => { addState.values[k] = v; sync(); }));
     body.appendChild(w);
   }
   // 좌석 종류·마감: 여러 개 고르기 + '그 밖에' 짧은 칸. 예전에 글로 쓴 값 중 선택지에 없는 것은 '그 밖에'로 옮겨 보여 준다
@@ -3032,7 +3050,7 @@ function renderAdd(){
     const w = el('div','add-field'); w.append(el('span','lbl', def.label), el('span','add-hint tag-hint', def.hint));
     const chips = el('div','chips'); chips.setAttribute('role','group'); chips.setAttribute('aria-label', def.label);
     for (const v of def.values) {
-      const b = el('button','chip', v); b.type = 'button'; b.setAttribute('aria-pressed', String(on.has(v)));
+      const b = el('button','chip'); tagChipLabel(b, k, v); b.type = 'button'; b.setAttribute('aria-pressed', String(on.has(v)));
       b.addEventListener('click', () => { if (on.has(v)) on.delete(v); else on.add(v); b.setAttribute('aria-pressed', String(on.has(v))); });
       chips.appendChild(b);
     }
@@ -3884,7 +3902,7 @@ function renderFilterExtras(){
     ftg.appendChild(el('div','fd-group', TAGS[k].label));
     const row = el('div','fd-chips');
     for (const v of TAGS[k].values) {
-      const b = el('button','chip', v); b.type = 'button'; b.setAttribute('aria-pressed', String(state.tags[k].has(v)));
+      const b = el('button','chip'); tagChipLabel(b, k, v); b.type = 'button'; b.setAttribute('aria-pressed', String(state.tags[k].has(v)));
       b.addEventListener('click', () => { const s = state.tags[k]; if (s.has(v)) s.delete(v); else s.add(v); renderAll(); renderNearMarkers(); });
       row.appendChild(b);
     }
