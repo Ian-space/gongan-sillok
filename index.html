@@ -265,6 +265,7 @@ button.stat[aria-pressed="true"] span{color:#FFFFFF}
 .pscore{font-size:14px;font-weight:700;font-variant-numeric:tabular-nums}
 .sortbtn{border:1px solid var(--line);background:transparent;border-radius:999px;padding:2px 10px;font-size:12px;font-weight:600;cursor:pointer;color:var(--muted)}
 .sortbtn[aria-pressed="true"]{background:var(--blue);border-color:var(--blue);color:#FFFFFF}
+.sortsel{border:1px solid var(--line);background:var(--panel);border-radius:999px;padding:2px 8px;font:inherit;font-size:12px;font-weight:600;color:var(--ink);cursor:pointer}
 .item-dist{font-size:12px;font-weight:600;color:var(--blue);margin-top:2px;font-variant-numeric:tabular-nums}
 .mapctl .loc[aria-pressed="true"]{background:var(--blue);border-color:var(--blue);color:#FFFFFF}
 .me-dot{width:18px;height:18px;border-radius:50%;background:#1F5EFF;border:3px solid #FFFFFF;box-shadow:0 0 0 2px rgba(31,94,255,.35),0 1px 4px rgba(15,20,40,.4)}
@@ -650,6 +651,12 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
 .d-block{margin-top:14px;font-size:14px}
 .d-label{font-size:12px;color:var(--muted)}
 .d-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:5px}
+/* 지금도 맞나요?: 최종 확인일·일치율 + 두 버튼 */
+.check-box{margin-top:18px}
+.check-facts{margin:0 0 8px;font-size:13px;color:var(--muted)}
+.check-row{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:6px}
+.check-btn{padding:9px 12px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--ink);font:inherit;font-size:14px;font-weight:600;cursor:pointer}
+.check-btn[aria-pressed="true"]{background:var(--ink);color:var(--panel);border-color:var(--ink)}
 .d-tag{padding:3px 9px;border-radius:999px;background:var(--paper);border:1px solid var(--line);font-size:13px}
 .d-tag.free{background:transparent}
 .tag-hint{margin-top:-3px}
@@ -773,12 +780,12 @@ html{touch-action:manipulation}
     <div class="scroll">
       <section class="sec" id="extList" hidden aria-label="검색 결과: 기록 안 된 장소"></section>
       <section class="sec" id="summary" aria-label="한눈에 보기"></section>
-      <section class="sec" id="picks" aria-label="목적별 추천"></section>
+      <section class="sec" id="picks" aria-label="목적으로 보기"></section>
       <h3 class="sec-title sec-pad">목록</h3>
       <div class="count-row">
         <span class="count" id="count"></span>
         <span class="count-tools">
-          <button class="sortbtn" id="btnSort" type="button" aria-pressed="false">가까운 순</button>
+          <select class="sortsel" id="sortSel" aria-label="목록 정렬"><option value="basic">기본 순서</option><option value="near">가까운 순</option><option value="fit">조건 충족도 순</option><option value="full">정보 충실도 순</option><option value="recent">최근 확인 순</option></select>
           <button class="linkbtn" id="btnFit" type="button">지도 전체 보기</button>
           <button class="linkbtn" id="btnClear" type="button">필터 지우기</button>
         </span>
@@ -951,12 +958,15 @@ const ENUMS = {
   toilet:  { label:'화장실',    col:'화장실',   values:['매장 안','건물 공용','없음'], group:'access' },
   kids:    { label:'아이 동반', col:'아이동반', values:['유아 의자 있음','동반 가능','노키즈존'], group:'access' },
   pets:    { label:'반려동물',  col:'반려동물', values:['실내 가능','야외만','불가'], group:'access' },
-  parking: { label:'주차',      col:'주차',     values:['전용 주차장','근처 유료 주차','주차 불가'], group:'access' }
+  parking: { label:'주차',      col:'주차',     values:['전용 주차장','근처 유료 주차','주차 불가'], group:'access' },
+  // 돌봄: 육아(기저귀 교환대)와 심야 긴급(임산부 등)
+  diaper:  { label:'기저귀 교환대', col:'기저귀교환대', values:['매장 안에 있음','건물에 있음','없음'], group:'access' },
+  late:    { label:'심야 영업', col:'심야영업', values:['24시간','자정 넘어 영업','자정 전 마감'], group:'access', db:'late_night' }
 };
 // 항목 묶음: 화면(기록 창, 조건으로 찾기, 상세, 지도에 표시)을 이 두 묶음으로 나눠 보여 준다
 // 고기·구이 가게(배기 방식을 바로 펼쳐 둘 곳): 카카오 업종 이름이나 유형으로 판단한다
 const GRILL = /고기|육류|구이|갈비|삼겹|곱창|막창|대창|양꼬치|바비큐|바베큐|BBQ|숯불|화로|정육|오리|닭갈비|스테이크|焼肉/i;
-const GROUPS = [{ id:'space', label:'공간' }, { id:'access', label:'접근·동반' }];
+const GROUPS = [{ id:'space', label:'공간' }, { id:'access', label:'접근·돌봄' }];
 const groupOf = k => ENUMS[k].group || 'space';
 const ACCESS_KEYS = Object.keys(ENUMS).filter(k => groupOf(k) === 'access');
 const dbCol = k => ENUMS[k].db || k;
@@ -1016,6 +1026,14 @@ const CRITERIA = {
              v: ['가게나 건물에 손님이 쓸 수 있는 주차장이 있어요.',
                  '가게 주차장은 없지만 가까운 곳에 유료(공영) 주차장이 있어요.',
                  '가까이에 주차할 곳이 마땅치 않아요.'] },
+  diaper:  { how: '아기 기저귀를 갈 수 있는 교환대가 어디 있는지예요. 남자 화장실에도 있는지는 한 줄 기록에 남겨 주세요.',
+             v: ['매장(화장실 포함) 안에 교환대가 있어요.',
+                 '매장 밖, 같은 건물 공용 공간에 교환대가 있어요.',
+                 '가까이에 교환대가 없어요.'] },
+  late:    { how: '밤늦게 급하게 찾을 때를 위한 영업 시간이에요(임산부 심야 긴급 등). 바뀌기 쉬우니 확인한 날을 꼭 함께 봐 주세요.',
+             v: ['24시간 문을 열어요.',
+                 '자정을 넘겨서도 문을 열어요.',
+                 '자정 전에 문을 닫아요.'] },
 };
 // keys를 주면 그 항목만 보여 준다(지도에서 고른 조건의 기준만 볼 때)
 function critPanel(keys, lead){
@@ -1042,7 +1060,7 @@ function critButton(onToggle, open){
   return b;
 }
 const TEXTS = { name:['이름',40], type:['유형',20], addr:['주소',60], materials:['주요자재',80], furniture:['가구',80], note:['한줄기록',200], date:['방문일',20] };
-const HEADER_MAP = new Map([['이름','name'],['유형','type'],['주소','addr'],['위도','lat'],['경도','lng'],['소음','noise'],['좌석간격','spacing'],['채광','light'],['콘센트','outlet'],['체류','stay'],['주요자재','materials'],['마감','materials'],['가구','furniture'],['좌석종류','furniture'],['한줄기록','note'],['방문일','date'],['입구','entrance'],['층이동','floor'],['화장실','toilet'],['아이동반','kids'],['반려동물','pets'],['주차','parking'],['배기','hood'],['단차cm','stepCm'],['소음dB','noiseDb'],['방문시각','visitHour']]);
+const HEADER_MAP = new Map([['이름','name'],['유형','type'],['주소','addr'],['위도','lat'],['경도','lng'],['소음','noise'],['좌석간격','spacing'],['채광','light'],['콘센트','outlet'],['체류','stay'],['주요자재','materials'],['마감','materials'],['가구','furniture'],['좌석종류','furniture'],['한줄기록','note'],['방문일','date'],['입구','entrance'],['층이동','floor'],['화장실','toilet'],['아이동반','kids'],['반려동물','pets'],['주차','parking'],['기저귀교환대','diaper'],['심야영업','late'],['배기','hood'],['단차cm','stepCm'],['소음dB','noiseDb'],['방문시각','visitHour']]);
 
 // 예시 데이터: 가상의 장소입니다.
 const SAMPLE = [
@@ -1081,7 +1099,7 @@ const SAMPLE_ACCESS = [
  ['경사로 있음','1층','매장 안','동반 가능','실내 가능'], ['계단 있음','계단만','매장 안','노키즈존','불가']
 ];
 // 열 순서: 처음 14개는 예전과 같고, 접근·동반 5개는 맨 뒤에 붙인다(예전에 저장한 기록도 그대로 읽힌다)
-const SAMPLE_ROWS = [['이름','유형','주소','위도','경도','소음','좌석간격','채광','콘센트','체류','주요자재','가구','한줄기록','방문일','입구','층이동','화장실','아이동반','반려동물','주차','배기','단차cm','소음dB','방문시각'],
+const SAMPLE_ROWS = [['이름','유형','주소','위도','경도','소음','좌석간격','채광','콘센트','체류','주요자재','가구','한줄기록','방문일','입구','층이동','화장실','아이동반','반려동물','주차','기저귀교환대','심야영업','배기','단차cm','소음dB','방문시각'],
   ...SAMPLE.map((r, i) => [...r, ...(SAMPLE_ACCESS[i] || [])])];
 const accessOf = o => ACCESS_KEYS.map(k => o[dbCol(k)] || o[k] || ''); // 서버 줄이나 장소에서 접근·동반 값(입구…주차)을 열 순서대로
 // 접근·동반 뒤의 열: 배기 방식, 입구 단차(cm), 잰 소음(dB), 방문 시각(0~23시). 서버 줄(step_cm)과 장소(stepCm) 둘 다 받는다
@@ -1439,6 +1457,51 @@ async function loadPublic(){
   const first = !state.pub.length;
   state.pub = [...groups.values()];
   rebuild({ fit: first && !state.sel });
+  loadChecks(); // 일치율·최종 확인일도 새로
+}
+/* ---------- 일치율: 지금도 이 기록이 맞나요? ---------- */
+// 본 사람이 "맞아요 / 달라졌어요"를 한 번 누른다(카카오 로그인, 한 사람 한 응답, 다시 누르면 바뀜).
+// 응답이 MIN_CHECKS개보다 적으면 비율은 감춘다(몇 명의 응답으로 숫자가 크게 흔들리지 않게).
+// 최종 확인일 = 가장 최근 기록의 방문일과 가장 최근 '맞아요' 중 늦은 날
+state.checks = new Map(); state.myChecks = new Map();
+const MIN_CHECKS = 3;
+const kstDay = iso => iso ? new Date(iso).toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' }) : '';
+async function loadChecks(){
+  if (!sb) return;
+  const { data, error } = await sb.rpc('place_checks');
+  if (!error && data) state.checks = new Map(data.map(r => [r.place_id, { same: +r.same_n || 0, changed: +r.changed_n || 0, lastSame: r.last_same }]));
+  state.myChecks = new Map();
+  if (auth.user) { const r = await sb.from('checks').select('place_id, answer'); if (!r.error && r.data) state.myChecks = new Map(r.data.map(x => [x.place_id, x.answer])); }
+  renderAll();
+}
+function lastConfirmed(p){
+  const c = p.pid && state.checks.get(p.pid);
+  return [p.date, ...(p.recs || []).map(r => r.date), c && kstDay(c.lastSame)].filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d || '')).sort().pop() || '';
+}
+async function answerCheck(p, answer){
+  if (!auth.user) return login();
+  const { error } = await sb.rpc('check_place', { p_place: p.pid, p_answer: answer });
+  if (error) { toast('응답을 남기지 못했어요. 잠시 뒤 다시 시도해 주세요.'); return; }
+  await loadChecks();
+  toast(answer === 'same' ? '고마워요. 최종 확인일이 오늘로 바뀌었어요.' : '알려 줘서 고마워요. 무엇이 달라졌는지 기록해 주면 지도가 바로잡혀요.');
+}
+function checkBox(p){
+  const c = state.checks.get(p.pid) || { same: 0, changed: 0 }, total = c.same + c.changed, mine = state.myChecks.get(p.pid);
+  const box = el('div','check-box');
+  box.appendChild(el('h3','sec-title','지금도 이 기록이 맞나요?'));
+  const last = lastConfirmed(p);
+  box.appendChild(el('p','check-facts', [last && `최종 확인 ${last}`,
+    total >= MIN_CHECKS ? `일치율 ${Math.round(c.same / total * 100)}% (${total}명 중 ${c.same}명)` : `확인 응답 ${total}개 · ${MIN_CHECKS}개부터 일치율을 보여 줘요`].filter(Boolean).join(' · ')));
+  const row = el('div','check-row');
+  for (const [ans, label] of [['same', '맞아요'], ['changed', '달라졌어요']]) {
+    const b = el('button','check-btn', label); b.type = 'button'; b.setAttribute('aria-pressed', String(mine === ans));
+    b.addEventListener('click', () => answerCheck(p, ans));
+    row.appendChild(b);
+  }
+  box.appendChild(row);
+  if (!auth.user && sb) box.appendChild(el('p','add-hint', '누르면 카카오 로그인으로 넘어가요. 한 사람이 한 번만 응답하고, 다시 누르면 바뀌어요.'));
+  else if (mine === 'changed') box.appendChild(el('p','add-hint', '무엇이 달라졌는지 기록으로 남겨 주시면 지도가 바로잡혀요.'));
+  return box;
 }
 function placesToRows(places){
   return [SAMPLE_ROWS[0], ...places.map(p => [p.name,p.type,p.addr,p.lat,p.lng,p.noise,p.spacing,p.light,p.outlet,p.stay,p.materials,p.furniture,p.note,p.date, ...accessOf(p), ...extraOf(p)])];
@@ -1513,6 +1576,11 @@ function renderList(vis){
     const sub = [p.type, p.noise && `소음 ${p.noise}`, p.outlet && `콘센트 ${p.outlet}`, p.stay].filter(Boolean).join(', ');
     b.appendChild(el('div','item-sub', sub || '기록된 속성 없음'));
     if (state.me) { const m = distM(state.me, p); b.appendChild(el('div','item-dist', `${fmtDist(m)} · 걸어서 약 ${walkMin(m)}분`)); }
+    // 지금 정렬 기준의 값을 함께 보여 준다(왜 이 순서인지)
+    const by = sortMode();
+    const why = by === 'fit' ? (fitOf(p) == null ? '' : `조건 충족도 ${Math.round(fitOf(p) * 100)}%`) : by === 'full' ? `정보 충실도 ${Math.round(fullnessOf(p) * 100)}%`
+      : by === 'recent' ? `최종 확인 ${lastConfirmed(p) || '날짜 없음'}` : '';
+    if (why) b.appendChild(el('div','item-dist', why));
     b.addEventListener('click', () => select(p.id, true));
     li.appendChild(b); list.appendChild(li);
   }
@@ -1610,7 +1678,7 @@ function renderDetail(){
       lastGroup = groupOf(k);
       dl.appendChild(el('dt','scale-group', GROUPS.find(g => g.id === lastGroup).label));
       // 접근·동반은 예전 기록에는 없으므로, 하나도 없으면 줄 하나로 줄인다
-      if (lastGroup === 'access' && accessEmpty) { dl.appendChild(el('dd','scale-empty', '입구, 층 이동, 화장실, 아이·반려동물 동반, 주차는 아직 기록이 없어요.')); }
+      if (lastGroup === 'access' && accessEmpty) { dl.appendChild(el('dd','scale-empty', '입구, 층 이동, 화장실, 아이·반려동물 동반, 주차, 기저귀 교환대, 심야 영업은 아직 기록이 없어요.')); }
     }
     if (groupOf(k) === 'access' && accessEmpty) continue;
     if (def.grill && !p[k]) continue; // 배기 방식은 남긴 곳에서만 보여 준다(카페 등에는 해당 없음)
@@ -1619,7 +1687,9 @@ function renderDetail(){
     if (!p[k]) dd.appendChild(el('span','opt none', groupOf(k) === 'access' ? '모름' : '기록 없음'));
     else for (const v of def.values) dd.appendChild(el('span', 'opt' + (v === p[k] ? ' on' : ''), v));
     // 직접 잰 숫자: 소음(dB), 입구 단차(cm). 여러 사람이 쟀으면 가운데값과 범위
-    const m = k === 'noise' ? measureText(p, 'noiseDb', 'dB', '측정', true) : k === 'entrance' ? measureText(p, 'stepCm', 'cm', '단차') : '';
+    // 사업계획서: 측정값에는 기기·오차를 함께 적는다
+    const noiseM = k === 'noise' ? measureText(p, 'noiseDb', 'dB', '측정', true) : '';
+    const m = noiseM ? noiseM + '\n휴대폰 마이크로 잰 값이라 기기마다 몇 dB 오차가 있어요' : k === 'entrance' ? measureText(p, 'stepCm', 'cm', '단차') : '';
     if (m) dd.appendChild(el('span','opt-measure', m));
     dl.appendChild(dd);
   }
@@ -1674,6 +1744,8 @@ function renderDetail(){
     fix.appendChild(fb); box.appendChild(fix);
     d.appendChild(box);
   }
+  // 지금도 맞나요? 서버에 있는 장소만(예시·이 브라우저 기록은 빼고). 최종 확인일과 일치율을 함께 보여 준다
+  if (p.pid && !p.sample) d.appendChild(checkBox(p));
   // 기록 관리: 내 기록이면 수정·삭제(한 번 더 확인), 다른 사람 기록만 있는 곳이면 '나도 기록하기'
   const manage = el('div','manage');
   const mbtn = (label, cls, fn) => { const b = el('button', 'btn ' + cls, label); b.type = 'button'; b.addEventListener('click', fn); return b; };
@@ -1983,7 +2055,7 @@ function renderMap(vis){
 /* ---------- 지도에 표시 (자주 찾는 메뉴) ---------- */
 // 고른 속성을 핀 옆 배지로 보여 준다. ENUMS 값은 좋은 것부터 아쉬운 것 순서라, 그 순서가 곧 진하기다.
 const SHORT = { noise:['조용','보통','시끄러움'], spacing:['넓음','보통','좁음'], light:['밝음','보통','어두움'], outlet:['많음','일부','없음'], stay:['장시간','2시간','회전 빠름'],
-  hood:['하향식','상향식','후드 없음'], entrance:['턱 없음','경사로','계단'], floor:['1층','엘리베이터','계단만'], toilet:['매장 안','건물','없음'], kids:['유아 의자','아이 가능','노키즈'], pets:['실내 동반','야외만','불가'],
+  hood:['하향식','상향식','후드 없음'], diaper:['교환대 매장 안','교환대 건물','교환대 없음'], late:['24시간','자정 넘어','자정 전 마감'], entrance:['턱 없음','경사로','계단'], floor:['1층','엘리베이터','계단만'], toilet:['매장 안','건물','없음'], kids:['유아 의자','아이 가능','노키즈'], pets:['실내 동반','야외만','불가'],
   parking:['주차장','유료 주차','주차 불가'] };
 const BADGE_KEY = 'gongan-sillok:badges';
 // 여러 조건을 함께 고를 수 있다. 저장은 이 브라우저에만 한다
@@ -1994,7 +2066,8 @@ const FACT = { noise:['조용함','소음 보통','시끄러움'], spacing:['좌
   outlet:['콘센트 많음','콘센트 일부','콘센트 없음'], stay:['오래 머물기','2시간 내외','회전 빠름'],
   entrance:['턱 없음','경사로','입구 계단'], floor:['1층','엘리베이터','계단만'], toilet:['화장실 매장 안','화장실 건물','화장실 없음'],
   kids:['유아 의자','아이 동반 가능','노키즈존'], pets:['반려동물 실내','반려동물 야외','반려동물 불가'],
-  hood:['하향식 배기','상향식 후드','후드 없음'], parking:['주차장 있음','근처 유료 주차','주차 불가'] };
+  hood:['하향식 배기','상향식 후드','후드 없음'], parking:['주차장 있음','근처 유료 주차','주차 불가'],
+  diaper:['기저귀 교환대','교환대 건물','교환대 없음'], late:['24시간 영업','자정 넘어 영업','자정 전 마감'] };
 // 배지 진하기: 조건이 하나면 그 값 그대로, 여럿이면 '모두 좋음 / 일부 좋음 / 하나도 없음'
 function badgeLevel(p){
   const ks = state.badges, ls = ks.map(k => level(p, k));
@@ -2037,7 +2110,7 @@ function renderQuick(){
   q.dataset.group = group;
   const items = el('div','quick-items');
   for (const k of Object.keys(ENUMS)) {
-    if (k === ACCESS_KEYS[0]) items.appendChild(el('div','quick-sep', '접근·동반'));
+    if (k === ACCESS_KEYS[0]) items.appendChild(el('div','quick-sep', '접근·돌봄'));
     const on = state.badges.includes(k);
     const b = el('button','quick-btn'); b.type = 'button'; b.setAttribute('aria-pressed', String(on)); b.dataset.group = groupOf(k);
     b.append(el('span','quick-name', ENUMS[k].label), el('span','quick-n', `${SHORT[k][0]} ${state.places.filter(p => level(p, k) === 0).length}`)); // 좋은 값인 곳 수
@@ -2092,7 +2165,7 @@ function renderSummary(){
   box.appendChild(line);
 }
 
-/* ---------- 목적별 추천 Top5 ---------- */
+/* ---------- 목적으로 보기 ---------- */
 // 목적마다 속성 값별 점수(좋음, 보통, 아쉬움 순)를 정해 두고, 점수 합으로 잘 맞는 정도를 매긴다
 // why: ? 버튼을 누르면 보여 주는 설명 (조건마다 왜 그 값이 좋은지)
 const PURPOSES = [
@@ -2106,7 +2179,7 @@ const PURPOSES = [
   { id: 'wheel', label: '휠체어·유아차', w: { entrance: [3, 2.5, 0], floor: [3, 2.5, 0], spacing: [1, .5, 0], toilet: [1, .5, 0] },
     why: { entrance: '계단 없이, 또는 경사로로 들어갈 수 있어야 해요.', floor: '1층이거나 엘리베이터가 있어야 좌석까지 갈 수 있어요.', spacing: '테이블 사이가 넓어야 휠체어·유아차가 지나갈 수 있어요.', toilet: '매장 안에 화장실이 있으면 오래 머물기 편해요.' } }
 ];
-state.purpose = null; state.pickSort = 'fit'; state.pickHelp = false; state.delAsk = null;
+state.purpose = null; state.pickHelp = false; state.delAsk = null;
 const importance = pts => { const m = Math.max(...pts); return m >= 3 ? '가장 중요' : m >= 2 ? '중요' : '참고'; };
 const bestValues = (k, pts) => ENUMS[k].values.filter((v, i) => pts[i] === Math.max(...pts)).join(', ');
 function fitScore(p, pu){
@@ -2116,80 +2189,60 @@ function fitScore(p, pu){
 }
 // 목적을 고르면 그 목적에서 '좋음'이 가장 중요한 조건들로 지도 배지를 바꾼다
 const purposeBadges = pu => Object.entries(pu.w).filter(([, pts]) => pts[0] === Math.max(...pts) && pts[0] >= 1.5).map(([k]) => k);
-function renderPicks(vis){
+// 목적으로 보기: 목적을 고르면 그 목적에 중요한 조건을 지도에 표시하고, 목록을 '조건 충족도 순'으로 정렬한다.
+// 따로 'Top 5' 같은 추천 칸은 두지 않는다(사업계획서: 고르는 자리가 생기면 파는 자리가 생긴다). 순서는 기록된 사실로만 정해진다
+function renderPicks(){
   const box = $('picks'); box.replaceChildren();
-  box.appendChild(el('h3','sec-title','목적별 추천 Top5'));
+  box.appendChild(el('h3','sec-title','목적으로 보기'));
   const chips = el('div','chips'); chips.setAttribute('role','group'); chips.setAttribute('aria-label','목적');
   for (const pu of PURPOSES) {
     const b = el('button','chip', pu.label); b.type = 'button'; b.setAttribute('aria-pressed', String(state.purpose === pu.id));
     b.addEventListener('click', () => {
-      if (isPhone()) state.pickHelp = false; // 휴대폰은 좁아서 목적을 바꾸면 설명을 접는다
-      if (state.purpose === pu.id) { state.purpose = null; renderAll(); return; } // 다시 누르면 끈다
-      state.purpose = pu.id; setBadges(purposeBadges(pu));
+      if (state.purpose === pu.id) { state.purpose = null; if (state.sortBy === 'fit') state.sortBy = 'basic'; renderAll(); return; } // 다시 누르면 끈다
+      state.purpose = pu.id; state.sortNear = false; state.sortBy = 'fit'; setBadges(purposeBadges(pu));
     });
     chips.appendChild(b);
   }
-  box.appendChild(chips);
-  const pu = PURPOSES.find(x => x.id === state.purpose);
-  if (!pu) {
-    const intro = '목적을 고르면 잘 맞는 곳 5곳을 골라 드려요. 위의 조건 필터도 함께 적용돼요.';
-    if (!isPhone()) { box.appendChild(el('p','near-line muted', intro)); return; }
-    // 휴대폰: 안내 문구는 숨기고, 목적 버튼 줄 끝의 ? 를 눌렀을 때만 보여 준다
-    const help = el('button','help-btn','?'); help.type = 'button';
-    help.setAttribute('aria-expanded', String(state.pickHelp)); help.setAttribute('aria-label', '목적별 추천 설명');
-    help.addEventListener('click', () => { state.pickHelp = !state.pickHelp; renderAll(); });
-    chips.appendChild(help);
-    if (state.pickHelp) box.appendChild(el('p','near-line muted', intro));
-    return;
-  }
-
-  const sort = el('div','psort');
-  for (const [id, label] of [['fit', '잘 맞는 순'], ['near', '가까운 순']]) {
-    const b = el('button','sortbtn', label); b.type = 'button'; b.setAttribute('aria-pressed', String(state.pickSort === id));
-    b.addEventListener('click', () => { state.pickSort = id; if (id === 'near' && !state.me) locate(false, true); renderAll(); });
-    sort.appendChild(b);
-  }
-  // ? 버튼: 마우스를 올리면 요약(title), 누르면 자세한 설명이 펼쳐진다(휴대폰은 누르기만 된다)
   const help = el('button','help-btn','?'); help.type = 'button';
   help.setAttribute('aria-expanded', String(state.pickHelp)); help.setAttribute('aria-controls', 'pickHelp');
-  help.setAttribute('aria-label', `${pu.label} 추천 기준 설명`);
-  help.title = `${pu.label} 기준: ` + Object.entries(pu.w).map(([k, pts]) => `${ENUMS[k].label} ${bestValues(k, pts)}`).join(', ') + ' (눌러서 자세히 보기)';
+  help.setAttribute('aria-label', '목적으로 보기 설명');
   help.addEventListener('click', () => { state.pickHelp = !state.pickHelp; renderAll(); });
-  sort.appendChild(help);
-  box.appendChild(sort);
-  if (state.pickHelp) {
-    const hb = el('div','phelp'); hb.id = 'pickHelp';
-    hb.appendChild(el('p','phelp-lead', `${pu.label}에 맞는 곳은 이런 기준으로 골라요.`));
+  chips.appendChild(help);
+  box.appendChild(chips);
+  if (!state.pickHelp) return;
+  const hb = el('div','phelp'); hb.id = 'pickHelp';
+  hb.appendChild(el('p','phelp-lead', '목적을 고르면 그 목적에 중요한 조건이 지도에 표시되고, 아래 목록이 조건 충족도 순으로 정렬돼요. 순서는 기록된 사실로만 정해지고, 돈으로 살 수 없어요.'));
+  const pu = PURPOSES.find(x => x.id === state.purpose);
+  if (pu) {
     const ul = el('ul');
     for (const [k, pts] of Object.entries(pu.w)) {
-      const li = el('li');
-      const head = el('div','phelp-head');
+      const li = el('li'), head = el('div','phelp-head');
       head.append(el('b', null, `${ENUMS[k].label}: ${bestValues(k, pts)}`), el('span', 'imp imp' + (Math.max(...pts) >= 3 ? 3 : Math.max(...pts) >= 2 ? 2 : 1), importance(pts)));
-      li.append(head, el('span','phelp-why', pu.why[k]));
-      ul.appendChild(li);
+      li.append(head, el('span','phelp-why', pu.why[k])); ul.appendChild(li);
     }
     hb.append(ul, el('p','phelp-foot','조건마다 점수를 매겨 더한 뒤 만점 대비 %로 보여 줘요. 중요한 조건일수록 점수가 크고, 기록이 없는 항목은 0점이에요.'));
-    box.appendChild(hb);
   }
-  let ranked = vis.map(p => ({ p, s: fitScore(p, pu), m: state.me ? distM(state.me, p) : null }));
-  // 가까운 순은 잘 맞는 곳(60% 이상) 중에서 거리로 고른다. 위치를 모르면 잘 맞는 순으로 보여 준다
-  const near = state.pickSort === 'near' && state.me;
-  ranked = near ? ranked.filter(x => x.s >= .6).sort((a, b) => a.m - b.m) : ranked.sort((a, b) => b.s - a.s || (a.m ?? 0) - (b.m ?? 0));
-  ranked = ranked.filter(x => x.s > 0).slice(0, 5);
-  if (state.pickSort === 'near' && !state.me) box.appendChild(el('p','near-line muted', '내 위치를 찾으면 가까운 순으로 바뀌어요.'));
-  if (!ranked.length) { box.appendChild(el('p','near-line muted','조건에 맞는 곳이 없어요. 조건 필터를 줄여 보세요.')); return; }
-  const ol = el('ol','plist');
-  ranked.forEach((x, i) => {
-    const li = el('li'), b = el('button','pitem'); b.type = 'button';
-    if (state.sel === x.p.id) b.setAttribute('aria-current','true');
-    // 추천 이유: 이 목적에서 만점을 받은 값 (대화하기는 '조용'보다 '보통'이 만점)
-    const why = Object.entries(pu.w).map(([k, pts]) => { const l = level(x.p, k); return l >= 0 && pts[l] === Math.max(...pts) ? (SHORT[k][l] === '보통' ? `${ENUMS[k].label} 보통` : SHORT[k][l]) : null; }).filter(Boolean).join(' · ') || '딱 맞는 조건은 없어요';
-    const body = el('div'); body.append(el('div','pname', x.p.name), el('div','pwhy', why + (x.m != null ? ` · ${fmtDist(x.m)}` : '')));
-    b.append(el('span','prank', String(i + 1)), body, el('span','pscore', `${Math.round(x.s * 100)}%`));
-    b.addEventListener('click', () => select(x.p.id, true));
-    li.appendChild(b); ol.appendChild(li);
-  });
-  box.appendChild(ol);
+  box.appendChild(hb);
+}
+/* ---------- 목록 정렬 ---------- */
+// 정렬 기준은 모두 이용자 기준(거리, 고른 조건)이거나 기록의 상태(충실도, 확인일)라 돈으로 살 수 없다
+state.sortBy = 'basic';
+const fitKeys = () => [...new Set([...state.badges, ...Object.keys(ENUMS).filter(k => state.filters[k].size)])];
+function fitOf(p){ // 0~1, 고른 조건(목적, 빠른 조건·필터·지도에 표시)이 없으면 null
+  const pu = PURPOSES.find(x => x.id === state.purpose); if (pu) return fitScore(p, pu);
+  const ks = fitKeys(); if (!ks.length) return null;
+  return ks.reduce((s, k) => { const l = level(p, k); return s + (l === 0 ? 1 : l === 1 ? .5 : 0); }, 0) / ks.length;
+}
+function fullnessOf(p){ // 채워진 항목 비율. 배기 방식은 남긴 곳에서만 센다
+  const ks = Object.keys(ENUMS).filter(k => !ENUMS[k].grill || p[k]);
+  return (ks.filter(k => p[k]).length + TAG_KEYS.filter(k => p[k]).length) / (ks.length + TAG_KEYS.length);
+}
+const sortMode = () => state.sortNear && state.me ? 'near' : state.sortBy;
+function sortPlaces(vis){
+  const by = sortMode();
+  const key = by === 'near' ? p => distM(state.me, p) : by === 'fit' ? p => -(fitOf(p) ?? 0) : by === 'full' ? p => -fullnessOf(p)
+    : by === 'recent' ? p => -(Date.parse(lastConfirmed(p)) || 0) : null;
+  return key ? vis.map(p => [key(p), p]).sort((a, b) => a[0] - b[0]).map(x => x[1]) : vis;
 }
 // 지도에서 고른 조건의 기준: 색 안내 끝(그리고 컴퓨터의 '지도에 표시' 제목)의 ? 로 펼친다
 state.legendHelp = false;
@@ -3214,7 +3267,7 @@ const sb = window.supabase && SUPABASE_URL && SUPABASE_KEY
   ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { flowType: 'pkce', persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } })
   : null;
 const auth = { user: null, nickname: '', role: 'user', ready: false };
-const RECORD_COLS = 'id, is_public, noise, spacing, light, outlet, stay, materials, furniture, note, visited_on, entrance, floor_access, toilet, kids, pets, parking, hood, step_cm, noise_db, visit_hour, photo_paths, places(id, kakao_id, name, type, address, lat, lng)';
+const RECORD_COLS = 'id, is_public, noise, spacing, light, outlet, stay, materials, furniture, note, visited_on, entrance, floor_access, toilet, kids, pets, parking, diaper, late_night, hood, step_cm, noise_db, visit_hour, photo_paths, places(id, kakao_id, name, type, address, lat, lng)';
 
 async function loadMine(){
   const { data, error } = await sb.from('records').select(RECORD_COLS).eq('user_id', auth.user.id).order('created_at');
@@ -3811,6 +3864,7 @@ async function onAuth(session){
   }
   renderAuth();
   if (changed && user) { resumePendingAdd(); offerMove(); }
+  if (changed) loadChecks(); // 내 응답(맞아요/달라졌어요)을 다시 읽는다
   if (changed) loadSaves(); // 로그인하면 계정의 찜(이 기기의 찜은 계정으로 옮긴다), 로그아웃하면 이 기기의 찜
 }
 // 로그인하고 돌아왔는데 오류가 있으면(동의항목 설정 등) 알려 주고 주소를 정리한다
@@ -3870,8 +3924,8 @@ function onFixError(err){
 
 function renderAll(){
   let vis = state.places.filter(matches);
-  if (state.sortNear && state.me) vis = vis.map(p => [distM(state.me, p), p]).sort((a, b) => a[0] - b[0]).map(x => x[1]);
-  $('btnSort').setAttribute('aria-pressed', String(state.sortNear && !!state.me));
+  vis = sortPlaces(vis);
+  $('sortSel').value = sortMode();
   $('zloc').setAttribute('aria-pressed', String(!!state.me));
   renderSummary(); renderPicks(vis); renderList(vis); renderExtList(); renderMap(vis); renderExtMarkers(); renderLegend(); renderQuick(); renderDetail();
   renderQuickChips(); renderPeek(vis); syncFilterChips(); renderRouteBar(); renderCollectBar(); if ($('filterDlg').open) renderFilterExtras();
@@ -4232,9 +4286,12 @@ $('zin').addEventListener('click', () => { if (map) map.setZoom(map.getZoom() + 
 $('zout').addEventListener('click', () => { if (map) map.setZoom(map.getZoom() - 1, true); });
 $('zfit').addEventListener('click', fitAll);
 $('zloc').addEventListener('click', () => locate(false));
-$('btnSort').addEventListener('click', () => {
-  if (state.sortNear && state.me) { state.sortNear = false; renderAll(); }
-  else locate(true);
+$('sortSel').addEventListener('change', e => {
+  const v = e.target.value;
+  if (v === 'near') { state.sortBy = 'basic'; locate(true); renderAll(); return; } // 위치를 찾으면 가까운 순으로 바뀐다
+  state.sortNear = false; state.sortBy = v;
+  if (v === 'fit' && fitOf({}) === null) toast('빠른 조건, 필터, 목적 중 하나를 고르면 그 조건을 얼마나 채우는지로 정렬해요.');
+  renderAll();
 });
 // 카카오톡 안 브라우저에서 열리면 기본 브라우저(아이폰은 사파리)로 넘긴다.
 // 자동 전환이 막힐 때를 대비해 위쪽에 직접 누를 수 있는 버튼도 보여 준다.
