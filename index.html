@@ -480,6 +480,15 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
 .qchip.filter{padding-left:11px}
 .collect-bar{display:flex;align-items:center;gap:8px;padding:9px 12px;border-radius:12px;background:var(--blue);color:#FFFFFF;font-size:13px;font-weight:600;box-shadow:0 2px 10px rgba(15,20,40,.2)}
 .collect-bar[hidden]{display:none}
+.route-bar{background:var(--route);color:var(--route-ink)}
+.route-bar button{background:rgba(255,255,255,.25);color:inherit}
+.start-pin{position:relative;padding:4px 9px;border-radius:999px;background:var(--route);color:var(--route-ink);font-size:12px;font-weight:800;box-shadow:0 2px 6px rgba(15,20,40,.3);white-space:nowrap}
+.start-pin::after{content:"";position:absolute;left:50%;bottom:-5px;width:10px;height:10px;margin-left:-5px;background:var(--route);transform:rotate(45deg)}
+.d-from{display:flex;align-items:center;flex-wrap:wrap;gap:4px 10px;margin:0 0 10px;padding:9px 12px;border-radius:8px;background:var(--paper);font-size:14px}
+.d-from-k{padding:1px 8px;border-radius:999px;background:var(--route);color:var(--route-ink);font-size:12px;font-weight:700}
+.d-from b{font-weight:700}
+.d-from-here{margin-left:auto}
+#originList{max-height:50dvh;overflow:auto;margin:0}
 .collect-bar span{flex:1;min-width:0}
 .collect-bar button{border:0;border-radius:999px;padding:4px 10px;background:rgba(255,255,255,.2);color:#FFFFFF;font-size:12px;font-weight:700;cursor:pointer}
 .mapctl .round{display:grid;place-items:center;padding:0}
@@ -769,6 +778,7 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
       </div>
       <div class="qchips" id="qchips" role="toolbar" aria-label="빠른 조건"></div>
       <div class="collect-bar" id="collectBar" hidden></div>
+      <div class="collect-bar route-bar" id="routeBar" hidden></div>
     </div>
     <div class="legend" id="legend" hidden aria-label="장소 유형별 색"></div>
     <div class="mapctl">
@@ -791,6 +801,14 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
 <dialog class="add-dlg" id="addDlg" aria-labelledby="addTitle"><div class="add-body" id="addBody"></div></dialog>
 <dialog class="add-dlg" id="adminDlg" aria-labelledby="adminTitle"><div class="add-body" id="adminBody"></div></dialog>
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+<dialog class="add-dlg" id="originDlg" aria-labelledby="originTitle">
+  <div class="add-body">
+    <div class="add-head"><h2 id="originTitle">출발지 고르기</h2><button class="d-close" id="originX" type="button" aria-label="닫기">×</button></div>
+    <input class="search" id="originQ" type="search" placeholder="장소, 역, 동네 이름" aria-label="출발지 이름으로 찾기" maxlength="40" enterkeyhint="search">
+    <p class="add-status" id="originStatus" role="status"></p>
+    <ul class="list" id="originList"></ul>
+  </div>
+</dialog>
 <dialog class="filter-dlg" id="filterDlg" aria-labelledby="filterDlgTitle">
   <div class="fd-head"><h2 id="filterDlgTitle">필터</h2><button class="d-close" id="filterX" type="button" aria-label="닫기">×</button></div>
   <div class="fd-body">
@@ -1006,7 +1024,7 @@ const IS_MOBILE = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 const IS_ANDROID = /Android/i.test(navigator.userAgent);
 // 내 위치를 알고 있으면 출발지로 함께 넘긴다
 function routeLinks(p, me){
-  const name = encodeURIComponent(p.name), here = encodeURIComponent('내 위치');
+  const name = encodeURIComponent(p.name), here = encodeURIComponent((me && me.name) || '내 위치'); // me: 출발지(내 위치 또는 고른 장소)
   const lat = me && me.lat.toFixed(6), lng = me && me.lng.toFixed(6);
   const q = `${me ? `slat=${lat}&slng=${lng}&sname=${here}&` : ''}dlat=${p.lat}&dlng=${p.lng}&dname=${name}&appname=${encodeURIComponent(location.origin)}`;
   return {
@@ -1530,10 +1548,10 @@ function renderDetail(){
   }
 
   // 길찾기는 어떤 경우에도 이 창을 다른 페이지로 바꾸지 않는다. 앱은 앱으로, 웹은 새 탭으로 연다.
-  const links = routeLinks(p, state.me);
+  const links = routeLinks(p, routeOrigin());
   d.appendChild(el('h3','sec-title','길찾기'));
   // 위치를 아직 모르면 길찾기 버튼 위에 눈에 띄게 먼저 권한다
-  if (!state.me) {
+  if (!routeOrigin()) {
     const loc = el('button','d-loc', watchId !== null ? '내 위치를 찾는 중이에요…' : '내 위치 켜고 출발지 자동으로 넣기'); loc.type = 'button';
     loc.disabled = watchId !== null;
     loc.addEventListener('click', () => locate(false, true));
@@ -1548,8 +1566,8 @@ function renderDetail(){
     const web = el('a','d-route','네이버 지도로 길찾기'); web.href = links.web; web.target = '_blank'; web.rel = 'noopener';
     d.appendChild(web);
   }
-  d.appendChild(el('p','d-route-note', state.me
-    ? '출발지에 내 위치가 들어가 있어요.' + (IS_MOBILE ? ' 길찾기를 마치고 돌아오면 이 화면이 그대로 남아 있어요.' : '')
+  d.appendChild(el('p','d-route-note', routeOrigin()
+    ? `출발지에 ${state.routeFrom ? `'${state.routeFrom.name}'` : '내 위치'}이(가) 들어가 있어요.` + (IS_MOBILE ? ' 길찾기를 마치고 돌아오면 이 화면이 그대로 남아 있어요.' : '')
     : '위치를 켜지 않으면 네이버 지도에서 출발지를 직접 입력해야 해요.'));
   d.hidden = false;
 }
@@ -2151,7 +2169,8 @@ function fromTmap(it){
 // TMAP은 키를 숨기려고 중계 서버(Cloudflare Worker, 코드는 worker/worker.js)를 거쳐 부른다
 const proxyPost = (path, body) => fetch(ROUTE_PROXY + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
 async function tmapTransit(p){
-  const r = await proxyPost('/transit', { startX: String(state.me.lng), startY: String(state.me.lat), endX: String(p.lng), endY: String(p.lat), searchDttm: seoulNow().stamp });
+  const o = routeOrigin();
+  const r = await proxyPost('/transit', { startX: String(o.lng), startY: String(o.lat), endX: String(p.lng), endY: String(p.lat), searchDttm: seoulNow().stamp });
   if (!r.ok) return null; // 키 오류, 한도 초과 등
   const j = await r.json();
   const status = j && j.result && j.result.status;
@@ -2161,7 +2180,8 @@ async function tmapTransit(p){
   return { status: 'ok', source: 'tmap', routes: its.map(fromTmap) };
 }
 async function tmapWalk(p){
-  const r = await proxyPost('/walk', { startX: String(state.me.lng), startY: String(state.me.lat), endX: String(p.lng), endY: String(p.lat) });
+  const o = routeOrigin();
+  const r = await proxyPost('/walk', { startX: String(o.lng), startY: String(o.lat), endX: String(p.lng), endY: String(p.lat) });
   if (!r.ok) throw new Error('walk ' + r.status);
   const j = await r.json(); const fs = (j && j.features) || [];
   const props = (fs[0] && fs[0].properties) || {};
@@ -2188,7 +2208,8 @@ function fromOdsay(path){
   return { source: 'odsay', minutes: info.totalTime || 0, fare: Number(info.payment || 0), transfers: Math.max(0, (info.busTransitCount || 0) + (info.subwayTransitCount || 0) - 1), segs };
 }
 async function odsayTransit(p){
-  const q = new URLSearchParams({ SX: state.me.lng, SY: state.me.lat, EX: p.lng, EY: p.lat });
+  const o = routeOrigin();
+  const q = new URLSearchParams({ SX: o.lng, SY: o.lat, EX: p.lng, EY: p.lat });
   const j = await fetch(`https://api.odsay.com/v1/api/searchPubTransPathT?${q}&apiKey=${encodeURIComponent(ODSAY_API_KEY)}`).then(r => r.json());
   const e = j && j.error;
   if (e) {
@@ -2215,10 +2236,64 @@ function runningRoutes(t){
   return t.routes.filter(r => r.segs.every(s => s.mode === 'walk' || segRunning(s, now)));
 }
 
+/* 출발지: 기본은 내 위치, '여기서 출발'이나 출발지 고르기로 다른 장소를 정할 수 있다 (A → B 길찾기) */
+state.routeFrom = null; // { name, lat, lng } | null(내 위치)
+const routeOrigin = () => state.routeFrom || state.me || null;
+function setRouteFrom(place){
+  state.routeFrom = place ? { name: cleanText(place.name, 40), lat: +place.lat, lng: +place.lng } : null;
+  state.transit = null; clearRoute();
+  renderAll();
+  const p = state.sel && findPlace(state.sel);
+  if (p && routeOrigin() && !(state.routeFrom && sameSpot(state.routeFrom, p))) findTransit(p); // 열린 장소가 있으면 바로 새 출발지로 찾는다
+}
+function renderRouteBar(){
+  const bar = $('routeBar');
+  bar.hidden = !state.routeFrom;
+  if (!state.routeFrom) return;
+  const dest = state.sel && findPlace(state.sel);
+  bar.replaceChildren(el('span', null, dest && !sameSpot(state.routeFrom, dest)
+    ? `${state.routeFrom.name} → ${dest.name}` : `출발: ${state.routeFrom.name} · 도착할 장소를 열어 주세요`));
+  const b = el('button', null, '취소'); b.type = 'button'; b.addEventListener('click', () => setRouteFrom(null)); bar.appendChild(b);
+}
+// 출발지 고르기: 내 위치, 또는 이름으로 찾은 장소(공간실록 기록 + 카카오 검색)
+let originFor = null, originTimer = null;
+function openOriginPicker(dest){
+  originFor = dest;
+  const dlg = $('originDlg'), input = $('originQ');
+  input.value = ''; renderOriginList([], '');
+  dlg.showModal(); setTimeout(() => input.focus(), 50);
+}
+function renderOriginList(list, status){
+  const ul = $('originList'); ul.replaceChildren();
+  const item = (title, sub, fn) => { const li = el('li'), b = el('button','item'); b.type = 'button'; b.append(el('div','item-name', title)); if (sub) b.appendChild(el('div','item-sub', sub)); b.addEventListener('click', fn); li.appendChild(b); ul.appendChild(li); };
+  item('내 위치', state.me ? '지금 있는 곳에서 출발' : '누르면 위치를 찾아요', () => {
+    $('originDlg').close();
+    if (state.me) setRouteFrom(null);
+    else { state.routeFrom = null; if (originFor) state.routeAfterFix = originFor.id; locate(false, true); }
+  });
+  for (const x of list) item(x.name, [x.type, x.addr].filter(Boolean).join(' · '), () => { $('originDlg').close(); setRouteFrom(x); });
+  $('originStatus').textContent = status;
+}
+async function searchOrigin(query){
+  const q = cleanText(query, 40); if (q.length < 2) { renderOriginList([], ''); return; }
+  const low = q.toLowerCase();
+  const mine = state.places.filter(p => p.name.toLowerCase().includes(low)).slice(0, 5).map(p => ({ name: p.name, type: p.type, addr: p.addr, lat: p.lat, lng: p.lng }));
+  renderOriginList(mine, '찾는 중이에요…');
+  try {
+    const c = map && map.getCenter(), near = state.me || (c && { lat: c.lat(), lng: c.lng() });
+    const r = await proxyPost('/search', { query: q, ...(near && { x: String(near.lng), y: String(near.lat) }) });
+    const j = await r.json(); if (!r.ok) throw new Error();
+    if (cleanText($('originQ').value, 40) !== q) return; // 그사이 다른 글자로 바뀌었다
+    const kakao = (j.places || []).map(x => ({ name: cleanText(x.name, 40), type: cleanText(String(x.category || '').split('>').pop(), 20), addr: cleanText(x.address, 60), lat: toNum(x.y), lng: toNum(x.x) }))
+      .filter(x => x.name && x.lat >= 33 && x.lat <= 39 && x.lng >= 124 && x.lng <= 132 && !mine.some(m => sameSpot(m, x)));
+    const all = [...mine, ...kakao];
+    renderOriginList(all, all.length ? '' : '찾은 곳이 없어요. 역 이름이나 동네 이름으로도 찾아보세요.');
+  } catch { renderOriginList(mine, '검색하지 못했어요. 잠시 뒤 다시 시도해 주세요.'); }
+}
 async function findTransit(p){
-  if (!state.me) return;
-  // 같은 장소, 비슷한 위치(약 100m 안)면 다시 부르지 않는다. 호출 횟수를 아끼기 위해서다.
-  const key = `${p.id}|${state.me.lat.toFixed(3)},${state.me.lng.toFixed(3)}`;
+  const o = routeOrigin(); if (!o) return;
+  // 같은 장소, 비슷한 출발지(약 100m 안)면 다시 부르지 않는다. 호출 횟수를 아끼기 위해서다.
+  const key = `${p.id}|${o.lat.toFixed(3)},${o.lng.toFixed(3)}`;
   let result = transitCache.get(key);
   if (!result) {
     state.transit = { placeId: p.id, status: 'loading' }; renderDetail();
@@ -2232,7 +2307,7 @@ async function findTransit(p){
     if (result.status !== 'error') transitCache.set(key, result);
   }
   if (state.sel !== p.id) return; // 기다리는 사이 다른 장소를 골랐다면 버린다
-  state.transit = { placeId: p.id, ...result, chosen: 0, walk: result.walk || null, cacheKey: key };
+  state.transit = { placeId: p.id, ...result, chosen: 0, walk: result.walk || null, cacheKey: key, from: { lat: o.lat, lng: o.lng, name: o.name } };
   if (result.status === 'near') { state.transit.tab = 'walk'; loadWalk(p); }
   renderDetail(); drawTransit();
 }
@@ -2274,11 +2349,31 @@ function renderTransit(d, p){
   const box = el('div','d-transit');
   box.appendChild(el('h3','sec-title','어떻게 갈까요'));
   const t = state.transit && state.transit.placeId === p.id ? state.transit : null;
-  if (!state.me) { // 위치를 아직 모르면: 누르면 위치를 묻고, 찾자마자 바로 경로를 찾는다
+  const o = routeOrigin();
+  // 출발지: 내 위치 또는 고른 장소. 바꾸기를 누르면 장소를 검색해 고른다
+  if (state.routeFrom && sameSpot(state.routeFrom, p)) {
+    box.appendChild(el('p','d-tnote', '이곳을 출발지로 정했어요. 도착할 장소를 열면 이곳에서 가는 경로를 찾아요.'));
+    d.appendChild(box); return;
+  }
+  const from = el('div','d-from');
+  from.append(el('span','d-from-k','출발'), el('b', null, o ? (o.name || '내 위치') : '정하지 않음'));
+  const chg = el('button','linkbtn', o ? '바꾸기' : '출발지 고르기'); chg.type = 'button'; chg.addEventListener('click', () => openOriginPicker(p));
+  from.appendChild(chg);
+  if (state.routeFrom) { const me = el('button','linkbtn', '내 위치로'); me.type = 'button'; me.addEventListener('click', () => setRouteFrom(null)); from.appendChild(me); }
+  const here = el('button','linkbtn d-from-here', '여기서 출발'); here.type = 'button';
+  here.title = '이곳을 출발지로 정하고, 도착할 장소를 열어 경로를 찾아요';
+  here.addEventListener('click', () => { setRouteFrom(p); toast(`'${p.name}'을(를) 출발지로 정했어요. 도착할 장소를 열어 주세요.`); });
+  from.appendChild(here);
+  box.appendChild(from);
+  if (!o) { // 출발지를 아직 모르면: 누르면 위치를 묻고, 찾자마자 바로 경로를 찾는다
     const finding = watchId !== null;
     const b = el('button','d-tbtn', finding ? '내 위치를 찾는 중이에요…' : '내 위치에서 경로 찾기 (대중교통·도보)'); b.type = 'button'; b.disabled = finding;
     b.addEventListener('click', () => { state.routeAfterFix = p.id; locate(false, true); });
-    box.append(b, el('p','d-tnote', '누르면 위치 사용을 물어봐요. 위치는 거리와 경로를 찾는 데만 쓰고 저장하지 않아요.'));
+    box.append(b, el('p','d-tnote', '누르면 위치 사용을 물어봐요. 위치는 거리와 경로를 찾는 데만 쓰고 저장하지 않아요. 다른 곳에서 출발하려면 위의 출발지 고르기를 눌러 주세요.'));
+  }
+  else if (!t && state.routeFrom) { // 출발지를 따로 골라 둔 길찾기 중이면 열자마자 찾는다
+    box.appendChild(el('p','d-tnote','경로를 찾는 중이에요…'));
+    setTimeout(() => { if (state.sel === p.id && !state.transit) findTransit(p); }, 0);
   }
   else if (!t) {
     const b = el('button','d-tbtn','경로 찾기 (대중교통·도보)'); b.type = 'button';
@@ -2324,7 +2419,7 @@ function walkOption(p, t){
     bar.appendChild(el('span','walk', `도보 ${w.minutes}분`));
     opt.append(head, bar, el('p','d-tnote','실제로 걷는 길을 따라 계산했어요.'));
   } else {
-    const m = distM(state.me, p);
+    const m = distM(t.from || routeOrigin(), p);
     head.append(el('b', null, `${walkMin(m)}분`), ` · 약 ${fmtDist(m * 1.3)} · 무료`);
     bar.appendChild(el('span','walk', `도보 ${walkMin(m)}분`));
     opt.append(head, bar, el('p','d-tnote','직선거리로 계산한 대략적인 시간이에요. 실제로 걷는 길은 아래 네이버 지도 길찾기에서 확인해 주세요.'));
@@ -2361,10 +2456,12 @@ function routeOption(r, i, t){
 function clearRoute(){ for (const o of routeOverlays) o.setMap(null); routeOverlays = []; }
 function drawTransit(){
   clearRoute();
-  const t = state.transit; if (!map || !t || !state.me || (t.status !== 'ok' && t.status !== 'near')) return;
+  const t = state.transit; if (!map || !t || !t.from || (t.status !== 'ok' && t.status !== 'near')) return;
   const p = findPlace(t.placeId); if (!p) return;
   const LL = ([lat, lng]) => new naver.maps.LatLng(lat, lng);
-  const me = [state.me.lat, state.me.lng], dest = [p.lat, p.lng];
+  const me = [t.from.lat, t.from.lng], dest = [p.lat, p.lng]; // me: 출발지
+  if (t.from.name) routeOverlays.push(new naver.maps.Marker({ map, position: LL(me), clickable: false, zIndex: 350, // 고른 출발지 표시 (내 위치는 파란 점이 이미 있다)
+    icon: { content: `<div class="start-pin">출발</div>`, anchor: new naver.maps.Point(20, 32) } }));
   const all = [me, dest];
   const line = (pts, color, walk) => { if (pts.length < 2) return; all.push(...pts); routeOverlays.push(new naver.maps.Polyline({
     map, path: pts.map(LL), clickable: false, strokeColor: color, strokeWeight: walk ? 4 : 7, strokeOpacity: walk ? .85 : .9,
@@ -3411,7 +3508,7 @@ function renderAll(){
   $('btnSort').setAttribute('aria-pressed', String(state.sortNear && !!state.me));
   $('zloc').setAttribute('aria-pressed', String(!!state.me));
   renderSummary(); renderPicks(vis); renderList(vis); renderExtList(); renderMap(vis); renderExtMarkers(); renderLegend(); renderQuick(); renderDetail();
-  renderQuickChips(); renderPeek(vis); syncFilterChips(); renderCollectBar(); if ($('filterDlg').open) renderFilterExtras();
+  renderQuickChips(); renderPeek(vis); syncFilterChips(); renderRouteBar(); renderCollectBar(); if ($('filterDlg').open) renderFilterExtras();
   $('summary').hidden = $('picks').hidden = !!state.ext.query; // 검색 중에는 검색 결과가 맨 위에 오도록 요약·추천을 접는다
 }
 
@@ -3690,6 +3787,9 @@ window.addEventListener('resize', placeLegend);
 // 필터 화면, 모아 보기, 지도 전체 보기
 $('filterX').addEventListener('click', () => $('filterDlg').close());
 bindDragScroll($('qchips'));
+// 출발지 고르기 창
+$('originX').addEventListener('click', () => $('originDlg').close());
+$('originQ').addEventListener('input', e => { clearTimeout(originTimer); originTimer = setTimeout(() => searchOrigin(e.target.value), 400); });
 $('qchips').addEventListener('scroll', markChipOverflow, { passive: true });
 $('fdDone').addEventListener('click', () => $('filterDlg').close());
 $('fdClear').addEventListener('click', () => { $('btnClear').click(); setBadges([]); });
