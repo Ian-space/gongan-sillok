@@ -487,7 +487,7 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
 .d-from{display:flex;align-items:center;flex-wrap:wrap;gap:4px 10px;margin:0 0 10px;padding:9px 12px;border-radius:8px;background:var(--paper);font-size:14px}
 .d-from-k{padding:1px 8px;border-radius:999px;background:var(--route);color:var(--route-ink);font-size:12px;font-weight:700}
 .d-from b{font-weight:700}
-.d-from-here{margin-left:auto}
+.origin-dest{margin:-4px 0 10px;color:var(--muted);font-size:14px}
 #originList{max-height:50dvh;overflow:auto;margin:0}
 .collect-bar span{flex:1;min-width:0}
 .collect-bar button{border:0;border-radius:999px;padding:4px 10px;background:rgba(255,255,255,.2);color:#FFFFFF;font-size:12px;font-weight:700;cursor:pointer}
@@ -803,7 +803,8 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 <dialog class="add-dlg" id="originDlg" aria-labelledby="originTitle">
   <div class="add-body">
-    <div class="add-head"><h2 id="originTitle">출발지 고르기</h2><button class="d-close" id="originX" type="button" aria-label="닫기">×</button></div>
+    <div class="add-head"><h2 id="originTitle">어디서 출발할까요?</h2><button class="d-close" id="originX" type="button" aria-label="닫기">×</button></div>
+    <p class="origin-dest" id="originDest"></p>
     <input class="search" id="originQ" type="search" placeholder="장소, 역, 동네 이름" aria-label="출발지 이름으로 찾기" maxlength="40" enterkeyhint="search">
     <p class="add-status" id="originStatus" role="status"></p>
     <ul class="list" id="originList"></ul>
@@ -2236,7 +2237,7 @@ function runningRoutes(t){
   return t.routes.filter(r => r.segs.every(s => s.mode === 'walk' || segRunning(s, now)));
 }
 
-/* 출발지: 기본은 내 위치, '여기서 출발'이나 출발지 고르기로 다른 장소를 정할 수 있다 (A → B 길찾기) */
+/* 출발지: 기본은 내 위치. 길찾기를 누르면 내 위치나 검색한 장소를 출발지로 고른다 (A → B 길찾기) */
 state.routeFrom = null; // { name, lat, lng } | null(내 위치)
 const routeOrigin = () => state.routeFrom || state.me || null;
 function setRouteFrom(place){
@@ -2260,18 +2261,19 @@ let originFor = null, originTimer = null;
 function openOriginPicker(dest){
   originFor = dest;
   const dlg = $('originDlg'), input = $('originQ');
+  $('originDest').textContent = dest ? `도착 · ${dest.name}` : '';
   input.value = ''; renderOriginList([], '');
   dlg.showModal(); setTimeout(() => input.focus(), 50);
 }
 function renderOriginList(list, status){
   const ul = $('originList'); ul.replaceChildren();
   const item = (title, sub, fn) => { const li = el('li'), b = el('button','item'); b.type = 'button'; b.append(el('div','item-name', title)); if (sub) b.appendChild(el('div','item-sub', sub)); b.addEventListener('click', fn); li.appendChild(b); ul.appendChild(li); };
-  item('내 위치', state.me ? '지금 있는 곳에서 출발' : '누르면 위치를 찾아요', () => {
+  item('내 위치', state.me ? '지금 있는 곳에서 출발' : '누르면 위치 사용을 물어봐요. 경로를 찾는 데만 쓰고 저장하지 않아요', () => {
     $('originDlg').close();
     if (state.me) setRouteFrom(null);
-    else { state.routeFrom = null; if (originFor) state.routeAfterFix = originFor.id; locate(false, true); }
+    else { state.routeFrom = null; state.transit = null; clearRoute(); if (originFor) state.routeAfterFix = originFor.id; locate(false, true); renderAll(); }
   });
-  for (const x of list) item(x.name, [x.type, x.addr].filter(Boolean).join(' · '), () => { $('originDlg').close(); setRouteFrom(x); });
+  for (const x of list.filter(x => !(originFor && sameSpot(originFor, x)))) item(x.name, [x.type, x.addr].filter(Boolean).join(' · '), () => { $('originDlg').close(); setRouteFrom(x); });
   $('originStatus').textContent = status;
 }
 async function searchOrigin(query){
@@ -2347,37 +2349,30 @@ function tabRoutes(t, tab){
 
 function renderTransit(d, p){
   const box = el('div','d-transit');
-  box.appendChild(el('h3','sec-title','어떻게 갈까요'));
   const t = state.transit && state.transit.placeId === p.id ? state.transit : null;
   const o = routeOrigin();
-  // 출발지: 내 위치 또는 고른 장소. 바꾸기를 누르면 장소를 검색해 고른다
   if (state.routeFrom && sameSpot(state.routeFrom, p)) {
-    box.appendChild(el('p','d-tnote', '이곳을 출발지로 정했어요. 도착할 장소를 열면 이곳에서 가는 경로를 찾아요.'));
+    box.append(el('h3','sec-title','길찾기'), el('p','d-tnote', '이곳이 출발지예요. 도착할 장소를 열면 이곳에서 가는 경로를 찾아요.'));
     d.appendChild(box); return;
   }
+  const auto = !t && !!state.routeFrom; // 출발지를 따로 골라 둔 길찾기 중이면 열자마자 찾는다
+  if (!t && !auto) { // 처음에는 길찾기 버튼 하나만. 누르면 출발지(내 위치 또는 검색)를 고른다
+    const finding = !o && watchId !== null && state.routeAfterFix === p.id;
+    const b = el('button','d-tbtn', finding ? '내 위치를 찾는 중이에요…' : '길찾기'); b.type = 'button'; b.disabled = finding;
+    b.addEventListener('click', () => openOriginPicker(p)); box.appendChild(b);
+    d.appendChild(box); return;
+  }
+  box.appendChild(el('h3','sec-title','길찾기'));
+  // 경로를 찾을 때부터는 어디서 출발하는지 보여 주고 바꿀 수 있게 한다
   const from = el('div','d-from');
-  from.append(el('span','d-from-k','출발'), el('b', null, o ? (o.name || '내 위치') : '정하지 않음'));
-  const chg = el('button','linkbtn', o ? '바꾸기' : '출발지 고르기'); chg.type = 'button'; chg.addEventListener('click', () => openOriginPicker(p));
+  from.append(el('span','d-from-k','출발'), el('b', null, (o && o.name) || '내 위치'));
+  const chg = el('button','linkbtn', '바꾸기'); chg.type = 'button'; chg.addEventListener('click', () => openOriginPicker(p));
   from.appendChild(chg);
   if (state.routeFrom) { const me = el('button','linkbtn', '내 위치로'); me.type = 'button'; me.addEventListener('click', () => setRouteFrom(null)); from.appendChild(me); }
-  const here = el('button','linkbtn d-from-here', '여기서 출발'); here.type = 'button';
-  here.title = '이곳을 출발지로 정하고, 도착할 장소를 열어 경로를 찾아요';
-  here.addEventListener('click', () => { setRouteFrom(p); toast(`'${p.name}'을(를) 출발지로 정했어요. 도착할 장소를 열어 주세요.`); });
-  from.appendChild(here);
   box.appendChild(from);
-  if (!o) { // 출발지를 아직 모르면: 누르면 위치를 묻고, 찾자마자 바로 경로를 찾는다
-    const finding = watchId !== null;
-    const b = el('button','d-tbtn', finding ? '내 위치를 찾는 중이에요…' : '내 위치에서 경로 찾기 (대중교통·도보)'); b.type = 'button'; b.disabled = finding;
-    b.addEventListener('click', () => { state.routeAfterFix = p.id; locate(false, true); });
-    box.append(b, el('p','d-tnote', '누르면 위치 사용을 물어봐요. 위치는 거리와 경로를 찾는 데만 쓰고 저장하지 않아요. 다른 곳에서 출발하려면 위의 출발지 고르기를 눌러 주세요.'));
-  }
-  else if (!t && state.routeFrom) { // 출발지를 따로 골라 둔 길찾기 중이면 열자마자 찾는다
+  if (auto) {
     box.appendChild(el('p','d-tnote','경로를 찾는 중이에요…'));
     setTimeout(() => { if (state.sel === p.id && !state.transit) findTransit(p); }, 0);
-  }
-  else if (!t) {
-    const b = el('button','d-tbtn','경로 찾기 (대중교통·도보)'); b.type = 'button';
-    b.addEventListener('click', () => findTransit(p)); box.appendChild(b);
   }
   else if (t.status === 'loading') box.appendChild(el('p','d-tnote','경로를 찾는 중이에요…'));
   else if (t.status === 'error') {
