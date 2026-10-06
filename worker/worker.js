@@ -11,9 +11,10 @@
 //   POST /search   { query, x?, y? }                            → 카카오 키워드 장소 검색 (x, y가 있으면 그 근처부터)
 //   POST /station  { x, y }                                     → 1.5km 안 지하철역 (가까운 순)
 //   POST /nearby   { rect: "왼쪽X,아래Y,오른쪽X,위Y", code? }      → 지도 한 칸 안의 장소 (code: CS2 편의점, CE7 카페, FD6 음식점, PM9 약국, BK9 은행, CT1 문화시설, LIB 도서관)
+//   POST /intent   { text }                                     → 글로 적은 목적을 기록 항목 조건으로 (Claude, 비밀 변수 ANTHROPIC_API_KEY)
 
 const ALLOWED_ORIGINS = ['https://ian-space.github.io', 'http://localhost:8765'];
-const VERSION = '2026-10-06.1'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
+const VERSION = '2026-10-06.2'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
 // 경로 결과 저장 시간(초). KV 바인딩(ROUTE_CACHE)이 없으면 저장하지 않고 그대로 동작한다
 const CACHE_SECONDS = { transit: 600, walk: 86400 };
 // 주변 장소 종류. 카카오 업종 코드(CE7 카페, FD6 음식점, CT1 문화시설)로 찾고,
@@ -26,6 +27,27 @@ const NEARBY = {
   BK9: { api: 'category', params: { category_group_code: 'BK9' } },
   CT1: { api: 'category', params: { category_group_code: 'CT1' } },
   LIB: { api: 'keyword', params: { query: '도서관' }, keep: d => /도서관/.test(d.category_name || '') },
+};
+
+// 글로 적은 목적 → 조건(/intent): 사이트의 기록 항목과 같아야 한다(index.html ENUMS, TAGS)
+const AI_MODEL = 'claude-haiku-4-5-20251001';
+const AI_FIELDS = {
+  noise:    { label: '소음', values: ['조용함', '보통', '시끄러움'] },
+  spacing:  { label: '좌석 간격', values: ['넓음', '보통', '좁음'] },
+  light:    { label: '채광', values: ['밝음', '보통', '어두움'] },
+  outlet:   { label: '콘센트', values: ['많음', '일부', '없음'] },
+  stay:     { label: '머무르기', values: ['장시간 가능', '2시간 내외', '회전 빠름'] },
+  hood:     { label: '고기 굽는 곳 배기', values: ['하향식', '상향식', '후드 없음'] },
+  entrance: { label: '입구', values: ['턱 없음', '경사로 있음', '계단 있음'] },
+  floor:    { label: '층 이동', values: ['1층', '엘리베이터 있음', '계단만'] },
+  toilet:   { label: '화장실', values: ['매장 안', '건물 공용', '없음'] },
+  kids:     { label: '아이 동반', values: ['유아 의자 있음', '동반 가능', '노키즈존'] },
+  pets:     { label: '반려동물', values: ['실내 가능', '야외만', '불가'] },
+  parking:  { label: '주차', values: ['전용 주차장', '근처 유료 주차', '주차 불가'] },
+  diaper:   { label: '기저귀 교환대', values: ['매장 안에 있음', '건물에 있음', '없음'] },
+  late:     { label: '심야 영업', values: ['24시간', '자정 넘어 영업', '자정 전 마감'] },
+  furniture:{ label: '좌석 종류', tag: true, values: ['등받이 의자', '스툴(등받이 없음)', '소파·쿠션', '높은 바 좌석', '좌식', '큰 공용 테이블', '1인석', '야외 자리'] },
+  materials:{ label: '눈에 보이는 마감', tag: true, values: ['나무', '콘크리트', '타일', '벽돌', '돌', '유리', '금속', '페인트 벽', '패브릭·카펫', '식물 많음'] },
 };
 
 const TMAP = {
@@ -52,7 +74,7 @@ export default {
     if (request.method !== 'POST') return reply(405, { error: 'POST only' });
 
     const kind = new URL(request.url).pathname.replace(/^\/+/, '');
-    if (!TMAP[kind] && kind !== 'search' && kind !== 'nearby' && kind !== 'station') return reply(404, { error: 'unknown path' });
+    if (!TMAP[kind] && !['search', 'nearby', 'station', 'intent'].includes(kind)) return reply(404, { error: 'unknown path' });
 
     let input;
     try { input = await request.json(); } catch { return reply(400, { error: 'invalid json' }); }
@@ -126,6 +148,60 @@ export default {
       const text = JSON.stringify(split ? { places: [], split: true } : { places });
       if (kv) ctx.waitUntil(kv.put(cacheKey, text, { expirationTtl: 86400 }).catch(() => {}));
       return new Response(text, { status: 200, headers: { ...cors, 'Content-Type': 'application/json; charset=utf-8', 'X-Cache': kv ? 'MISS' : 'OFF' } });
+    }
+
+
+
+    /* 글로 적은 목적 → 기록 항목 조건 (Anthropic Claude). 사이트에서 이용자가 'AI로 조건 찾기'를 눌렀을 때만 온다.
+       기록 항목 안의 값만 돌려주고, 같은 문장은 30일 저장해 다시 쓴다. 누가 물었는지는 저장하지 않는다 */
+    if (kind === 'intent') {
+      if (!env.ANTHROPIC_API_KEY) return reply(503, { error: 'ai off' });
+      const text = String(input.text || '').replace(/[\u0000-\u001F\u007F]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60);
+      if (text.length < 2) return reply(400, { error: 'empty text' });
+      const kv = env.ROUTE_CACHE;
+      const cacheKey = 'intent1:' + text;
+      if (kv) {
+        const hit = await kv.get(cacheKey).catch(() => null);
+        if (hit) return new Response(hit, { status: 200, headers: { ...cors, 'Content-Type': 'application/json; charset=utf-8', 'X-Cache': 'HIT' } });
+        // 비용 보호: 한 접속 주소당 시간마다 20번, 전체 하루 2000번까지
+        const ip = request.headers.get('CF-Connecting-IP') || 'x';
+        const now = new Date().toISOString();
+        const kIp = `rl:ai:${ip}:${now.slice(0, 13)}`, kDay = `rl:ai:day:${now.slice(0, 10)}`;
+        const [nIp, nDay] = await Promise.all([kv.get(kIp), kv.get(kDay)].map(p => p.then(v => Number(v) || 0).catch(() => 0)));
+        if (nIp >= 20 || nDay >= 2000) return reply(429, { error: 'too many' });
+        ctx.waitUntil(Promise.all([kv.put(kIp, String(nIp + 1), { expirationTtl: 3600 }), kv.put(kDay, String(nDay + 1), { expirationTtl: 86400 })]).catch(() => {}));
+      }
+      const list = Object.entries(AI_FIELDS).map(([k, f]) => `${k} (${f.label}): ${f.values.join(' | ')}`).join('\n');
+      const system = `너는 공간 기록 지도의 검색 도우미다. 이용자가 적은 목적 문장을 아래 기록 항목의 값으로만 바꾼다.
+- 목록에 없는 항목이나 값은 절대 만들지 않는다. 값은 글자 그대로 쓴다.
+- 문장에서 분명히 드러나거나 그 목적에 일반적으로 꼭 필요한 조건만 고른다. 애매하면 고르지 않는다.
+- 한 항목에서 그 목적에 괜찮은 값은 모두 고른다(예: 휠체어면 entrance에 "턱 없음", "경사로 있음").
+- 기록 항목으로 나타낼 수 없는 요구는 missing에 짧은 낱말로 적는다(최대 3개).
+항목:
+${list}
+출력은 JSON 하나만, 설명 없이: {"conds":{"항목키":["값"]},"missing":["낱말"]}`;
+      const up = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'x-api-key': env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+        body: JSON.stringify({ model: AI_MODEL, max_tokens: 300, temperature: 0, system, messages: [{ role: 'user', content: text }] }),
+      });
+      const j = await up.json().catch(() => null);
+      if (!up.ok || !j) return reply(502, { error: 'ai error' });
+      const out = String((j.content || []).map(c => c.text || '').join(''));
+      let parsed = null;
+      try { parsed = JSON.parse(out.slice(out.indexOf('{'), out.lastIndexOf('}') + 1)); } catch {}
+      if (!parsed || typeof parsed !== 'object') return reply(502, { error: 'ai parse' });
+      // 기록 항목 안의 값만 남긴다
+      const w = {}, t = {};
+      for (const [k, vals] of Object.entries(parsed.conds || {})) {
+        const f = AI_FIELDS[k]; if (!f || !Array.isArray(vals)) continue;
+        const ok = [...new Set(vals.map(String).filter(v => f.values.includes(v)))];
+        if (ok.length) (f.tag ? t : w)[k] = ok;
+      }
+      const missing = (Array.isArray(parsed.missing) ? parsed.missing : []).map(s => String(s).slice(0, 12)).slice(0, 3);
+      const body = JSON.stringify({ w, t, missing });
+      if (kv) ctx.waitUntil(kv.put(cacheKey, body, { expirationTtl: 30 * 86400 }).catch(() => {}));
+      return new Response(body, { status: 200, headers: { ...cors, 'Content-Type': 'application/json; charset=utf-8', 'X-Cache': kv ? 'MISS' : 'OFF' } });
     }
 
     /* TMAP 경로: 국내 좌표만, 정해진 칸만 넘긴다 */

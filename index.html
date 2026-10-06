@@ -225,6 +225,8 @@ button.stat[aria-pressed="true"] span{color:#FFFFFF}
 .intent-foot{margin:8px 0 0}
 .intent-go{margin-top:10px;width:100%}
 .intent-go:disabled{opacity:.5;cursor:default}
+.intent-ai{display:block;margin-top:10px}
+.btn.intent-ai{width:100%}
 .chip-wrap{display:inline-flex;align-items:center;gap:2px}
 .chip-x{border:0;background:none;color:var(--muted);font-size:16px;line-height:1;padding:2px 4px;cursor:pointer}
 /* 물음표가 정가운데 오도록 기본 여백을 없애고 격자로 가운데 정렬, 오른쪽 끝에서 2px 안쪽 */
@@ -2203,76 +2205,146 @@ const bestValues = (k, pts) => ENUMS[k].values.filter((v, i) => pts[i] === Math.
 function fitScore(p, pu){
   let got = 0, max = 0;
   for (const [k, pts] of Object.entries(pu.w)) { max += Math.max(...pts); const l = level(p, k); if (l >= 0) got += pts[l]; }
+  // 좌석 종류·마감(글로 적은 목적에서만): 고른 것 중 하나라도 있으면 3점
+  for (const [k, vals] of Object.entries(pu.t || {})) { max += 3; if (tagList(p[k]).some(v => vals.includes(v))) got += 3; }
   return max ? got / max : 0;
 }
 // 목적을 고르면 그 목적에서 '좋음'이 가장 중요한 조건들로 지도 배지를 바꾼다
 const purposeBadges = pu => Object.entries(pu.w).filter(([, pts]) => pts[0] === Math.max(...pts) && pts[0] >= 1.5).map(([k]) => k);
 /* ---------- 글로 적은 목적 → 조건 ---------- */
 // 검색창에 '유모차 끌고 엄마랑 갈 조용한 곳'처럼 적으면 낱말을 사실 조건으로 바꿔 제안한다.
-// 추천이 아니라 조건으로 바꿔 보여 주기만 하고, 이용자가 눌러야 적용된다(AI 없이 낱말 사전으로)
-// 점수는 ENUMS 값 순서(좋음, 보통, 아쉬움)를 따른다. 같은 조건이 여러 낱말에서 나오면 큰 점수를 쓴다
+// 추천이 아니라 조건으로 바꿔 보여 주기만 하고, 이용자가 눌러야 적용된다.
+// 1) 낱말 사전(비용 없음)  2) 사전으로 못 잡으면 이용자가 눌러서 AI에게 묻기(Worker /intent, 기록 항목 안에서만 고른다)
+// w: ENUMS 점수(좋음, 보통, 아쉬움 순서). t: 좌석 종류·마감 태그. soft: 뜻이 사람마다 달라서 처음엔 꺼 두는 낱말
 const INTENTS = [
-  { re: /유모차|유아차|휠\s?체어|보행기|목발|캐리어/, w: { entrance: [3, 2.5, 0], floor: [3, 2.5, 0] } },
-  { re: /부모님|어르신|할머니|할아버지|노인|무릎|다리가?\s?(불편|아프)/, w: { entrance: [3, 1.5, 0], floor: [3, 2.5, 0], toilet: [2, 1, 0] } },
-  { re: /아기|애기|키즈|유아(?!차)|어린이|육아|아이(?!스|패드|폰|디어|템|돌)|애들|딸(?!기)|아들/, w: { kids: [3, 2.5, 0] } },
-  { re: /기저귀|수유/, w: { diaper: [3, 2, 0] } },
-  { re: /강아지|반려|애견|댕댕|멍멍|고양이|애완/, w: { pets: [3, 2, 0] } },
-  { re: /조용|집중|공부|독서|책|시끄럽지|소음\s?(적|없)/, w: { noise: [3, 1, 0] } },
-  { re: /노트북|랩탑|충전|콘센트|작업|코딩|과제|카공/, w: { outlet: [3, 1, 0] } },
-  { re: /오래|장시간|눈치|카공|하루\s?종일|공부/, w: { stay: [3, 1, 0] } },
-  { re: /넓|여유|붐비지|복잡하지|단체|모임|여럿/, w: { spacing: [3, 1, 0] } },
-  { re: /밝|채광|햇빛|햇살|창가|독서|책/, w: { light: [3, 1, 0] } },
-  { re: /주차|자차|운전|(^|\s)차\s?(가지고|끌고|타고)/, w: { parking: [3, 2, 0] } }, // '유모차 끌고'는 빼려고 '차' 앞이 띄어쓰기일 때만
+  { re: /유모차|유아차|휠\s?체어|보행기|목발|캐리어|전동\s?휠|장애/, w: { entrance: [3, 2.5, 0], floor: [3, 2.5, 0] } },
+  { re: /부모님|어르신|할머니|할아버지|노인|노부모|무릎|관절|거동|임산부|임신|만삭|다리가?\s?(불편|아프)|허리가?\s?(불편|아프)/, w: { entrance: [3, 1.5, 0], floor: [3, 2.5, 0], toilet: [2, 1, 0] } },
+  { re: /아기|애기|아가|키즈|유아(?!차)|어린이|육아|아이(?!스|패드|폰|디어|템|돌|콘|브)|애들|딸(?!기)|아들|자녀|초등|꼬마|조카/, w: { kids: [3, 2.5, 0] } },
+  { re: /가족/, w: { kids: [3, 2.5, 0], spacing: [3, 1, 0] }, soft: true },
+  { re: /기저귀|수유|분유|이유식/, w: { diaper: [3, 2, 0] } },
+  { re: /강아지|반려|애견|댕댕|멍멍|고양이|애완|견주|개(랑|와|를|\s?데리)/, w: { pets: [3, 2, 0] } },
+  { re: /조용|고요|한적|차분|잔잔|집중|공부|독서|책|사색|명상|시끄럽지|시끄러운\s?(건|거|게)?\s?싫|소음\s?(적|없)|소란스럽지/, w: { noise: [3, 1, 0] } },
+  { re: /노트북|랩탑|맥북|태블릿|아이패드|충전|콘센트|전원|작업|코딩|과제|업무|일하|일할|재택|카공|코워킹/, w: { outlet: [3, 1, 0] } },
+  { re: /오래|장시간|눈치|카공|하루\s?종일|공부|머무|머물|있다\s?가|죽치|진득|시간\s?(보내|때우)|느긋/, w: { stay: [3, 1, 0] } },
+  // '편하게'는 조용함, 넓은 자리, 오래 있기, 소파 중 무엇인지 사람마다 달라서 후보만 보여 준다
+  { re: /편하|편안|편히|아늑|포근|안락|휴식|쉬(?!운|워|웠)|쉴|릴렉스|힐링|늘어지/, w: { noise: [3, 1, 0], spacing: [3, 1, 0], stay: [3, 1, 0] }, t: { furniture: ['소파·쿠션'] }, soft: true },
+  { re: /눕|누울|누워|빈백|소파|쇼파|좌식|신발\s?벗|뒹굴/, t: { furniture: ['소파·쿠션', '좌식'] } },
+  { re: /혼자|혼밥|혼카|혼술|1인|나홀로|홀로/, t: { furniture: ['1인석'] } },
+  { re: /야외|테라스|루프탑|옥상|바깥|마당|정원/, t: { furniture: ['야외 자리'] } },
+  { re: /큰\s?테이블|공용\s?테이블|단체석/, t: { furniture: ['큰 공용 테이블'] } },
+  { re: /등받이|허리/, t: { furniture: ['등받이 의자'] } },
+  { re: /식물|초록|화분|플랜테리어|그린/, t: { materials: ['식물 많음'] } },
+  { re: /원목|나무/, t: { materials: ['나무'] } },
+  { re: /통창|유리창/, w: { light: [3, 1, 0] }, t: { materials: ['유리'] } },
+  { re: /넓|여유|붐비지|복잡하지|북적이지|한산|쾌적|답답하지|트인|단체|모임|여럿/, w: { spacing: [3, 1, 0] } },
+  { re: /밝|채광|햇빛|햇살|볕|창가|자연광|환한|독서|책/, w: { light: [3, 1, 0] } },
+  { re: /주차|자차|운전|드라이브|(^|\s)차\s?(가지고|끌고|타고|로)/, w: { parking: [3, 2, 0] } }, // '유모차 끌고'는 빼려고 '차' 앞이 띄어쓰기일 때만
   { re: /화장실/, w: { toilet: [3, 1.5, 0] } },
-  { re: /늦게|심야|밤늦|늦은\s?밤|새벽|24\s?시|자정|야간/, w: { late: [3, 2, 0] } },
-  { re: /엘리베이터|승강기|계단\s?(없|싫)/, w: { floor: [3, 2.5, 0] } },
-  { re: /턱\s?(없|낮)|경사로|문턱|계단\s?(없|싫)/, w: { entrance: [3, 2.5, 0] } },
-  { re: /연기|냄새|옷에\s?배|하향식/, w: { hood: [3, 1, 0] } },
-  { re: /대화|수다|이야기|미팅|회의|소개팅/, w: { noise: [1, 2, 0], spacing: [2, 1, 0] } }
+  { re: /늦게|늦은|심야|밤늦|밤에|새벽|24\s?시|자정|야간|야식|막차/, w: { late: [3, 2, 0] } },
+  { re: /엘리베이터|엘베|승강기|계단\s?(없|싫|못)/, w: { floor: [3, 2.5, 0] } },
+  { re: /턱\s?(없|낮)|경사로|문턱|단차|평지|계단\s?(없|싫|못)/, w: { entrance: [3, 2.5, 0] } },
+  { re: /연기|냄새|옷에\s?배|하향식|환기/, w: { hood: [3, 1, 0] } },
+  { re: /대화|수다|이야기|얘기|미팅|회의|소개팅|데이트|상견례/, w: { noise: [1, 2, 0], spacing: [2, 1, 0] } }
 ];
-// 낱말마다 찾은 조건을 합친다. 돌려주는 값: { w: {조건: 점수}, words: [찾은 낱말] }
+// 조건 번호: ENUMS 키 그대로, 태그는 't:furniture'처럼
+const condLabel = (id, x) => id.startsWith('t:') ? `${TAGS[id.slice(2)].label}: ${x.t[id.slice(2)].join('·')}` : `${ENUMS[id].label}: ${okValues(id, x.w[id])}`;
+// 낱말마다 찾은 조건을 합친다. 돌려주는 값: { w, t, soft: Set(처음엔 꺼 둘 조건), words }
 function parseIntent(text){
-  const t = String(text || ''), w = {}, words = [];
+  const s = String(text || ''), w = {}, t = {}, words = [], hard = new Set(), softs = new Set();
   for (const it of INTENTS) {
-    const m = t.match(it.re); if (!m) continue;
-    const wd = m[0].trim(); if (!words.includes(wd)) words.push(wd);
-    for (const [k, pts] of Object.entries(it.w)) w[k] = w[k] ? w[k].map((x, i) => Math.max(x, pts[i])) : pts.slice();
+    const m = s.match(it.re); if (!m) continue;
+    // 찾은 낱말이 든 어절 전체를 보여 준다('편하' → '편하게')
+    const at = m.index + (m[0].length - m[0].trimStart().length), a = s.lastIndexOf(' ', at) + 1, b = s.indexOf(' ', at + m[0].trim().length);
+    const wd = s.slice(a, b < 0 ? s.length : b).trim(); if (wd && !words.includes(wd)) words.push(wd);
+    const mark = id => (it.soft ? softs : hard).add(id);
+    for (const [k, pts] of Object.entries(it.w || {})) { w[k] = w[k] ? w[k].map((x, i) => Math.max(x, pts[i])) : pts.slice(); mark(k); }
+    for (const [k, vals] of Object.entries(it.t || {})) { t[k] = [...new Set([...(t[k] || []), ...vals])]; mark('t:' + k); }
   }
-  return { w, words };
+  return { w, t, soft: new Set([...softs].filter(id => !hard.has(id))), words };
 }
+const condIds = x => [...Object.keys(x.w), ...Object.keys(x.t).map(k => 't:' + k)];
 // 제안 칩에 보일 값: 가장 좋은 값과, 그만큼은 아니어도 괜찮은 값(점수 2 이상)
 const okValues = (k, pts) => ENUMS[k].values.filter((v, i) => pts[i] >= 2 || pts[i] === Math.max(...pts)).join('·');
-state.intent = null;      // 적용한 '내 목적' { id:'custom', label, w, why, words }
-state.intentOff = new Set(); // 제안에서 이용자가 뺀 조건
+state.intent = null;          // 적용한 '내 목적' { id:'custom', label, w, t, why, words }
+state.intentPick = new Map(); // 제안에서 이용자가 켜고 끈 조건 (조건 번호 → 켜짐)
+state.ai = { text: '', status: '', res: null, off: false }; // AI 해석: status '', 'loading', 'done', 'error'
 const curPurpose = () => state.purpose === 'custom' ? state.intent : PURPOSES.find(x => x.id === state.purpose);
-// 제안 칸: 검색어에서 조건을 찾았을 때만 검색 결과 위에 뜬다
+// 목적처럼 보이는 글인지(가게 이름 검색에 AI 버튼을 띄우지 않으려고): 두 낱말 이상이거나 '~곳, ~싶은, ~좋은' 같은 끝
+const looksLikePurpose = s => { const t = s.trim(); return t.length >= 4 && /(곳|데$|싶|좋은|좋게|있는|없는|만한|하기|하게|히\s|랑|에서|갈\s|가기|할\s)/.test(t); };
+// 제안 칸: 검색어에서 조건을 찾았거나, 목적처럼 보이는 글일 때 검색 결과 위에 뜬다
 function renderIntent(){
   const box = $('intent'); box.replaceChildren();
-  const { w, words } = parseIntent($('q').value);
-  const ks = Object.keys(w), was = box.hidden;
-  box.hidden = !ks.length; if (!ks.length) return;
+  const text = $('q').value.trim();
+  const useAi = state.ai.text === text && state.ai.status === 'done' && state.ai.res;
+  const x = useAi ? state.ai.res : parseIntent(text);
+  const ids = condIds(x), aiLoading = state.ai.text === text && state.ai.status === 'loading';
+  const canAsk = !!ROUTE_PROXY && !state.ai.off && !useAi && looksLikePurpose(text);
+  const was = box.hidden;
+  box.hidden = !text || (!ids.length && !canAsk && !aiLoading && !(state.ai.text === text && state.ai.status));
+  if (box.hidden) return;
   // 휴대폰에서 목록 패널이 접혀 있으면 제안이 안 보이니, 처음 뜰 때 패널을 올린다
   if (was && isPhone() && listSheet && (listSheet.height || 0) < sheetMax() - 10) listSheet.set(sheetMax(), true);
   box.appendChild(el('h3','sec-title', '이 조건으로 찾을까요?'));
-  box.appendChild(el('p','intent-src', `'${words.join("', '")}'에서 찾은 조건이에요. 빼고 싶은 건 눌러서 꺼 주세요.`));
-  const chips = el('div','chips'); chips.setAttribute('role','group'); chips.setAttribute('aria-label','찾은 조건');
-  for (const k of ks) {
-    const on = !state.intentOff.has(k);
-    const b = el('button','chip', `${ENUMS[k].label}: ${okValues(k, w[k])}`); b.type = 'button'; b.setAttribute('aria-pressed', String(on));
-    b.addEventListener('click', () => { on ? state.intentOff.add(k) : state.intentOff.delete(k); renderIntent(); });
-    chips.appendChild(b);
+  const isOn = id => state.intentPick.has(id) ? state.intentPick.get(id) : !(x.soft && x.soft.has(id));
+  if (ids.length) {
+    const allSoft = ids.every(id => x.soft && x.soft.has(id));
+    box.appendChild(el('p','intent-src', useAi ? `AI가 적은 글을 기록 항목으로 바꿔 봤어요. 맞는 것만 남겨 주세요.`
+      : allSoft ? `'${x.words.join("', '")}'은(는) 사람마다 뜻이 달라요. 맞는 것을 눌러 골라 주세요.`
+      : `'${x.words.join("', '")}'에서 찾은 조건이에요. 빼고 싶은 건 눌러서 꺼 주세요.`));
+    const chips = el('div','chips'); chips.setAttribute('role','group'); chips.setAttribute('aria-label','찾은 조건');
+    for (const id of ids) {
+      const on = isOn(id);
+      const b = el('button','chip', condLabel(id, x)); b.type = 'button'; b.setAttribute('aria-pressed', String(on));
+      b.addEventListener('click', () => { state.intentPick.set(id, !on); renderIntent(); });
+      chips.appendChild(b);
+    }
+    box.appendChild(chips);
+    if (useAi && x.missing && x.missing.length) box.appendChild(el('p','intent-src', `'${x.missing.join("', '")}'은(는) 기록 항목에 없어서 조건으로 바꾸지 못했어요.`));
+    const use = ids.filter(isOn);
+    const go = el('button','btn intent-go', use.length ? `조건 ${use.length}개로 보기` : '조건을 하나 이상 골라 주세요'); go.type = 'button'; go.disabled = !use.length;
+    go.addEventListener('click', () => applyIntent({
+      w: Object.fromEntries(use.filter(id => !id.startsWith('t:')).map(k => [k, x.w[k]])),
+      t: Object.fromEntries(use.filter(id => id.startsWith('t:')).map(id => [id.slice(2), x.t[id.slice(2)]]))
+    }, useAi ? [text.slice(0, 14)] : x.words));
+    box.appendChild(go);
+  } else if (state.ai.text === text && state.ai.status === 'done') {
+    box.appendChild(el('p','intent-src', x.missing && x.missing.length ? `'${x.missing.join("', '")}'은(는) 기록 항목에 없어서 조건으로 바꾸지 못했어요.` : 'AI도 기록 항목에서 맞는 조건을 찾지 못했어요. 다르게 적어 보세요.'));
+  } else if (!aiLoading) {
+    box.appendChild(el('p','intent-src', '적은 글에서 조건을 찾지 못했어요.'));
   }
-  box.appendChild(chips);
-  const use = ks.filter(k => !state.intentOff.has(k));
-  const go = el('button','btn intent-go', use.length ? `조건 ${use.length}개로 보기` : '조건을 하나 이상 켜 주세요'); go.type = 'button'; go.disabled = !use.length;
-  go.addEventListener('click', () => applyIntent(Object.fromEntries(use.map(k => [k, w[k]])), words));
-  box.append(go, el('p','intent-foot', '기록된 사실로만 골라요. 조건을 많이 채운 곳부터 보여 주고, 지도 핀 옆에 값을 표시해요.'));
+  if (aiLoading) box.appendChild(el('p','intent-src', 'AI가 기록 항목으로 바꾸는 중이에요…'));
+  else if (state.ai.text === text && state.ai.status === 'error') box.appendChild(el('p','intent-src', 'AI에게 묻지 못했어요. 잠시 뒤 다시 시도해 주세요.'));
+  if (canAsk && !aiLoading) {
+    const ask = el('button', ids.length ? 'linkbtn intent-ai' : 'btn ghost intent-ai', ids.length ? 'AI에게 다시 물어보기' : 'AI로 조건 찾기'); ask.type = 'button';
+    ask.addEventListener('click', () => askAiIntent(text));
+    box.appendChild(ask);
+  }
+  box.appendChild(el('p','intent-foot', '기록된 사실로만 골라요. 조건을 많이 채운 곳부터 보여 주고, 지도 핀 옆에 값을 표시해요.'));
 }
-function applyIntent(w, words){
+// AI 해석: 이용자가 눌렀을 때만 묻는다(비용). 적은 글만 보내고 누가 적었는지는 보내지 않는다
+async function askAiIntent(text){
+  state.ai = { text, status: 'loading', res: null, off: false }; state.intentPick.clear(); renderIntent();
+  try {
+    const r = await fetch(ROUTE_PROXY + '/intent', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) });
+    const j = await r.json().catch(() => null);
+    if (r.status === 503) { state.ai = { text: '', status: '', res: null, off: true }; toast('AI 해석은 아직 준비 중이에요.'); renderIntent(); return; }
+    if (r.status === 429) { state.ai.status = 'error'; toast('AI 질문이 너무 많아요. 잠시 뒤 다시 시도해 주세요.'); renderIntent(); return; }
+    if (!r.ok || !j) throw new Error('ai');
+    // 서버가 기록 항목 안의 값만 돌려준다. 고른 값은 3점, 나머지는 0점으로 바꾼다
+    const w = {}, t = {};
+    for (const [k, vals] of Object.entries(j.w || {})) if (ENUMS[k]) { const pts = ENUMS[k].values.map(v => vals.includes(v) ? 3 : 0); if (pts.some(Boolean)) w[k] = pts; }
+    for (const [k, vals] of Object.entries(j.t || {})) if (TAGS[k]) { const v = vals.filter(x => TAGS[k].values.includes(x)); if (v.length) t[k] = v; }
+    if (state.ai.text !== text) return; // 그사이 다른 글을 적었으면 버린다
+    state.ai = { text, status: 'done', res: { w, t, soft: new Set(), words: [], missing: (j.missing || []).slice(0, 5).map(s => String(s).slice(0, 12)) }, off: false };
+  } catch { if (state.ai.text === text) state.ai.status = 'error'; }
+  renderIntent();
+}
+function applyIntent(sel, words){
   addRecent($('q').value);
-  const why = Object.fromEntries(Object.keys(w).map(k => [k, `'${words.join("', '")}'(으)로 적은 목적에서 찾은 조건이에요.`]));
-  state.intent = { id: 'custom', label: '내 목적', w, why, words };
-  state.purpose = 'custom'; state.sortNear = false; state.sortBy = 'fit'; state.intentOff.clear();
+  const src = `'${words.join("', '")}'(으)로 적은 목적에서 찾은 조건이에요.`;
+  const why = Object.fromEntries([...Object.keys(sel.w), ...Object.keys(sel.t).map(k => 't:' + k)].map(id => [id, src]));
+  state.intent = { id: 'custom', label: '내 목적', w: sel.w, t: sel.t, why, words };
+  state.purpose = 'custom'; state.sortNear = false; state.sortBy = 'fit'; state.intentPick.clear();
   // 글은 장소 이름 찾기가 아니라 목적이었으니 검색어를 비운다(남겨 두면 이름이 안 맞는 곳이 모두 걸러진다)
   $('q').value = ''; state.q = ''; queueExtSearch(''); hideRecent(); $('q').blur();
   setBadges(purposeBadges(state.intent));
@@ -2319,6 +2391,11 @@ function renderPicks(){
       const li = el('li'), head = el('div','phelp-head');
       head.append(el('b', null, `${ENUMS[k].label}: ${bestValues(k, pts)}`), el('span', 'imp imp' + (Math.max(...pts) >= 3 ? 3 : Math.max(...pts) >= 2 ? 2 : 1), importance(pts)));
       li.append(head, el('span','phelp-why', pu.why[k])); ul.appendChild(li);
+    }
+    for (const [k, vals] of Object.entries(pu.t || {})) { // 좌석 종류·마감: 하나라도 있으면 점수
+      const li = el('li'), head = el('div','phelp-head');
+      head.append(el('b', null, `${TAGS[k].label}: ${vals.join(', ')}`), el('span', 'imp imp3', '가장 중요'));
+      li.append(head, el('span','phelp-why', pu.why['t:' + k])); ul.appendChild(li);
     }
     hb.append(ul, el('p','phelp-foot','조건마다 점수를 매겨 더한 뒤 만점 대비 %로 보여 줘요. 중요한 조건일수록 점수가 크고, 기록이 없는 항목은 0점이에요.'));
   }
@@ -4371,7 +4448,7 @@ $('btnReset').addEventListener('click', () => {
   try { localStorage.removeItem(STORE_KEY); } catch {}
   setMine(rowsToPlaces(SAMPLE_ROWS).places, '예시 데이터 (가상의 장소 14곳)', false, true); setStatus('예시 데이터로 되돌렸어요.', false);
 });
-$('q').addEventListener('input', e => { if (!e.target.value.trim()) state.intentOff.clear(); state.q = cleanText(e.target.value, 40).toLowerCase(); renderAll(); queueExtSearch(e.target.value); renderRecent(); });
+$('q').addEventListener('input', e => { if (!e.target.value.trim()) state.intentPick.clear(); state.q = cleanText(e.target.value, 40).toLowerCase(); renderAll(); queueExtSearch(e.target.value); renderRecent(); });
 $('q').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing) { addRecent(e.target.value); hideRecent(); e.target.blur(); } });
 $('q').addEventListener('focus', renderRecent);
 $('q').addEventListener('blur', () => setTimeout(() => { if (document.activeElement !== $('q')) hideRecent(); }, 150));
