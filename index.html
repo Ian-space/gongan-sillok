@@ -219,6 +219,14 @@ button.stat[aria-pressed="true"] span{color:#FFFFFF}
 /* 목적별 추천 Top5 */
 .psort{display:flex;gap:6px;margin-top:10px;align-items:center}
 #picks .chips{align-items:center}
+/* 검색창에 적은 목적에서 찾은 조건(제안) */
+.intent{background:color-mix(in srgb,var(--mark) 14%,var(--panel))}
+.intent-src,.intent-foot{margin:4px 0 8px;font-size:12.5px;color:var(--muted)}
+.intent-foot{margin:8px 0 0}
+.intent-go{margin-top:10px;width:100%}
+.intent-go:disabled{opacity:.5;cursor:default}
+.chip-wrap{display:inline-flex;align-items:center;gap:2px}
+.chip-x{border:0;background:none;color:var(--muted);font-size:16px;line-height:1;padding:2px 4px;cursor:pointer}
 /* 물음표가 정가운데 오도록 기본 여백을 없애고 격자로 가운데 정렬, 오른쪽 끝에서 2px 안쪽 */
 .help-btn{flex:none;margin:0 2px 0 auto;width:20px;height:20px;padding:0;display:inline-grid;place-items:center;border-radius:50%;border:1px solid var(--line);background:var(--panel);color:var(--muted);font-size:12px;font-weight:700;line-height:1;cursor:pointer}
 .help-btn:hover,.help-btn[aria-expanded="true"]{border-color:var(--blue);color:var(--blue)}
@@ -778,6 +786,7 @@ html{touch-action:manipulation}
       <div class="source" id="source"></div>
     </div>
     <div class="scroll">
+      <section class="sec intent" id="intent" hidden aria-label="적은 목적에서 찾은 조건"></section>
       <section class="sec" id="extList" hidden aria-label="검색 결과: 기록 안 된 장소"></section>
       <section class="sec" id="summary" aria-label="한눈에 보기"></section>
       <section class="sec" id="picks" aria-label="목적으로 보기"></section>
@@ -827,7 +836,7 @@ html{touch-action:manipulation}
       <div class="tb-row">
         <div class="tb-search">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
-          <input class="search" id="q" type="search" placeholder="장소, 동네, 좌석·마감으로 찾기" aria-label="장소 이름, 동네, 좌석 종류, 마감으로 찾기. 기록 안 된 가게도 함께 찾아요" maxlength="40" enterkeyhint="search">
+          <input class="search" id="q" type="search" placeholder="장소 이름 또는 '아이랑 조용한 곳'" aria-label="장소 이름, 동네, 좌석 종류, 마감으로 찾기. '유모차로 갈 조용한 곳'처럼 목적을 적으면 조건으로 바꿔 줘요. 기록 안 된 가게도 함께 찾아요" maxlength="40" enterkeyhint="search">
         </div>
         <button class="acct" id="acctBtn" type="button" aria-expanded="false" aria-controls="acctMenu" aria-label="계정 메뉴"></button>
         <div class="acct-menu" id="acctMenu" hidden>
@@ -2177,7 +2186,16 @@ const PURPOSES = [
     why: { noise: '너무 조용하면 목소리가 튀고, 시끄러우면 말이 안 들려요. 보통이 가장 편해요.', spacing: '옆 테이블에 이야기가 덜 들려요.', stay: '천천히 이야기 나누려면 2시간 이상이면 충분해요.', light: '밝은 곳이 분위기가 편안한 편이에요.' } },
   // 경사로·엘리베이터도 들어갈 수 있으니 '보통'에도 점수를 크게 준다
   { id: 'wheel', label: '휠체어·유아차', w: { entrance: [3, 2.5, 0], floor: [3, 2.5, 0], spacing: [1, .5, 0], toilet: [1, .5, 0] },
-    why: { entrance: '계단 없이, 또는 경사로로 들어갈 수 있어야 해요.', floor: '1층이거나 엘리베이터가 있어야 좌석까지 갈 수 있어요.', spacing: '테이블 사이가 넓어야 휠체어·유아차가 지나갈 수 있어요.', toilet: '매장 안에 화장실이 있으면 오래 머물기 편해요.' } }
+    why: { entrance: '계단 없이, 또는 경사로로 들어갈 수 있어야 해요.', floor: '1층이거나 엘리베이터가 있어야 좌석까지 갈 수 있어요.', spacing: '테이블 사이가 넓어야 휠체어·유아차가 지나갈 수 있어요.', toilet: '매장 안에 화장실이 있으면 오래 머물기 편해요.' } },
+  { id: 'kids', label: '아이와 함께', w: { kids: [3, 2.5, 0], diaper: [2, 1.5, 0], entrance: [2, 1.5, 0], toilet: [1, .5, 0] },
+    why: { kids: '노키즈존이 아니어야 하고, 유아 의자가 있으면 더 편해요.', diaper: '기저귀를 갈 곳이 가까이 있어야 해요. 건물 안에만 있어도 괜찮아요.', entrance: '유아차를 끌고 들어가려면 계단이 없어야 해요.', toilet: '아이와 함께면 화장실이 매장 안에 있는 게 편해요.' } },
+  { id: 'pets', label: '반려동물과', w: { pets: [3, 2, 0], spacing: [1, .5, 0], parking: [1, .5, 0] },
+    why: { pets: '실내에 같이 들어갈 수 있으면 가장 좋고, 야외 자리만 있어도 갈 수 있어요.', spacing: '자리가 넓으면 반려동물이 발밑에 편히 있을 수 있어요.', parking: '차로 데려갈 때 주차가 되면 편해요.' } },
+  // 부모님·어르신: 경사로는 휠체어보다 걸어서 오르기에 덜 편할 수 있어 '보통'으로 둔다
+  { id: 'elder', label: '부모님과', w: { entrance: [3, 1.5, 0], floor: [3, 2.5, 0], toilet: [2, 1, 0], parking: [1.5, 1, 0] },
+    why: { entrance: '무릎이 불편하면 턱 하나도 부담이에요. 턱이 없는 곳이 가장 편해요.', floor: '계단을 오르지 않아도 되는 1층이나 엘리베이터가 있어야 해요.', toilet: '화장실이 매장 안에 있으면 멀리 가지 않아도 돼요.', parking: '모시고 갈 때 바로 앞에 주차할 수 있으면 편해요.' } },
+  { id: 'night', label: '늦은 밤', w: { late: [3, 2, 0], toilet: [1, .5, 0] },
+    why: { late: '자정 넘어서도 열려 있어야 해요. 24시간이면 가장 든든해요.', toilet: '늦은 시간에는 매장 안 화장실이 더 안전해요.' } }
 ];
 state.purpose = null; state.pickHelp = false; state.delAsk = null;
 const importance = pts => { const m = Math.max(...pts); return m >= 3 ? '가장 중요' : m >= 2 ? '중요' : '참고'; };
@@ -2189,6 +2207,77 @@ function fitScore(p, pu){
 }
 // 목적을 고르면 그 목적에서 '좋음'이 가장 중요한 조건들로 지도 배지를 바꾼다
 const purposeBadges = pu => Object.entries(pu.w).filter(([, pts]) => pts[0] === Math.max(...pts) && pts[0] >= 1.5).map(([k]) => k);
+/* ---------- 글로 적은 목적 → 조건 ---------- */
+// 검색창에 '유모차 끌고 엄마랑 갈 조용한 곳'처럼 적으면 낱말을 사실 조건으로 바꿔 제안한다.
+// 추천이 아니라 조건으로 바꿔 보여 주기만 하고, 이용자가 눌러야 적용된다(AI 없이 낱말 사전으로)
+// 점수는 ENUMS 값 순서(좋음, 보통, 아쉬움)를 따른다. 같은 조건이 여러 낱말에서 나오면 큰 점수를 쓴다
+const INTENTS = [
+  { re: /유모차|유아차|휠\s?체어|보행기|목발|캐리어/, w: { entrance: [3, 2.5, 0], floor: [3, 2.5, 0] } },
+  { re: /부모님|어르신|할머니|할아버지|노인|무릎|다리가?\s?(불편|아프)/, w: { entrance: [3, 1.5, 0], floor: [3, 2.5, 0], toilet: [2, 1, 0] } },
+  { re: /아기|애기|키즈|유아(?!차)|어린이|육아|아이(?!스|패드|폰|디어|템|돌)|애들|딸(?!기)|아들/, w: { kids: [3, 2.5, 0] } },
+  { re: /기저귀|수유/, w: { diaper: [3, 2, 0] } },
+  { re: /강아지|반려|애견|댕댕|멍멍|고양이|애완/, w: { pets: [3, 2, 0] } },
+  { re: /조용|집중|공부|독서|책|시끄럽지|소음\s?(적|없)/, w: { noise: [3, 1, 0] } },
+  { re: /노트북|랩탑|충전|콘센트|작업|코딩|과제|카공/, w: { outlet: [3, 1, 0] } },
+  { re: /오래|장시간|눈치|카공|하루\s?종일|공부/, w: { stay: [3, 1, 0] } },
+  { re: /넓|여유|붐비지|복잡하지|단체|모임|여럿/, w: { spacing: [3, 1, 0] } },
+  { re: /밝|채광|햇빛|햇살|창가|독서|책/, w: { light: [3, 1, 0] } },
+  { re: /주차|자차|운전|(^|\s)차\s?(가지고|끌고|타고)/, w: { parking: [3, 2, 0] } }, // '유모차 끌고'는 빼려고 '차' 앞이 띄어쓰기일 때만
+  { re: /화장실/, w: { toilet: [3, 1.5, 0] } },
+  { re: /늦게|심야|밤늦|늦은\s?밤|새벽|24\s?시|자정|야간/, w: { late: [3, 2, 0] } },
+  { re: /엘리베이터|승강기|계단\s?(없|싫)/, w: { floor: [3, 2.5, 0] } },
+  { re: /턱\s?(없|낮)|경사로|문턱|계단\s?(없|싫)/, w: { entrance: [3, 2.5, 0] } },
+  { re: /연기|냄새|옷에\s?배|하향식/, w: { hood: [3, 1, 0] } },
+  { re: /대화|수다|이야기|미팅|회의|소개팅/, w: { noise: [1, 2, 0], spacing: [2, 1, 0] } }
+];
+// 낱말마다 찾은 조건을 합친다. 돌려주는 값: { w: {조건: 점수}, words: [찾은 낱말] }
+function parseIntent(text){
+  const t = String(text || ''), w = {}, words = [];
+  for (const it of INTENTS) {
+    const m = t.match(it.re); if (!m) continue;
+    const wd = m[0].trim(); if (!words.includes(wd)) words.push(wd);
+    for (const [k, pts] of Object.entries(it.w)) w[k] = w[k] ? w[k].map((x, i) => Math.max(x, pts[i])) : pts.slice();
+  }
+  return { w, words };
+}
+// 제안 칩에 보일 값: 가장 좋은 값과, 그만큼은 아니어도 괜찮은 값(점수 2 이상)
+const okValues = (k, pts) => ENUMS[k].values.filter((v, i) => pts[i] >= 2 || pts[i] === Math.max(...pts)).join('·');
+state.intent = null;      // 적용한 '내 목적' { id:'custom', label, w, why, words }
+state.intentOff = new Set(); // 제안에서 이용자가 뺀 조건
+const curPurpose = () => state.purpose === 'custom' ? state.intent : PURPOSES.find(x => x.id === state.purpose);
+// 제안 칸: 검색어에서 조건을 찾았을 때만 검색 결과 위에 뜬다
+function renderIntent(){
+  const box = $('intent'); box.replaceChildren();
+  const { w, words } = parseIntent($('q').value);
+  const ks = Object.keys(w), was = box.hidden;
+  box.hidden = !ks.length; if (!ks.length) return;
+  // 휴대폰에서 목록 패널이 접혀 있으면 제안이 안 보이니, 처음 뜰 때 패널을 올린다
+  if (was && isPhone() && listSheet && (listSheet.height || 0) < sheetMax() - 10) listSheet.set(sheetMax(), true);
+  box.appendChild(el('h3','sec-title', '이 조건으로 찾을까요?'));
+  box.appendChild(el('p','intent-src', `'${words.join("', '")}'에서 찾은 조건이에요. 빼고 싶은 건 눌러서 꺼 주세요.`));
+  const chips = el('div','chips'); chips.setAttribute('role','group'); chips.setAttribute('aria-label','찾은 조건');
+  for (const k of ks) {
+    const on = !state.intentOff.has(k);
+    const b = el('button','chip', `${ENUMS[k].label}: ${okValues(k, w[k])}`); b.type = 'button'; b.setAttribute('aria-pressed', String(on));
+    b.addEventListener('click', () => { on ? state.intentOff.add(k) : state.intentOff.delete(k); renderIntent(); });
+    chips.appendChild(b);
+  }
+  box.appendChild(chips);
+  const use = ks.filter(k => !state.intentOff.has(k));
+  const go = el('button','btn intent-go', use.length ? `조건 ${use.length}개로 보기` : '조건을 하나 이상 켜 주세요'); go.type = 'button'; go.disabled = !use.length;
+  go.addEventListener('click', () => applyIntent(Object.fromEntries(use.map(k => [k, w[k]])), words));
+  box.append(go, el('p','intent-foot', '기록된 사실로만 골라요. 조건을 많이 채운 곳부터 보여 주고, 지도 핀 옆에 값을 표시해요.'));
+}
+function applyIntent(w, words){
+  addRecent($('q').value);
+  const why = Object.fromEntries(Object.keys(w).map(k => [k, `'${words.join("', '")}'(으)로 적은 목적에서 찾은 조건이에요.`]));
+  state.intent = { id: 'custom', label: '내 목적', w, why, words };
+  state.purpose = 'custom'; state.sortNear = false; state.sortBy = 'fit'; state.intentOff.clear();
+  // 글은 장소 이름 찾기가 아니라 목적이었으니 검색어를 비운다(남겨 두면 이름이 안 맞는 곳이 모두 걸러진다)
+  $('q').value = ''; state.q = ''; queueExtSearch(''); hideRecent(); $('q').blur();
+  setBadges(purposeBadges(state.intent));
+  const sc = $('intent').closest('.scroll'); if (sc) sc.scrollTop = 0;
+}
 // 목적으로 보기: 목적을 고르면 그 목적에 중요한 조건을 지도에 표시하고, 목록을 '조건 충족도 순'으로 정렬한다.
 // 따로 'Top 5' 같은 추천 칸은 두지 않는다(사업계획서: 고르는 자리가 생기면 파는 자리가 생긴다). 순서는 기록된 사실로만 정해진다
 function renderPicks(){
@@ -2203,6 +2292,17 @@ function renderPicks(){
     });
     chips.appendChild(b);
   }
+  if (state.intent) { // 검색창에 글로 적은 목적. 다시 누르면 끄고, ×로 지운다
+    const on = state.purpose === 'custom', iw = state.intent;
+    const b = el('button','chip chip-mine', `내 목적: ${iw.words.join(' ')}`); b.type = 'button'; b.setAttribute('aria-pressed', String(on));
+    b.addEventListener('click', () => {
+      if (on) { state.purpose = null; if (state.sortBy === 'fit') state.sortBy = 'basic'; renderAll(); return; }
+      state.purpose = 'custom'; state.sortNear = false; state.sortBy = 'fit'; setBadges(purposeBadges(iw));
+    });
+    const x = el('button','chip-x','×'); x.type = 'button'; x.setAttribute('aria-label', '내 목적 지우기');
+    x.addEventListener('click', () => { if (on) { state.purpose = null; if (state.sortBy === 'fit') state.sortBy = 'basic'; setBadges([]); } state.intent = null; renderAll(); });
+    const wrap = el('span','chip-wrap'); wrap.append(b, x); chips.appendChild(wrap);
+  }
   const help = el('button','help-btn','?'); help.type = 'button';
   help.setAttribute('aria-expanded', String(state.pickHelp)); help.setAttribute('aria-controls', 'pickHelp');
   help.setAttribute('aria-label', '목적으로 보기 설명');
@@ -2212,7 +2312,7 @@ function renderPicks(){
   if (!state.pickHelp) return;
   const hb = el('div','phelp'); hb.id = 'pickHelp';
   hb.appendChild(el('p','phelp-lead', '목적을 고르면 그 목적에 중요한 조건이 지도에 표시되고, 아래 목록이 조건 충족도 순으로 정렬돼요. 순서는 기록된 사실로만 정해지고, 돈으로 살 수 없어요.'));
-  const pu = PURPOSES.find(x => x.id === state.purpose);
+  const pu = curPurpose();
   if (pu) {
     const ul = el('ul');
     for (const [k, pts] of Object.entries(pu.w)) {
@@ -2229,7 +2329,7 @@ function renderPicks(){
 state.sortBy = 'basic';
 const fitKeys = () => [...new Set([...state.badges, ...Object.keys(ENUMS).filter(k => state.filters[k].size)])];
 function fitOf(p){ // 0~1, 고른 조건(목적, 빠른 조건·필터·지도에 표시)이 없으면 null
-  const pu = PURPOSES.find(x => x.id === state.purpose); if (pu) return fitScore(p, pu);
+  const pu = curPurpose(); if (pu) return fitScore(p, pu);
   const ks = fitKeys(); if (!ks.length) return null;
   return ks.reduce((s, k) => { const l = level(p, k); return s + (l === 0 ? 1 : l === 1 ? .5 : 0); }, 0) / ks.length;
 }
@@ -3927,7 +4027,7 @@ function renderAll(){
   vis = sortPlaces(vis);
   $('sortSel').value = sortMode();
   $('zloc').setAttribute('aria-pressed', String(!!state.me));
-  renderSummary(); renderPicks(vis); renderList(vis); renderExtList(); renderMap(vis); renderExtMarkers(); renderLegend(); renderQuick(); renderDetail();
+  renderSummary(); renderPicks(vis); renderList(vis); renderExtList(); renderIntent(); renderMap(vis); renderExtMarkers(); renderLegend(); renderQuick(); renderDetail();
   renderQuickChips(); renderPeek(vis); syncFilterChips(); renderRouteBar(); renderCollectBar(); if ($('filterDlg').open) renderFilterExtras();
   $('summary').hidden = $('picks').hidden = !!state.ext.query; // 검색 중에는 검색 결과가 맨 위에 오도록 요약·추천을 접는다
 }
@@ -4271,7 +4371,7 @@ $('btnReset').addEventListener('click', () => {
   try { localStorage.removeItem(STORE_KEY); } catch {}
   setMine(rowsToPlaces(SAMPLE_ROWS).places, '예시 데이터 (가상의 장소 14곳)', false, true); setStatus('예시 데이터로 되돌렸어요.', false);
 });
-$('q').addEventListener('input', e => { state.q = cleanText(e.target.value, 40).toLowerCase(); renderAll(); queueExtSearch(e.target.value); renderRecent(); });
+$('q').addEventListener('input', e => { if (!e.target.value.trim()) state.intentOff.clear(); state.q = cleanText(e.target.value, 40).toLowerCase(); renderAll(); queueExtSearch(e.target.value); renderRecent(); });
 $('q').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing) { addRecent(e.target.value); hideRecent(); e.target.blur(); } });
 $('q').addEventListener('focus', renderRecent);
 $('q').addEventListener('blur', () => setTimeout(() => { if (document.activeElement !== $('q')) hideRecent(); }, 150));
