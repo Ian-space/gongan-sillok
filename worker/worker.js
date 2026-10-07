@@ -15,7 +15,7 @@
 //   POST /photo    { images: [base64 JPEG, 최대 3장] }          → 사진에서 눈으로 확인되는 기록 항목 제안 (Claude, 같은 비밀 변수)
 
 const ALLOWED_ORIGINS = ['https://ian-space.github.io', 'http://localhost:8765'];
-const VERSION = '2026-10-07.3'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
+const VERSION = '2026-10-07.4'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
 // 경로 결과 저장 시간(초). KV 바인딩(ROUTE_CACHE)이 없으면 저장하지 않고 그대로 동작한다
 const CACHE_SECONDS = { transit: 600, walk: 86400 };
 // 주변 장소 종류. 카카오 업종 코드(CE7 카페, FD6 음식점, CT1 문화시설)로 찾고,
@@ -40,7 +40,7 @@ const AI_FIELDS = {
   outlet:   { label: '콘센트', values: ['많음', '일부', '없음'] },
   stay:     { label: '머무르기', values: ['장시간 가능', '2시간 내외', '회전 빠름'] },
   hood:     { label: '고기 굽는 곳 배기', values: ['하향식', '상향식', '후드 없음'] },
-  entrance: { label: '입구', values: ['턱 없음', '경사로 있음', '계단 있음'] },
+  entrance: { label: '입구', values: ['턱 없음', '경사로 있음', '턱·계단 있음'] },
   floor:    { label: '층 이동', values: ['1층', '엘리베이터 있음', '계단만'] },
   toilet:   { label: '화장실', values: ['매장 안', '건물 공용', '없음'] },
   kids:     { label: '아이 동반', values: ['유아 의자 있음', '동반 가능', '노키즈존'] },
@@ -54,7 +54,7 @@ const AI_FIELDS = {
 
 // 사진으로 채울 수 있는 항목: 눈으로 확인되는 것만(소음·머무르기·화장실처럼 사진으로 알 수 없는 건 뺀다)
 const PHOTO_FIELDS = {
-  entrance:  { label: '입구', values: AI_FIELDS.entrance.values, hint: '입구 문턱·계단·경사로가 보일 때만' },
+  entrance:  { label: '입구', values: AI_FIELDS.entrance.values, hint: '입구 사진일 때만. 문 앞이나 문지방에 한 칸이라도 턱·계단이 보이면 턱·계단 있음(작은 문턱도 포함), 경사로가 있으면 경사로 있음, 길과 문 바닥이 평평하게 이어질 때만 턱 없음' },
   floor:     { label: '층 이동', values: AI_FIELDS.floor.values, hint: '1층 매장이거나 엘리베이터·계단이 분명할 때만' },
   spacing:   { label: '좌석 간격', values: AI_FIELDS.spacing.values, hint: '넓음 1m 이상, 보통 50cm~1m, 좁음 50cm 미만' },
   light:     { label: '채광', values: AI_FIELDS.light.values, hint: '낮에 찍은 실내 사진에서 분명할 때만' },
@@ -175,7 +175,7 @@ export default {
       const text = String(input.text || '').replace(/[\u0000-\u001F\u007F]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60);
       if (text.length < 2) return reply(400, { error: 'empty text' });
       const kv = env.ROUTE_CACHE;
-      const cacheKey = 'intent3:' + text; // 지시문을 바꾸면 번호를 올려 예전 저장 결과를 쓰지 않게 한다
+      const cacheKey = 'intent4:' + text; // 지시문을 바꾸면 번호를 올려 예전 저장 결과를 쓰지 않게 한다
       if (kv) {
         const hit = await kv.get(cacheKey).catch(() => null);
         if (hit) return new Response(hit, { status: 200, headers: { ...cors, 'Content-Type': 'application/json; charset=utf-8', 'X-Cache': 'HIT' } });
