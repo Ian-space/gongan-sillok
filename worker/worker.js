@@ -15,7 +15,7 @@
 //   POST /photo    { images: [base64 JPEG, 최대 3장] }          → 사진에서 눈으로 확인되는 기록 항목 제안 (Claude, 같은 비밀 변수)
 
 const ALLOWED_ORIGINS = ['https://ian-space.github.io', 'http://localhost:8765'];
-const VERSION = '2026-10-07.4'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
+const VERSION = '2026-10-08.1'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
 // 경로 결과 저장 시간(초). KV 바인딩(ROUTE_CACHE)이 없으면 저장하지 않고 그대로 동작한다
 const CACHE_SECONDS = { transit: 600, walk: 86400 };
 // 주변 장소 종류. 카카오 업종 코드(CE7 카페, FD6 음식점, CT1 문화시설)로 찾고,
@@ -104,7 +104,8 @@ export default {
       if (!query) return reply(400, { error: 'empty query' });
       const params = new URLSearchParams({ query, size: '15' });
       const x = num(input.x), y = num(input.y);
-      if (inKorea(x, y)) { params.set('x', String(x)); params.set('y', String(y)); } // 지도 중심 근처 결과부터
+      if (inKorea(x, y)) { params.set('x', String(x)); params.set('y', String(y)); if (input.sort === 'distance') params.set('sort', 'distance'); } // 지도 중심 근처 결과부터(distance면 가까운 순)
+      if (/^[1-3]$/.test(String(input.page || ''))) params.set('page', String(input.page));
       const up = await fetch('https://dapi.kakao.com/v2/local/search/keyword.json?' + params, { headers: { Authorization: 'KakaoAK ' + env.KAKAO_REST_KEY } });
       const j = await up.json().catch(() => null);
       if (!up.ok || !j) return reply(up.status === 200 ? 502 : up.status, { error: (j && (j.message || j.msg)) || 'kakao error' });
