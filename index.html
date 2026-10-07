@@ -884,7 +884,7 @@ html{touch-action:manipulation}
     <div class="mapctl">
       <button type="button" id="zin" aria-label="확대">+</button>
       <button type="button" id="zout" aria-label="축소">−</button>
-      <button type="button" class="wide" id="zfit">전체 보기</button>
+      <button type="button" class="round" id="zfit" aria-label="기록한 장소 전체 보기" title="전체 보기"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/></svg></button>
       <button type="button" class="round" id="zsaved" aria-pressed="false" aria-label="찜한 곳과 내 기록만 모아 보기" title="내 장소 모아 보기">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h12v18l-6-4.5L6 21z"/></svg>
       </button>
@@ -1552,13 +1552,54 @@ function loadInitial(){
   setMine(rowsToPlaces(SAMPLE_ROWS).places, '예시 데이터 (가상의 장소 14곳)', false, true);
 }
 
+/* ---------- 비슷한 말·오타도 찾기 ----------
+   1) 띄어쓰기·대소문자·흔한 줄임말과 오타를 고쳐서 비교한다(ALIAS)
+   2) 초성만 적어도 찾는다(ㅁㄹㅅㄱ → 모래시계)
+   3) 자모로 풀어서 한두 글자 틀려도 찾는다(모레시계, 목공서 → 목공소) */
+const ALIAS = [
+  [/까페|캬페|카패|까패/g, '카페'], [/커피숖|커피샵|커피숍/g, '커피'], [/스타벅스|스벅|스타벅|starbucks/g, '스타벅스'], [/투썸플레이스|투썸|twosome/g, '투썸플레이스'],
+  [/이디아|ediya/g, '이디야'], [/메가엠지씨커피|메가mgc커피|메가커피|메가씨|메가mgc/g, '메가엠지씨커피'], [/빽다방|빽/g, '빽다방'], [/컴포즈커피|컴포즈|compose/g, '컴포즈커피'],
+  [/할리스|hollys/g, '할리스'], [/폴바셋|paulbassett/g, '폴바셋'], [/블루보틀|bluebottle/g, '블루보틀'], [/맥날|맥도날드|mcdonald/g, '맥도날드'],
+  [/버거킹|버킹|burgerking/g, '버거킹'], [/롯리|롯데리아/g, '롯데리아'], [/써브웨이|서브웨이|subway/g, '써브웨이'], [/올영|올리브영/g, '올리브영'],
+  [/다이소|daiso/g, '다이소'], [/편의점|편점/g, '편의점'], [/gs25|지에스/g, 'gs25'], [/세븐일레븐|세븐|711/g, '세븐일레븐'],
+  [/도서관|도선관|도서간/g, '도서관'], [/스터디카페|스터디까페/g, '스터디카페'], [/베이커리|베이커이|빵집/g, '베이커리']
+];
+const squash = s => String(s || '').toLowerCase().replace(/[\s·.,'"()\-_/]/g, '');
+const normQ = s => ALIAS.reduce((t, [re, to]) => t.replace(re, to), squash(s));
+const CHO = 'ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ', JUNG = 'ㅏㅐㅑㅒㅓㅔㅕㅖㅗㅘㅙㅚㅛㅜㅝㅞㅟㅠㅡㅢㅣ', JONG = ' ㄱㄲㄳㄴㄵㄶㄷㄹㄺㄻㄼㄽㄾㄿㅀㅁㅂㅄㅅㅆㅇㅈㅊㅋㅌㅍㅎ';
+const eachSyl = (s, f) => [...s].map(ch => { const c = ch.charCodeAt(0) - 0xAC00; return c >= 0 && c < 11172 ? f(c, ch) : ch; }).join('');
+const choOf = s => eachSyl(s, c => CHO[Math.floor(c / 588)]);
+const jamoOf = s => eachSyl(s, c => CHO[Math.floor(c / 588)] + JUNG[Math.floor(c % 588 / 28)] + JONG[c % 28].trim());
+// 짧은 글(q)이 긴 글(t)의 어느 부분과 몇 글자 다른지(가장 적게): 부분 편집 거리
+function partialDist(q, t){
+  let prev = new Array(t.length + 1).fill(0);
+  for (let i = 1; i <= q.length; i++) {
+    const cur = [i];
+    for (let j = 1; j <= t.length; j++) cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (q[i - 1] === t[j - 1] ? 0 : 1));
+    prev = cur;
+  }
+  return Math.min(...prev);
+}
+// 검색어 q가 글 t에 들어 있다고 볼지: 그대로 → 고쳐서 → 초성 → 자모 오타(자모 6개마다 1개까지 틀려도)
+function fuzzyHas(t, q){
+  const a = squash(t), b = squash(q); if (!b) return true;
+  if (a.includes(b)) return true;
+  const na = normQ(t), nb = normQ(q); if (na.includes(nb)) return true;
+  if (/^[ㄱ-ㅎ]+$/.test(b)) return choOf(a).includes(b);
+  const jq = jamoOf(nb); if (jq.length < 5) return false; // 너무 짧으면 오타로 보지 않는다(엉뚱한 곳이 많이 걸린다)
+  return partialDist(jq, jamoOf(na)) <= Math.min(2, Math.floor(jq.length / 6));
+}
+
 function matches(p){
   if (state.collect && !inCollect(p)) return false; // 내 장소 모아 보기: 찜한 곳과 내 기록만
   for (const k of Object.keys(ENUMS)) { const f = state.filters[k]; if (f.size && !f.has(p[k])) return false; }
   const vf = state.filters.view; // 내 기록만, 공개 기록만 골라 보기
   if (vf.size && !((vf.has('내 기록') && p.mine && !p.sample) || (vf.has('공개 기록') && (p.pubCount > 0 || p.pub)))) return false;
   for (const k of TAG_KEYS) { const f = state.tags[k]; if (f.size && !tagList(p[k]).some(t => f.has(t))) return false; }
-  if (state.q) { const hay = (p.name + ' ' + p.materials + ' ' + p.furniture + ' ' + p.type).toLowerCase(); if (!hay.includes(state.q)) return false; }
+  if (state.q) { // 이름은 오타·줄임말·초성까지, 좌석·마감·유형은 글자 그대로
+    const hay = (p.materials + ' ' + p.furniture + ' ' + p.type).toLowerCase();
+    if (!hay.includes(state.q) && !fuzzyHas(p.name, state.q)) return false;
+  }
   return true;
 }
 
@@ -3004,12 +3045,22 @@ async function runExtSearch(query){
   const key = `${query}|${near ? near.lat.toFixed(2) + ',' + near.lng.toFixed(2) : ''}`;
   if (extCache.has(key)) { setExt({ query, status: '', ...extCache.get(key), results: extCache.get(key).results.filter(r => !isRecorded(r)) }); return; }
   setExt({ query, status: 'loading', results: state.ext.results });
-  let results;
+  let results, fixed = '';
   try {
-    const r = await proxyPost('/search', { query, ...(near && { x: String(near.lng), y: String(near.lat) }) });
-    const j = await r.json();
-    if (!r.ok) throw new Error(j && j.error);
-    results = (j.places || []).map((x, i) => {
+    const ask = async text => {
+      const r = await proxyPost('/search', { query: text, ...(near && { x: String(near.lng), y: String(near.lat) }) });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j && j.error);
+      return j.places || [];
+    };
+    let places = await ask(query);
+    // 결과가 없으면 흔한 오타·줄임말을 고친 말(스벅 → 스타벅스, 까페 → 카페)과 띄어쓰기를 뺀 말로 한 번 더 찾는다
+    if (!places.length) {
+      for (const alt of [...new Set([normQ(query), query.replace(/\s+/g, '')])].filter(a => a.length >= 2 && a !== query)) {
+        places = await ask(alt); if (places.length) { fixed = alt; break; }
+      }
+    }
+    results = places.map((x, i) => {
       const m = KAKAO_PLACE.exec(String(x.url || ''));
       const lat = toNum(x.y), lng = toNum(x.x);
       return { id: 'k' + (m ? m[1] : `${i}-${lat}`), ext: true, name: cleanText(x.name, 40), category: cleanText(x.category, 60),
@@ -3020,12 +3071,12 @@ async function runExtSearch(query){
     if (state.ext.query === query) setExt({ query, status: 'error', results: [] });
     return;
   }
-  extCache.set(key, { results });
+  extCache.set(key, { results, fixed });
   if (state.ext.query !== query) return; // 그사이 다른 검색어로 바뀌었다
   // 지도에 이미 불러온 주변 장소(회색 점) 중 이름이 맞는 곳을 앞에 붙인다
-  const low = query.toLowerCase(), hits = [...state.near.values()].filter(p => p.name.toLowerCase().includes(low)).slice(0, 10);
+  const hits = [...state.near.values()].filter(p => fuzzyHas(p.name, query)).slice(0, 10);
   const fresh = [...hits, ...results.filter(r => !hits.some(h => h.id === r.id))].filter(r => !isRecorded(r));
-  setExt({ query, status: fresh.length ? '' : 'none', results: fresh });
+  setExt({ query, fixed, status: fresh.length ? '' : 'none', results: fresh });
   // 휴대폰: 결과가 보이도록 목록 패널을 반쯤 올린다 (검색 결과는 패널 맨 위에 있다)
   if (fresh.length && isPhone() && listSheet && !state.sel && (listSheet.height || 0) < vh(0.5) - 10) listSheet.set(vh(0.5), true);
 }
@@ -3196,6 +3247,7 @@ function renderExtList(){
   const x = state.ext; box.hidden = !x.query;
   if (!x.query) return;
   box.appendChild(el('h3','sec-title', '기록 안 된 장소'));
+  if (x.fixed && x.results.length) box.appendChild(el('p','near-line muted', `'${x.query}'에 맞는 결과가 없어서 '${x.fixed}'(으)로 찾았어요.`));
   if (x.status === 'loading' && !x.results.length) box.appendChild(el('p','near-line muted', `'${x.query}'을(를) 카카오에서 찾는 중이에요…`));
   else if (x.status === 'none') box.appendChild(el('p','near-line muted', `'${x.query}'에 맞는 기록 안 된 장소를 찾지 못했어요. 가게 이름이나 '동네 + 가게 이름'으로 찾아보세요.`));
   else if (x.status === 'error') box.appendChild(el('p','near-line muted', '장소를 찾지 못했어요. 잠시 뒤 다시 시도해 주세요.'));
