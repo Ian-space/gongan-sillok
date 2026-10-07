@@ -690,6 +690,13 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
 /* 지금도 맞나요?: 최종 확인일·일치율 + 두 버튼 */
 .check-box{margin-top:18px}
 .check-facts{margin:0 0 8px;font-size:13px;color:var(--muted)}
+/* 관리자 현황: 공개 기록 수와 한계 막대 */
+.adm-stats{margin:4px 0 16px}
+.adm-stats p{margin:4px 0}
+.adm-bar{height:8px;border-radius:999px;background:var(--paper);overflow:hidden;margin:6px 0}
+.adm-bar i{display:block;height:100%;background:var(--blue)}
+.adm-bar i.warn{background:#C26900}
+.adm-bar i.full{background:#9B1C1C}
 .check-stamp{display:flex;align-items:center;gap:12px;margin:2px 0 10px}
 .check-stamp div{display:grid;gap:1px;font-size:13px;color:var(--muted)}
 .check-stamp b{color:var(--ink);font-size:14px}
@@ -1506,6 +1513,7 @@ async function loadPublic(){
     if (error || !data) return;
     rows = data.filter(r => r.places).map(r => ({ ...r, nickname: '', mine: false, kakao_id: r.places.kakao_id, place_name: r.places.name, place_type: r.places.type, place_address: r.places.address, lat: r.places.lat, lng: r.places.lng }));
   }
+  state.pubStats = { records: rows.length, places: new Set(rows.map(r => r.place_id)).size }; // 관리자 화면의 현황(한계 2,000건 대비)
   const groups = new Map();
   for (const r of rows) {
     // 서버 값도 엑셀 불러오기와 같은 검사를 거친다
@@ -4159,9 +4167,21 @@ async function moderate(id, hide){
 }
 function renderAdmin(rows, note){
   const body = $('adminBody'); body.replaceChildren();
-  const head = el('div','add-head'); const h = el('h2', null, '신고 관리'); h.id = 'adminTitle';
+  const head = el('div','add-head'); const h = el('h2', null, '관리자'); h.id = 'adminTitle';
   const x = el('button','d-close','×'); x.type = 'button'; x.setAttribute('aria-label','닫기'); x.addEventListener('click', () => $('adminDlg').close());
   head.append(h, x); body.appendChild(head);
+  // 현황: 공개 기록 함수(public_records)는 최근 2,000건까지만 돌려준다. 1,000건쯤에서 '장소 단위 요약 + 지도 묶음 표시'로 바꿀 때다
+  const s = state.pubStats || { records: 0, places: 0 }, LIMIT = 2000, pct = Math.round(s.records / LIMIT * 100);
+  const st = el('section','adm-stats');
+  st.appendChild(el('h3','sec-title','현황'));
+  const bar = el('div','adm-bar'); const fill = el('i'); fill.style.width = Math.min(100, pct) + '%';
+  fill.className = s.records >= LIMIT ? 'full' : s.records >= LIMIT / 2 ? 'warn' : ''; bar.appendChild(fill);
+  st.append(el('p', null, `공개 기록 ${s.records.toLocaleString()}건${s.records >= LIMIT ? ' 이상' : ''} · 장소 ${s.places.toLocaleString()}곳`), bar,
+    el('p','add-hint', `한 번에 불러오는 한계 ${LIMIT.toLocaleString()}건 중 ${Math.min(100, pct)}%예요.`));
+  if (s.records >= LIMIT) st.appendChild(el('p','add-warn', '한계에 닿았어요. 오래된 공개 기록이 지도에서 빠지고 있어요. 장소 단위 요약과 지도 묶음 표시로 바꿔야 해요.'));
+  else if (s.records >= LIMIT / 2) st.appendChild(el('p','add-warn', '1,000건을 넘었어요. 한계 전에 장소 단위 요약과 지도 묶음 표시로 바꿀 때예요.'));
+  body.appendChild(st);
+  body.appendChild(el('h3','sec-title','신고'));
   body.appendChild(el('p','add-src add-left','처리 전 신고가 5건 쌓이면 자동으로 숨겨져요. 기준은 Supabase의 app_settings 표에서 바꿀 수 있어요.'));
   if (note) { body.appendChild(el('p','add-status', note)); return; }
   if (!rows.length) { body.appendChild(el('p','add-status','들어온 신고가 없어요.')); return; }
@@ -4206,7 +4226,7 @@ function renderAuth(){
   } else {
     const who = el('p','auth-who'); who.append(el('b', null, auth.nickname || '기록자'), '님');
     box.appendChild(who);
-    if (auth.role === 'admin') box.appendChild(item('신고 관리', openAdmin));
+    if (auth.role === 'admin') box.appendChild(item('관리자 (현황·신고)', openAdmin));
     box.appendChild(item('로그아웃', logout));
   }
   $('btnLeave').hidden = local;
