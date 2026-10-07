@@ -230,6 +230,11 @@ button.stat[aria-pressed="true"] span{color:#FFFFFF}
 .intent-go{margin-top:10px;width:100%}
 .intent-go:disabled{opacity:.5;cursor:default}
 .intent-ai{display:block;margin-top:10px}
+/* 사진으로 항목 채우기(AI 제안) */
+.ai-photo{display:grid;gap:8px;margin-top:10px;padding:10px 12px;border:1px dashed var(--line);border-radius:10px}
+.ai-photo .ai-photo-go{width:100%}
+.ai-photo .add-hint{margin:0}
+.ai-photo-title{margin:0;font-size:13px;font-weight:700}
 .btn.intent-ai{width:100%}
 .chip-wrap{display:inline-flex;align-items:center;gap:2px}
 .chip-x{border:0;background:none;color:var(--muted);font-size:16px;line-height:1;padding:2px 4px;cursor:pointer}
@@ -3294,6 +3299,7 @@ const freshAdd = () => ({ step: 'search', results: [], picked: null, status: '',
 const sameSpot = (a, b) => distM(a, b) < 5 || (a.name === b.name && distM(a, b) < 100);
 // prefill이 있으면(지도에서 고른 기록 안 된 장소) 검색을 건너뛰고 바로 기록 입력으로 간다
 function openAdd(prefill){
+  Object.assign(aiPhoto, { status: '', res: null, off: aiPhoto.off }); aiPhoto.pick.clear();
   Object.assign(addState, freshAdd());
   if (prefill && prefill.name) Object.assign(addState, { step: 'form', picked: { ...prefill, type: guessType(prefill.category) } });
   renderAdd(); $('addDlg').showModal();
@@ -3408,6 +3414,7 @@ function renderAdd(){
   critRow.appendChild(cb); body.append(critRow, critBox);
   // 소음, 좌석 간격… : 칩을 눌러 고르고, 다시 누르면 '기록 안 함'
   let lastGroup = null;
+  addUI = { enums: {}, tags: {} };
   for (const [k, def] of Object.entries(ENUMS)) {
     if (groupOf(k) !== lastGroup) {
       lastGroup = groupOf(k);
@@ -3435,7 +3442,7 @@ function renderAdd(){
       b.addEventListener('click', () => { addState.values[k] = ''; sync(); });
       chips.appendChild(b);
     }
-    sync();
+    sync(); addUI.enums[k] = sync; // 사진 AI 제안을 적용할 때 칩 표시를 다시 맞춘다
     w.appendChild(chips);
     // 소음은 마이크로 재서 값을 골라 줄 수 있다
     if (k === 'noise') {
@@ -3471,9 +3478,11 @@ function renderAdd(){
     const other = text(cur.filter(t => !def.values.includes(t)).join(', '), 40); other.placeholder = '그 밖에 (없으면 비워 두세요)'; other.className = 'tag-other';
     other.setAttribute('aria-label', `${def.label} 그 밖에`);
     w.append(chips, other);
-    return { node: w, get value(){ return cleanText([...def.values.filter(v => on.has(v)), ...tagList(other.value)].join(', '), 80); } };
+    const add = vals => { for (const v of vals) if (def.values.includes(v)) on.add(v); chips.querySelectorAll('.chip').forEach((c, i) => c.setAttribute('aria-pressed', String(on.has(def.values[i])))); };
+    return { node: w, add, get value(){ return cleanText([...def.values.filter(v => on.has(v)), ...tagList(other.value)].join(', '), 80); } };
   };
   const furT = tagField('furniture'), matT = tagField('materials');
+  addUI.tags = { furniture: furT, materials: matT };
   const matI = matT, furI = furT;
   const noteI = el('textarea'); noteI.maxLength = 200; noteI.placeholder = '예: 창가 자리는 오후 3시 이후 볕이 깊게 든다'; noteI.value = tx.note || '';
   const s = seoulNow().stamp; const dateI = el('input'); dateI.type = 'date';
@@ -3812,6 +3821,81 @@ function photoField(){
       grid.appendChild(add);
     }
     box.append(grid, input);
+    if (list.length && ROUTE_PROXY) box.appendChild(aiPhotoBox(list));
+  };
+  draw();
+  return w;
+}
+/* ---------- 사진으로 항목 채우기 (AI 보조 기록) ----------
+   이용자가 버튼을 눌렀을 때만 사진(최대 3장, 1024px로 줄여서)을 Worker /photo로 보낸다.
+   AI는 제안만 한다: 제안을 보여 주고, 이용자가 고른 것만 비어 있는 칸에 채운다(이미 고른 값은 바꾸지 않는다).
+   잰 숫자(단차 cm, 소음 dB)와 사진으로 알 수 없는 항목(소음, 화장실 등)은 제안하지 않는다 */
+let addUI = { enums: {}, tags: {} };
+const aiPhoto = { status: '', res: null, pick: new Map(), off: false };
+async function aiImageOf(ph){
+  let blob = ph.blob;
+  if (!blob && ph.path) { await signPhotos([ph.path]); const u = photoUrls.get(ph.path); if (!u) return null; blob = await (await fetch(u.url)).blob(); }
+  if (!blob) return null;
+  const bmp = await createImageBitmap(blob), s = Math.min(1, 1024 / Math.max(bmp.width, bmp.height));
+  const c = document.createElement('canvas'); c.width = Math.round(bmp.width * s); c.height = Math.round(bmp.height * s);
+  c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height); if (bmp.close) bmp.close();
+  return c.toDataURL('image/jpeg', 0.8).split(',')[1];
+}
+function aiPhotoBox(list){
+  const w = el('div','ai-photo');
+  const draw = () => {
+    w.replaceChildren();
+    if (aiPhoto.off) return;
+    const r = aiPhoto.res;
+    if (!r) {
+      const b = el('button','btn ghost ai-photo-go', aiPhoto.status === 'loading' ? '사진을 보는 중이에요…' : 'AI로 사진 보고 항목 채우기'); b.type = 'button'; b.disabled = aiPhoto.status === 'loading';
+      b.addEventListener('click', run); w.appendChild(b);
+      w.appendChild(el('p','add-hint', aiPhoto.status === 'error' ? 'AI가 사진을 보지 못했어요. 잠시 뒤 다시 시도해 주세요.'
+        : '사진에서 눈으로 확인되는 것(입구 계단, 좌석 종류, 마감 등)만 제안해요. 고른 것만 채워지고, 잰 숫자는 채우지 않아요.'));
+      return;
+    }
+    const items = [...Object.entries(r.w).map(([k, v]) => ({ id: k, label: `${ENUMS[k].label}: ${v}` })),
+      ...Object.entries(r.t).map(([k, vals]) => ({ id: 't:' + k, label: `${TAGS[k].label}: ${vals.join('·')}` }))];
+    if (!items.length) { w.appendChild(el('p','add-hint', '사진에서 분명하게 확인되는 항목을 찾지 못했어요. 입구나 좌석이 잘 보이는 사진이면 더 잘 찾아요.')); return; }
+    w.appendChild(el('p','ai-photo-title', '사진에서 찾은 것 · 맞는 것만 남겨 주세요'));
+    const chips = el('div','chips');
+    for (const it of items) {
+      const on = aiPhoto.pick.has(it.id) ? aiPhoto.pick.get(it.id) : true;
+      const b = el('button','chip', it.label); b.type = 'button'; b.setAttribute('aria-pressed', String(on));
+      b.addEventListener('click', () => { aiPhoto.pick.set(it.id, !on); draw(); });
+      chips.appendChild(b);
+    }
+    const use = items.filter(it => aiPhoto.pick.has(it.id) ? aiPhoto.pick.get(it.id) : true);
+    const go = el('button','btn add rec ai-photo-go', use.length ? `${use.length}개 채우기` : '하나 이상 골라 주세요'); go.type = 'button'; go.disabled = !use.length;
+    go.addEventListener('click', () => {
+      let n = 0, kept = 0;
+      for (const it of use) {
+        if (it.id.startsWith('t:')) { const k = it.id.slice(2); if (addUI.tags[k]) { addUI.tags[k].add(r.t[k]); n++; } continue; }
+        if (addState.values[it.id]) { if (addState.values[it.id] !== r.w[it.id]) kept++; continue; } // 이미 고른 값은 그대로 둔다
+        addState.values[it.id] = r.w[it.id]; if (addUI.enums[it.id]) addUI.enums[it.id](); n++;
+        const f = addUI.enums[it.id] && $('addBody').querySelector(`[aria-label="${ENUMS[it.id].label}"]`); if (f) { const box = f.closest('.add-field'); if (box) box.hidden = false; }
+      }
+      toast(`${n}개 항목을 채웠어요.` + (kept ? ` 이미 고른 ${kept}개는 그대로 뒀어요.` : '') + ' 저장 전에 한 번 확인해 주세요.');
+      aiPhoto.res = null; aiPhoto.status = ''; aiPhoto.pick.clear(); draw();
+    });
+    w.append(chips, go);
+    const x = el('button','linkbtn', '제안 닫기'); x.type = 'button'; x.addEventListener('click', () => { aiPhoto.res = null; aiPhoto.pick.clear(); draw(); }); w.appendChild(x);
+  };
+  const run = async () => {
+    aiPhoto.status = 'loading'; draw();
+    try {
+      const images = (await Promise.all(list.slice(0, 3).map(ph => aiImageOf(ph).catch(() => null)))).filter(Boolean);
+      if (!images.length) throw new Error('img');
+      const r = await proxyPost('/photo', { images });
+      if (r.status === 503) { aiPhoto.off = true; toast('AI 기능은 아직 준비 중이에요.'); draw(); return; }
+      if (r.status === 429) { aiPhoto.status = 'error'; toast('AI 요청이 너무 많아요. 잠시 뒤 다시 시도해 주세요.'); draw(); return; }
+      const j = await r.json(); if (!r.ok) throw new Error('ai');
+      const wv = {}, tv = {};
+      for (const [k, v] of Object.entries(j.w || {})) if (ENUMS[k] && ENUMS[k].values.includes(v)) wv[k] = v;
+      for (const [k, vals] of Object.entries(j.t || {})) if (TAGS[k]) { const ok = (vals || []).filter(v => TAGS[k].values.includes(v)); if (ok.length) tv[k] = ok; }
+      aiPhoto.res = { w: wv, t: tv }; aiPhoto.status = 'done'; aiPhoto.pick.clear();
+    } catch { aiPhoto.status = 'error'; }
+    draw();
   };
   draw();
   return w;

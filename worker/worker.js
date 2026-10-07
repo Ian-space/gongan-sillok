@@ -12,9 +12,10 @@
 //   POST /station  { x, y }                                     → 1.5km 안 지하철역 (가까운 순)
 //   POST /nearby   { rect: "왼쪽X,아래Y,오른쪽X,위Y", code? }      → 지도 한 칸 안의 장소 (code: CS2 편의점, CE7 카페, FD6 음식점, PM9 약국, BK9 은행, CT1 문화시설, LIB 도서관)
 //   POST /intent   { text }                                     → 글로 적은 목적을 기록 항목 조건으로 (Claude, 비밀 변수 ANTHROPIC_API_KEY)
+//   POST /photo    { images: [base64 JPEG, 최대 3장] }          → 사진에서 눈으로 확인되는 기록 항목 제안 (Claude, 같은 비밀 변수)
 
 const ALLOWED_ORIGINS = ['https://ian-space.github.io', 'http://localhost:8765'];
-const VERSION = '2026-10-06.2'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
+const VERSION = '2026-10-07.1'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
 // 경로 결과 저장 시간(초). KV 바인딩(ROUTE_CACHE)이 없으면 저장하지 않고 그대로 동작한다
 const CACHE_SECONDS = { transit: 600, walk: 86400 };
 // 주변 장소 종류. 카카오 업종 코드(CE7 카페, FD6 음식점, CT1 문화시설)로 찾고,
@@ -50,6 +51,19 @@ const AI_FIELDS = {
   materials:{ label: '눈에 보이는 마감', tag: true, values: ['나무', '콘크리트', '타일', '벽돌', '돌', '유리', '금속', '페인트 벽', '패브릭·카펫', '식물 많음'] },
 };
 
+// 사진으로 채울 수 있는 항목: 눈으로 확인되는 것만(소음·머무르기·화장실처럼 사진으로 알 수 없는 건 뺀다)
+const PHOTO_FIELDS = {
+  entrance:  { label: '입구', values: AI_FIELDS.entrance.values, hint: '입구 문턱·계단·경사로가 보일 때만' },
+  floor:     { label: '층 이동', values: AI_FIELDS.floor.values, hint: '1층 매장이거나 엘리베이터·계단이 분명할 때만' },
+  spacing:   { label: '좌석 간격', values: AI_FIELDS.spacing.values, hint: '넓음 1m 이상, 보통 50cm~1m, 좁음 50cm 미만' },
+  light:     { label: '채광', values: AI_FIELDS.light.values, hint: '낮에 찍은 실내 사진에서 분명할 때만' },
+  outlet:    { label: '콘센트', values: AI_FIELDS.outlet.values, hint: '좌석 근처 콘센트가 보일 때만(많음: 좌석 절반 이상)' },
+  hood:      { label: '고기 굽는 곳 배기', values: AI_FIELDS.hood.values, hint: '불판 둘레·아래로 빨아들이면 하향식, 테이블 위 후드면 상향식' },
+  kids:      { label: '아이 동반', values: ['유아 의자 있음'], hint: '유아 의자가 보일 때만' },
+  furniture: { label: '좌석 종류', tag: true, values: AI_FIELDS.furniture.values },
+  materials: { label: '눈에 보이는 마감', tag: true, values: AI_FIELDS.materials.values },
+};
+
 const TMAP = {
   transit: 'https://apis.openapi.sk.com/transit/routes',
   walk: 'https://apis.openapi.sk.com/tmap/routes/pedestrian?version=1&format=json',
@@ -74,7 +88,7 @@ export default {
     if (request.method !== 'POST') return reply(405, { error: 'POST only' });
 
     const kind = new URL(request.url).pathname.replace(/^\/+/, '');
-    if (!TMAP[kind] && !['search', 'nearby', 'station', 'intent'].includes(kind)) return reply(404, { error: 'unknown path' });
+    if (!TMAP[kind] && !['search', 'nearby', 'station', 'intent', 'photo'].includes(kind)) return reply(404, { error: 'unknown path' });
 
     let input;
     try { input = await request.json(); } catch { return reply(400, { error: 'invalid json' }); }
@@ -183,14 +197,14 @@ ${list}
       const up = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: { 'x-api-key': env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-        body: JSON.stringify({ model: AI_MODEL, max_tokens: 300, temperature: 0, system, messages: [{ role: 'user', content: text }] }),
+        body: JSON.stringify({ model: AI_MODEL, max_tokens: 500, temperature: 0, system, messages: [{ role: 'user', content: text }] }),
       });
       const j = await up.json().catch(() => null);
       if (!up.ok || !j) return reply(502, { error: 'ai error' });
       const out = String((j.content || []).map(c => c.text || '').join(''));
       let parsed = null;
       try { parsed = JSON.parse(out.slice(out.indexOf('{'), out.lastIndexOf('}') + 1)); } catch {}
-      if (!parsed || typeof parsed !== 'object') return reply(502, { error: 'ai parse' });
+      if (!parsed || typeof parsed !== 'object') return reply(502, { error: 'ai parse', stop: j.stop_reason, raw: out.slice(0, 300) }); // 원인 확인용(AI 답의 앞부분만, 키·사진은 없음)
       // 기록 항목 안의 값만 남긴다
       const w = {}, t = {};
       for (const [k, vals] of Object.entries(parsed.conds || {})) {
@@ -202,6 +216,53 @@ ${list}
       const body = JSON.stringify({ w, t, missing });
       if (kv) ctx.waitUntil(kv.put(cacheKey, body, { expirationTtl: 30 * 86400 }).catch(() => {}));
       return new Response(body, { status: 200, headers: { ...cors, 'Content-Type': 'application/json; charset=utf-8', 'X-Cache': kv ? 'MISS' : 'OFF' } });
+    }
+
+
+    /* 사진으로 항목 채우기 (Anthropic Claude, 이미지). 기록 창에서 이용자가 'AI로 사진 보고 채우기'를 눌렀을 때만 온다.
+       사진은 저장하지 않고 바로 넘기며, 눈으로 확인할 수 있는 항목만 고르게 한다. 잰 숫자(단차 cm, 소음 dB)는 고르지 않는다 */
+    if (kind === 'photo') {
+      if (!env.ANTHROPIC_API_KEY) return reply(503, { error: 'ai off' });
+      const imgs = (Array.isArray(input.images) ? input.images : []).slice(0, 3).map(String)
+        .filter(s => s.length > 100 && s.length < 1500000 && /^[A-Za-z0-9+/=]+$/.test(s));
+      if (!imgs.length) return reply(400, { error: 'no image' });
+      const kv = env.ROUTE_CACHE;
+      if (kv) { // 비용 보호: 한 접속 주소당 시간마다 10번, 전체 하루 500번까지
+        const ip = request.headers.get('CF-Connecting-IP') || 'x';
+        const now = new Date().toISOString();
+        const kIp = `rl:ph:${ip}:${now.slice(0, 13)}`, kDay = `rl:ph:day:${now.slice(0, 10)}`;
+        const [nIp, nDay] = await Promise.all([kv.get(kIp), kv.get(kDay)].map(p => p.then(v => Number(v) || 0).catch(() => 0)));
+        if (nIp >= 10 || nDay >= 500) return reply(429, { error: 'too many' });
+        ctx.waitUntil(Promise.all([kv.put(kIp, String(nIp + 1), { expirationTtl: 3600 }), kv.put(kDay, String(nDay + 1), { expirationTtl: 86400 })]).catch(() => {}));
+      }
+      const list = Object.entries(PHOTO_FIELDS).map(([k, f]) => `${k} (${f.label}${f.tag ? ', 여러 개 가능' : ', 하나만'}): ${f.values.join(' | ')}${f.hint ? ` — ${f.hint}` : ''}`).join('\n');
+      const system = `너는 공간 기록 지도의 기록 도우미다. 이용자가 매장에서 찍은 사진을 보고, 아래 기록 항목 중 사진에서 눈으로 분명히 확인되는 것만 고른다.
+- 목록에 없는 항목이나 값은 만들지 않는다. 값은 글자 그대로 쓴다.
+- 사진에 보이지 않거나 애매하면 그 항목은 고르지 않는다. 추측하지 않는다. 적게 고르는 편이 낫다.
+- '하나만' 항목은 값 하나, '여러 개 가능' 항목은 보이는 것을 모두.
+항목:
+${list}
+출력은 JSON 하나만, 설명 없이: {"conds":{"항목키":["값"]}}`;
+      const content = [...imgs.map(data => ({ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data } })), { type: 'text', text: '이 사진들에서 확인되는 항목을 골라 줘.' }];
+      const up = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'x-api-key': env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+        body: JSON.stringify({ model: AI_MODEL, max_tokens: 500, temperature: 0, system, messages: [{ role: 'user', content }] }),
+      });
+      const j = await up.json().catch(() => null);
+      if (!up.ok || !j) return reply(502, { error: 'ai error' });
+      const out = String((j.content || []).map(c => c.text || '').join(''));
+      let parsed = null;
+      try { parsed = JSON.parse(out.slice(out.indexOf('{'), out.lastIndexOf('}') + 1)); } catch {}
+      if (!parsed || typeof parsed !== 'object') return reply(502, { error: 'ai parse', stop: j.stop_reason, raw: out.slice(0, 300) }); // 원인 확인용(AI 답의 앞부분만, 키·사진은 없음)
+      const w = {}, t = {};
+      for (const [k, vals] of Object.entries(parsed.conds || {})) {
+        const f = PHOTO_FIELDS[k]; if (!f || !Array.isArray(vals)) continue;
+        const ok = [...new Set(vals.map(String).filter(v => f.values.includes(v)))];
+        if (!ok.length) continue;
+        if (f.tag) t[k] = ok; else w[k] = ok[0];
+      }
+      return reply(200, { w, t });
     }
 
     /* TMAP 경로: 국내 좌표만, 정해진 칸만 넘긴다 */
