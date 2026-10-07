@@ -25,6 +25,7 @@
 :root{
   --paper:#EEF1EE; --panel:#FFFFFF; --ink:#1E2A2F; --muted:#5E6B6A; --line:#C9D1CE;
   --blue:#1F5EFF; --mark:#FFD43B; --mark-ink:#1E2A2F; --faint:.35;
+  --seal:#C8402C; --seal-ink:#7E241A; /* 인주(印朱): 브랜드 색. 로고·기록 버튼·확인 도장에만 쓴다(일반 버튼·선택은 파랑) */
   --route:#00B85C; --route-ink:#FFFFFF; --blue-soft:#DCE6FF;
   --sans:'Pretendard Variable',Pretendard,'Apple SD Gothic Neo','Malgun Gothic',system-ui,sans-serif;
   box-sizing:border-box;
@@ -34,12 +35,14 @@
   :root:not([data-theme="light"]){
     --paper:#141A1D; --panel:#1A2125; --ink:#E4E8E5; --muted:#9AA6A4; --line:#2E3A3E;
     --blue:#6E9BFF; --mark:#FFD43B; --mark-ink:#141A1D; --faint:.4;
+    --seal:#C8402C; --seal-ink:#F08A70;
     --route:#1FCB72; --route-ink:#0B1F14; --blue-soft:#22355E;
   }
 }
 :root[data-theme="dark"]{
   --paper:#141A1D; --panel:#1A2125; --ink:#E4E8E5; --muted:#9AA6A4; --line:#2E3A3E;
   --blue:#6E9BFF; --mark:#FFD43B; --mark-ink:#141A1D; --faint:.4;
+  --seal:#C8402C; --seal-ink:#F08A70; /* 어두운 화면: 버튼 바탕은 그대로(흰 글자 대비), 글자·도장 선은 밝게 */
   --route:#1FCB72; --route-ink:#0B1F14; --blue-soft:#22355E;
 }
 *,*::before,*::after{box-sizing:inherit}
@@ -51,12 +54,13 @@ button,input{font:inherit;color:inherit}
 .app{display:grid;grid-template-columns:380px 1fr;height:100%}
 .side{background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
 .side-head{padding:22px 22px 14px}
-.brand{font-family:var(--sans);font-weight:800;font-size:32px;line-height:1.1;margin:0;letter-spacing:-.03em}
+.brand{color:var(--seal-ink);font-family:var(--sans);font-weight:800;font-size:32px;line-height:1.1;margin:0;letter-spacing:-.03em}
 .tagline{margin:6px 0 0;color:var(--muted);font-size:14px}
 .actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}
 .btn{border:1px solid var(--ink);background:var(--ink);color:var(--panel);padding:8px 14px;border-radius:6px;cursor:pointer;font-size:14px;font-weight:500}
 .btn.ghost{background:transparent;color:var(--ink);border-color:var(--line)}
 .btn.add{background:var(--blue);border-color:var(--blue);color:#FFFFFF;font-weight:700}
+.btn.add.rec{background:var(--seal);border-color:var(--seal)} /* 기록 남기기는 브랜드 색(인주) */
 
 /* 계정: 제목 오른쪽의 작은 동그라미 버튼과 그 아래 메뉴 */
 .side-head{position:relative}
@@ -84,7 +88,7 @@ button,input{font:inherit;color:inherit}
 .leave-lead{margin:0;font-size:15px;font-weight:600}
 .leave-list{margin:0;padding-left:20px;display:grid;gap:4px;font-size:14px}
 .leave-check{display:flex;align-items:center;gap:8px;font-size:14px;font-weight:600;cursor:pointer}
-.leave-check input{width:18px;height:18px;accent-color:#C0392B}
+.leave-check input{width:18px;height:18px;accent-color:#9B1C1C}
 .btn:disabled{opacity:.45;cursor:not-allowed}
 .acct-sep:first-child,.acct-sep:last-child{display:none}
 .auth{display:contents}
@@ -109,10 +113,10 @@ button,input{font:inherit;color:inherit}
 .splash.out{opacity:0;pointer-events:none}
 .splash-in{display:grid;justify-items:center;gap:14px;padding:24px;text-align:center}
 .splash-pin{position:relative;width:44px;height:52px}
-.splash-pin i{position:absolute;left:4px;top:0;width:36px;height:36px;border-radius:50% 50% 50% 0;background:var(--blue);border:3px solid #FFFFFF;transform:rotate(-45deg);box-shadow:-1px 3px 10px rgba(15,20,40,.3)}
+.splash-pin i{position:absolute;left:4px;top:0;width:36px;height:36px;border-radius:50% 50% 50% 0;background:var(--seal);border:3px solid #FFFFFF;transform:rotate(-45deg);box-shadow:-1px 3px 10px rgba(15,20,40,.3)}
 .splash-pin i::after{content:"";position:absolute;inset:9px;border-radius:50%;background:#FFFFFF}
 .splash-pin b{position:absolute;left:12px;bottom:0;width:20px;height:5px;border-radius:50%;background:rgba(15,20,40,.18)}
-.splash-name{margin:0;font-size:36px;font-weight:800;letter-spacing:-.03em;line-height:1.1}
+.splash-name{color:var(--seal-ink);margin:0;font-size:36px;font-weight:800;letter-spacing:-.03em;line-height:1.1}
 .splash-tag{margin:0;color:var(--muted);font-size:15px}
 .splash-attrs{display:flex;flex-wrap:wrap;justify-content:center;gap:6px;margin:4px 0 0;padding:0;list-style:none;max-width:440px}
 .splash-attrs li{display:flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;background:var(--panel);border:1px solid var(--line);font-size:13px;font-weight:600}
@@ -149,7 +153,7 @@ button,input{font:inherit;color:inherit}
 .add-search{display:flex;gap:8px}
 .add-search .search{flex:1;min-width:0}
 .add-status{margin:0;font-size:13px;color:var(--muted)}
-.add-status.err{color:#C0392B}
+.add-status.err{color:#9B1C1C}
 .add-results{list-style:none;margin:0;padding:0;display:grid;max-height:52vh;overflow:auto}
 .add-result{width:100%;display:grid;gap:2px;text-align:left;padding:10px 8px;border:0;border-bottom:1px solid var(--line);background:transparent;cursor:pointer}
 .add-result:hover{background:var(--paper)}
@@ -168,12 +172,12 @@ button,input{font:inherit;color:inherit}
 .add-field input,.add-field textarea{width:100%;padding:9px 12px;border:1px solid var(--line);border-radius:6px;background:var(--paper);font:inherit;color:inherit}
 .add-field textarea{min-height:64px;resize:vertical}
 .add-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-.add-warn{margin:0;font-size:12px;color:#C0392B}
+.add-warn{margin:0;font-size:12px;color:#9B1C1C}
 .add-actions{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}
 .add-src{margin:0;font-size:11px;color:var(--muted);text-align:right}
 .btn:hover{filter:brightness(1.1)}
 .status{margin:12px 0 0;font-size:13px;color:var(--muted);min-height:1.2em}
-.status.err{color:#C0392B}
+.status.err{color:#9B1C1C}
 :root[data-theme="dark"] .status.err{color:#F08A7E}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .status.err{color:#F08A7E}}
 .source{font-size:12px;color:var(--muted);margin-top:4px}
@@ -405,7 +409,7 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
 .rep.open{justify-self:stretch;display:grid;gap:8px;margin-top:4px;padding:10px;border:1px solid #E3B5AF;border-radius:8px;background:var(--panel)}
 .rep-q{font-size:13px;font-weight:600}
 .rep-detail{width:100%;min-height:56px;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:var(--paper);font:inherit;font-size:13px;color:inherit;resize:vertical}
-.rep-msg{margin:0;font-size:12px;color:#C0392B}
+.rep-msg{margin:0;font-size:12px;color:#9B1C1C}
 .rep-msg:empty{display:none}
 .rep-acts{display:flex;gap:8px;flex-wrap:wrap}
 
@@ -416,7 +420,7 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
 .adm-top .muted{color:var(--muted);font-size:13px}
 .adm-state{margin-left:auto;font-size:11px;font-weight:700;border-radius:999px;padding:1px 8px}
 .adm-state.on{background:var(--blue-soft);color:var(--blue)}
-.adm-state.off{background:#C0392B;color:#FFFFFF}
+.adm-state.off{background:#9B1C1C;color:#FFFFFF}
 .adm-line,.adm-rec,.adm-detail{margin:0;font-size:13px}
 .adm-detail{color:var(--muted)}
 .ar-name{display:flex;align-items:center;gap:8px}
@@ -428,8 +432,8 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
 .manage{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:14px;padding-top:12px;border-top:1px dashed var(--line)}
 .manage.ask{padding:12px;border:1px solid #E3B5AF;border-radius:8px}
 .manage-q{flex:1 1 100%;font-size:13px}
-.btn.danger{color:#C0392B;border-color:#E3B5AF}
-.btn.danger.solid{background:#C0392B;border-color:#C0392B;color:#FFFFFF}
+.btn.danger{color:#9B1C1C;border-color:#E3B5AF}
+.btn.danger.solid{background:#9B1C1C;border-color:#9B1C1C;color:#FFFFFF}
 .pin-badge{position:absolute;left:28px;top:3px;white-space:nowrap;font-size:11px;font-weight:700;border-radius:999px;padding:2px 7px;box-shadow:0 1px 3px rgba(15,20,40,.22)}
 .pin-badge.lv0{background:var(--blue);color:#FFFFFF}
 .pin-badge.lv1{background:var(--blue-soft);color:var(--blue)}
@@ -449,7 +453,7 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
 .d-ttab[aria-selected="true"]{background:var(--ink);border-color:var(--ink);color:var(--panel)}
 .d-ttab[aria-selected="true"] .n{color:var(--mark)}
 .d-ttab:disabled{opacity:.4;cursor:default}
-.d-tnote.err{color:#C0392B}
+.d-tnote.err{color:#9B1C1C}
 .d-tsrc{margin:0;font-size:11px;color:var(--muted);text-align:right}
 .d-tbtn{padding:9px 14px;border-radius:8px;border:1px solid var(--line);background:var(--paper);font-weight:600;font-size:14px;cursor:pointer}
 .d-topt{display:grid;gap:6px;text-align:left;width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--line);background:transparent;cursor:pointer}
@@ -680,6 +684,11 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
 /* 지금도 맞나요?: 최종 확인일·일치율 + 두 버튼 */
 .check-box{margin-top:18px}
 .check-facts{margin:0 0 8px;font-size:13px;color:var(--muted)}
+.check-stamp{display:flex;align-items:center;gap:12px;margin:2px 0 10px}
+.check-stamp div{display:grid;gap:1px;font-size:13px;color:var(--muted)}
+.check-stamp b{color:var(--ink);font-size:14px}
+/* 도장: 인주색 겹테두리 원 안에 '확인', 살짝 기울여 찍은 느낌 */
+.seal{flex:none;display:grid;place-items:center;width:42px;height:42px;border:2px solid var(--seal-ink);border-radius:50%;box-shadow:inset 0 0 0 2px var(--panel),inset 0 0 0 3px var(--seal-ink);color:var(--seal-ink);font-size:12px;font-weight:800;letter-spacing:.05em;transform:rotate(-10deg)}
 .check-row{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:6px}
 .check-btn{padding:9px 12px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--ink);font:inherit;font-size:14px;font-weight:600;cursor:pointer}
 .check-btn[aria-pressed="true"]{background:var(--ink);color:var(--panel);border-color:var(--ink)}
@@ -737,6 +746,11 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
   .topbar{position:fixed;left:12px;right:12px;top:calc(10px + env(safe-area-inset-top,0px));width:auto;z-index:16}
   /* 빠른 조건·주변 장소 줄: 두 줄 모두 흐림 없이 깔끔하게 자르고, 화면 오른쪽 끝까지 이어지게(마지막 칩은 끝까지 밀면 여백을 두고 멈춘다) */
   .topbar .qchips{margin-right:-12px;-webkit-mask-image:none !important;mask-image:none !important}
+  /* 누르는 영역을 위아래로 넓힌다(보이는 칩 크기는 그대로, 손가락 영역은 약 44px) */
+  .topbar .qchips{padding-top:5px;padding-bottom:7px;margin-top:-3px;margin-bottom:-3px}
+  .topbar .qchip{position:relative}
+  .topbar .qchip::after{content:"";position:absolute;inset:-5px -3px}
+  .nchips .qchip{height:32px}
   .topbar .qchips::after{content:"";flex:0 0 6px}
   .tb-search{height:46px}
   .quick{display:none !important}
@@ -801,7 +815,7 @@ html{touch-action:manipulation}
       <!-- 패널이 접혀 있을 때도 보이는 한 줄: 지금 지도에 보이는 곳 수와 사실 요약, 기록하기 -->
       <div class="peek">
         <div class="peek-text"><b id="peekN"></b><span id="peekFacts"></span></div>
-        <button class="btn add" id="btnAdd" type="button">+ 기록</button>
+        <button class="btn add rec" id="btnAdd" type="button">+ 기록</button>
       </div>
       <p class="status" id="status" role="status" aria-live="polite"></p>
       <div class="source" id="source"></div>
@@ -1181,7 +1195,7 @@ const CATEGORIES = [
   { name:'베이커리',  color:'#FF8A00', test:/베이커리|빵/ },
   { name:'북카페',    color:'#7B3FF2', test:/북|책|서점/ },
   { name:'찻집',      color:'#00A86B', test:/찻집|티|차/ },
-  { name:'문화공간',  color:'#FF2E7E', test:/복합|문화|전시|갤러리/ },
+  { name:'문화공간',  color:'#0E9AA7', test:/복합|문화|전시|갤러리/ },
   { name:'카페',      color:'#1F5EFF', test:/카페|커피|로스터/ },
   { name:'기타',      color:'#5B6475', test:/.*/ }
 ];
@@ -1522,8 +1536,12 @@ function checkBox(p){
   const box = el('div','check-box');
   box.appendChild(el('h3','sec-title','지금도 이 기록이 맞나요?'));
   const last = lastConfirmed(p);
-  box.appendChild(el('p','check-facts', [last && `최종 확인 ${last}`,
-    total >= MIN_CHECKS ? `일치율 ${Math.round(c.same / total * 100)}% (${total}명 중 ${c.same}명)` : `확인 응답 ${total}개 · ${MIN_CHECKS}개부터 일치율을 보여 줘요`].filter(Boolean).join(' · ')));
+  const facts = [total >= MIN_CHECKS ? `일치율 ${Math.round(c.same / total * 100)}% (${total}명 중 ${c.same}명)` : `확인 응답 ${total}개 · ${MIN_CHECKS}개부터 일치율을 보여 줘요`];
+  if (last) { // 최종 확인일은 실록의 도장(인주)처럼 찍어 보여 준다
+    const st = el('div','check-stamp'), seal = el('span','seal','확인'); seal.setAttribute('aria-hidden','true');
+    const tx = el('div'); tx.append(el('b', null, `최종 확인 ${last}`), el('span', null, facts[0]));
+    st.append(seal, tx); box.appendChild(st);
+  } else box.appendChild(el('p','check-facts', facts[0]));
   const row = el('div','check-row');
   for (const [ans, label] of [['same', '맞아요'], ['changed', '달라졌어요']]) {
     const b = el('button','check-btn', label); b.type = 'button'; b.setAttribute('aria-pressed', String(mine === ans));
@@ -1730,7 +1748,7 @@ function renderDetail(){
     box.appendChild(el('p','ext-none','아직 공간실록에 기록이 없는 곳이에요. 다녀오셨다면 소음, 콘센트 같은 사실을 남겨 주세요.'));
     if (p.phone) { const ph = el('p','ext-phone'); ph.append('전화 ', el('span', null, p.phone)); box.appendChild(ph); }
     const acts = el('div','ext-acts');
-    const rec = el('button','btn add','이 장소 기록하기'); rec.type = 'button';
+    const rec = el('button','btn add rec','이 장소 기록하기'); rec.type = 'button';
     rec.addEventListener('click', () => startAdd({ name: p.name, category: p.category, address: p.addr, lat: p.lat, lng: p.lng, kid: /^\d+$/.test(p.id.slice(1)) ? p.id.slice(1) : '' }));
     acts.appendChild(rec);
     if (p.url) { const k = el('a','btn ghost','카카오맵에서 자세히'); k.href = p.url; k.target = '_blank'; k.rel = 'noopener'; acts.appendChild(k); }
@@ -1824,9 +1842,9 @@ function renderDetail(){
   const mbtn = (label, cls, fn) => { const b = el('button', 'btn ' + cls, label); b.type = 'button'; b.addEventListener('click', fn); return b; };
   if (p.sample && !p.mine) { /* 로그인 상태의 예시는 읽기 전용 */ }
   else if (!p.mine) {
-    if (auth.user) manage.append(mbtn('나도 기록하기', 'add', () => openAdd({ name: p.name, category: p.type, address: p.addr, lat: p.lat, lng: p.lng, kid: p.kid, pid: p.pid })));
+    if (auth.user) manage.append(mbtn('나도 기록하기', 'add rec', () => openAdd({ name: p.name, category: p.type, address: p.addr, lat: p.lat, lng: p.lng, kid: p.kid, pid: p.pid })));
     else if (sb) manage.append(mbtn('카카오로 로그인하고 기록하기', 'kakao-btn', () => { choicePrefill = { name: p.name, category: p.type, address: p.addr, lat: p.lat, lng: p.lng, kid: p.kid, pid: p.pid }; loginThenAdd(); }));
-    else manage.append(mbtn('나도 기록하기', 'add', () => openAdd({ name: p.name, category: p.type, address: p.addr, lat: p.lat, lng: p.lng })));
+    else manage.append(mbtn('나도 기록하기', 'add rec', () => openAdd({ name: p.name, category: p.type, address: p.addr, lat: p.lat, lng: p.lng })));
   } else if (state.delAsk === p.id) {
     manage.classList.add('ask');
     manage.append(el('span','manage-q', `'${p.name}' 기록을 지울까요? 지운 기록은 되돌릴 수 없어요.`),
@@ -3103,7 +3121,7 @@ const NEAR_KINDS = [
   { code: 'CS2', label: '편의점',   color: '#2E9E6A', zoom: 16, on: true }, // 가게가 많아서 한 단계 더 확대했을 때만
   { code: 'CE7', label: '카페',     color: '#7A8494', zoom: 15, on: true },
   { code: 'FD6', label: '음식점',   color: '#E8742C', zoom: 16 }, // 번화가는 수백 곳이라 처음에는 끄고, 필요할 때 켠다
-  { code: 'PM9', label: '약국',     color: '#D9465F', zoom: 15, on: true },
+  { code: 'PM9', label: '약국',     color: '#8E5BD0', zoom: 15, on: true },
   { code: 'BK9', label: '은행',     color: '#C99A06', zoom: 15, on: true },
   { code: 'CT1', label: '문화시설', color: '#9B5DE5', zoom: 15 },
   { code: 'LIB', label: '도서관',   color: '#00A6A6', zoom: 15 },
@@ -3485,7 +3503,7 @@ function renderAdd(){
   const act = el('div','add-actions');
   const back = el('button','btn ghost', editing ? '취소' : '← 다시 찾기'); back.type = 'button';
   back.addEventListener('click', () => { if (editing) { $('addDlg').close(); return; } addState.step = 'search'; addState.status = ''; renderAdd(); });
-  const save = el('button','btn add', editing ? '수정 저장' : '저장하기'); save.type = 'button';
+  const save = el('button','btn add rec', editing ? '수정 저장' : '저장하기'); save.type = 'button';
   if (same) { save.disabled = true; save.title = '이미 기록한 곳이라 새로 저장할 수 없어요'; }
   save.addEventListener('click', () => {
     const v = addState.values;
