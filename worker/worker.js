@@ -10,12 +10,13 @@
 //   POST /walk     { startX, startY, endX, endY }               → TMAP 보행자 경로
 //   POST /search   { query, x?, y? }                            → 카카오 키워드 장소 검색 (x, y가 있으면 그 근처부터)
 //   POST /station  { x, y }                                     → 1.5km 안 지하철역 (가까운 순)
+//   POST /addr     { x, y }                                     → 그 자리의 도로명주소·건물명 (카카오 좌표→주소)
 //   POST /nearby   { rect: "왼쪽X,아래Y,오른쪽X,위Y", code? }      → 지도 한 칸 안의 장소 (code: CS2 편의점, CE7 카페, FD6 음식점, PM9 약국, BK9 은행, HP8 병원, CT1 문화시설, AT4 관광명소, PO3 공공기관, MT1 대형마트, LIB 도서관)
 //   POST /intent   { text }                                     → 글로 적은 목적을 기록 항목 조건으로 (Claude, 비밀 변수 ANTHROPIC_API_KEY)
 //   POST /photo    { images: [base64 JPEG, 최대 3장] }          → 사진에서 눈으로 확인되는 기록 항목 제안 (Claude, 같은 비밀 변수)
 
 const ALLOWED_ORIGINS = ['https://ian-space.github.io', 'http://localhost:8765'];
-const VERSION = '2026-10-08.2'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
+const VERSION = '2026-10-08.3'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
 // 경로 결과 저장 시간(초). KV 바인딩(ROUTE_CACHE)이 없으면 저장하지 않고 그대로 동작한다
 const CACHE_SECONDS = { transit: 600, walk: 86400 };
 // 주변 장소 종류. 카카오 업종 코드(CE7 카페, FD6 음식점, CT1 문화시설)로 찾고,
@@ -94,7 +95,7 @@ export default {
     if (request.method !== 'POST') return reply(405, { error: 'POST only' });
 
     const kind = new URL(request.url).pathname.replace(/^\/+/, '');
-    if (!TMAP[kind] && !['search', 'nearby', 'station', 'intent', 'photo'].includes(kind)) return reply(404, { error: 'unknown path' });
+    if (!TMAP[kind] && !['search', 'nearby', 'station', 'intent', 'photo', 'addr'].includes(kind)) return reply(404, { error: 'unknown path' });
 
     let input;
     try { input = await request.json(); } catch { return reply(400, { error: 'invalid json' }); }
@@ -118,6 +119,26 @@ export default {
         name: d.place_name, category: d.category_name, address: d.road_address_name || d.address_name,
         phone: d.phone, x: d.x, y: d.y, url: d.place_url, distance: d.distance,
       })) });
+    }
+
+
+    /* 좌표 → 주소(카카오): 지도에서 누른 자리의 건물(도로명주소·건물명). 주소는 잘 바뀌지 않아 약 1m 단위로 30일 저장 */
+    if (kind === 'addr') {
+      if (!env.KAKAO_REST_KEY) return reply(500, { error: 'KAKAO_REST_KEY is not set' });
+      const x = num(input.x), y = num(input.y);
+      if (!inKorea(x, y)) return reply(400, { error: 'coordinates out of range' });
+      const cacheKey = `addr1:${x.toFixed(5)},${y.toFixed(5)}`;
+      const kv = env.ROUTE_CACHE;
+      if (kv) { const hit = await kv.get(cacheKey).catch(() => null); if (hit) return new Response(hit, { status: 200, headers: { ...cors, 'Content-Type': 'application/json; charset=utf-8', 'X-Cache': 'HIT' } }); }
+      const params = new URLSearchParams({ x: x.toFixed(6), y: y.toFixed(6) });
+      const up = await fetch('https://dapi.kakao.com/v2/local/geo/coord2address.json?' + params, { headers: { Authorization: 'KakaoAK ' + env.KAKAO_REST_KEY } });
+      const j = await up.json().catch(() => null);
+      if (!up.ok || !j) return reply(up.status === 200 ? 502 : up.status, { error: (j && (j.message || j.msg)) || 'kakao error' });
+      const d = (j.documents || [])[0] || {}, ra = d.road_address || null, ad = d.address || null;
+      const text = JSON.stringify({ road: ra ? ra.address_name : '', building: ra ? ra.building_name || '' : '', jibun: ad ? ad.address_name : '',
+        roadName: ra ? ra.road_name : '', mainNo: ra ? ra.main_building_no : '', subNo: ra ? ra.sub_building_no : '' });
+      if (kv) ctx.waitUntil(kv.put(cacheKey, text, { expirationTtl: 30 * 86400 }).catch(() => {}));
+      return new Response(text, { status: 200, headers: { ...cors, 'Content-Type': 'application/json; charset=utf-8', 'X-Cache': kv ? 'MISS' : 'OFF' } });
     }
 
     /* 가까운 지하철역: 카카오 업종 검색(SW8)으로 1.5km 안의 역을 가까운 순으로. 역은 잘 바뀌지 않아 약 100m 단위로 30일 저장 */
