@@ -730,6 +730,9 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
   .btn{padding:6px 12px;font-size:13px}
   /* 첫 화면은 지도 우선: 위에 검색창과 빠른 조건, 오른쪽 아래 둥근 버튼 두 개, 아래 패널은 한 줄로 접힘 */
   .topbar{position:fixed;left:12px;right:12px;top:calc(10px + env(safe-area-inset-top,0px));width:auto;z-index:16}
+  /* 빠른 조건·주변 장소 줄: 두 줄 모두 흐림 없이 깔끔하게 자르고, 화면 오른쪽 끝까지 이어지게(마지막 칩은 끝까지 밀면 여백을 두고 멈춘다) */
+  .topbar .qchips{margin-right:-12px;-webkit-mask-image:none !important;mask-image:none !important}
+  .topbar .qchips::after{content:"";flex:0 0 6px}
   .tb-search{height:46px}
   .quick{display:none !important}
   .legend{left:12px;max-width:calc(100% - 24px)}
