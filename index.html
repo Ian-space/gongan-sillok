@@ -1770,13 +1770,17 @@ function renderDetail(){
     const box = el('div','ext-info');
     box.appendChild(el('p','ext-none','아직 공간실록에 기록이 없는 곳이에요. 다녀오셨다면 소음, 콘센트 같은 사실을 남겨 주세요.'));
     if (p.phone) { const ph = el('p','ext-phone'); ph.append('전화 ', el('span', null, p.phone)); box.appendChild(ph); }
+    // 상가정보의 층: 사람이 확인한 사실이 아니라 참고로만 (층 이동 기록을 남길 때 도움)
+    if (p.floor) box.appendChild(el('p','ext-phone', `상가정보 기준 ${/^\d+$/.test(p.floor) ? p.floor + '층' : p.floor === '지' ? '지하' : p.floor} (참고)`));
     const acts = el('div','ext-acts');
     const rec = el('button','btn add rec','이 장소 기록하기'); rec.type = 'button';
     rec.addEventListener('click', () => startAdd({ name: p.name, category: p.category, address: p.addr, lat: p.lat, lng: p.lng, kid: /^\d+$/.test(p.id.slice(1)) ? p.id.slice(1) : '' }));
     acts.appendChild(rec);
-    if (p.url) { const k = el('a','btn ghost','카카오맵에서 자세히'); k.href = p.url; k.target = '_blank'; k.rel = 'noopener'; acts.appendChild(k); }
+    const kakaoUrl = p.url || `https://map.kakao.com/?q=${encodeURIComponent(p.name)}`; // 상가정보 가게는 카카오 번호가 없어 이름으로 찾아 연다
+    const k = el('a','btn ghost','카카오맵에서 자세히'); k.href = kakaoUrl; k.target = '_blank'; k.rel = 'noopener'; acts.appendChild(k);
     box.appendChild(acts);
-    box.appendChild(el('p','add-src','영업시간, 리뷰, 사진은 카카오맵에서 확인할 수 있어요. 장소 정보: 카카오'));
+    box.appendChild(el('p','add-src', p.shop ? '영업시간, 리뷰, 사진은 카카오맵에서 확인할 수 있어요. 장소 정보: 소상공인시장진흥공단 상가(상권)정보(2026년 6월)'
+      : '영업시간, 리뷰, 사진은 카카오맵에서 확인할 수 있어요. 장소 정보: 카카오'));
     d.appendChild(box);
   } else {
   // 누구의 기록인지 먼저 밝힌다
@@ -3157,7 +3161,7 @@ async function runExtSearch(query){
   const key = `${query}|${near ? near.lat.toFixed(2) + ',' + near.lng.toFixed(2) : ''}`;
   if (extCache.has(key)) { setExt({ query, status: '', ...extCache.get(key), results: extCache.get(key).results.filter(r => !isRecorded(r)) }); return; }
   setExt({ query, status: 'loading', results: state.ext.results });
-  let results, fixed = '';
+  let results, fixed = '', shopP = Promise.resolve([]);
   try {
     const ask = async (text, extra) => {
       const r = await proxyPost('/search', { query: text, ...(near && { x: String(near.lng), y: String(near.lat) }), ...extra });
@@ -3169,6 +3173,8 @@ async function runExtSearch(query){
     const words = query.split(/\s+/).filter(w => w.length >= 2);
     const has = (name, w) => normQ(name).includes(normQ(w)); // 오타 허용 없이 글자 그대로(오타 허용이면 '블루보'에 '블루버드'가 맞는 걸로 나온다)
     const hasHit = ps => ps.some(p => words.some(w => has(p.name, w)));
+    // 우리 상가 DB(상호 일부로 찾기)를 카카오와 동시에 부른다. 카카오가 낱말을 통째로만 찾는 약점을 메운다
+    shopP = sb ? sb.rpc('search_shops', { q: query, at_lat: near ? near.lat : null, at_lng: near ? near.lng : null }).then(r => r.data || []).catch(() => []) : Promise.resolve([]);
     let places = await ask(query);
     // 결과가 없으면 흔한 오타·줄임말을 고친 말(스벅 → 스타벅스, 까페 → 카페)과 띄어쓰기를 뺀 말로 한 번 더 찾는다
     if (!places.length) {
@@ -3196,11 +3202,22 @@ async function runExtSearch(query){
     if (state.ext.query === query) setExt({ query, status: 'error', results: [] });
     return;
   }
-  extCache.set(key, { results, fixed });
+  // (저장은 상가 DB 결과까지 합친 뒤에 한다)
   if (state.ext.query !== query) return; // 그사이 다른 검색어로 바뀌었다
   // 지도에 이미 불러온 주변 장소(회색 점) 중 이름이 맞는 곳을 앞에 붙인다
   const hits = [...state.near.values()].filter(p => fuzzyHas(p.name, query)).slice(0, 10);
-  const fresh = [...hits, ...results.filter(r => !hits.some(h => h.id === r.id))].filter(r => !isRecorded(r));
+  // 상가 DB에서 찾은 곳: 카카오 결과에 같은 가게(가깝고 이름 앞 두 글자 같음)가 없을 때만 더한다
+  const sameShop = (a, b) => Math.abs(a.lat - b.lat) < 0.0005 && Math.abs(a.lng - b.lng) < 0.0006 && nameKey(a.name) === nameKey(b.name);
+  const shops = (await shopP).map(s => ({ id: 's' + s.id, ext: true, shop: true, name: cleanText([s.name, s.branch].filter(Boolean).join(' '), 40),
+    category: cleanText([s.cat1, s.cat2, s.cat3].filter(Boolean).join(' > '), 60), type: cleanText(s.cat3 || s.cat2 || '', 20), addr: cleanText(s.addr, 60),
+    phone: '', url: '', floor: cleanText(s.floor, 4), lat: +s.lat, lng: +s.lng }))
+    .filter(s => s.lat >= 33 && s.lat <= 39 && !results.some(r => sameShop(r, s)) && !hits.some(h => sameShop(h, s)));
+  if (state.ext.query !== query) return;
+  // 카카오가 적은 말을 이름에 담은 곳을 못 찾았으면 상가 DB 결과를 앞에, 아니면 뒤에
+  const kakaoHit = results.some(r => normQ(r.name).includes(normQ(query.split(/\s+/)[0])));
+  const merged = kakaoHit ? [...results, ...shops.slice(0, 8)] : [...shops.slice(0, 10), ...results];
+  extCache.set(key, { results: merged, fixed });
+  const fresh = [...hits, ...merged.filter(r => !hits.some(h => h.id === r.id))].filter(r => !isRecorded(r));
   setExt({ query, fixed, status: fresh.length ? '' : 'none', results: fresh });
   // 휴대폰: 결과가 보이도록 목록 패널을 반쯤 올린다 (검색 결과는 패널 맨 위에 있다)
   if (fresh.length && isPhone() && listSheet && !state.sel && (listSheet.height || 0) < vh(0.5) - 10) listSheet.set(vh(0.5), true);
@@ -3238,7 +3255,19 @@ const NEAR_KINDS = [
   { code: 'AT4', label: '관광명소', color: '#5C940D', zoom: 14, icon: 'M6 20V5 M6 5h11l-2.5 4 2.5 4H6' },
   { code: 'PO3', label: '공공기관', color: '#495057', zoom: 15, icon: 'M5 20V9l7-4 7 4v11 M9.5 20v-5h5v5' },
   { code: 'MT1', label: '대형마트', color: '#4C6EF5', zoom: 14, icon: 'M3.5 5h2.5l2 10h9.5l2-7H7.2 M9.5 19h.01 M16.5 19h.01' },
+  // 모든 가게: 카카오가 아니라 우리 DB(소상공인시장진흥공단 상가정보, supabase/12_shops.sql)에서. 지금은 강동·송파·성동만 있다.
+  // 가게가 아주 많아서 많이 확대했을 때만. 업종 대분류마다 색과 그림을 바꾼다(SHOP_CAT)
+  { code: 'SHP', label: '모든 가게', color: '#868E96', zoom: 18, shop: true, icon: 'M4 10h16 M5 10V19h14v-9 M4 10l2-5h12l2 5 M10 19v-5h4v5' },
 ];
+const SHOP_CAT = {
+  '음식':       { color: '#E8742C', icon: NEAR_KINDS[2].icon },
+  '소매':       { color: '#2E9E6A', icon: NEAR_KINDS[0].icon },
+  '보건의료':   { color: '#0B7285', icon: 'M12 6v12 M6 12h12' },
+  '교육':       { color: '#00A6A6', icon: 'M4 6h6a2 2 0 0 1 2 2v11a2 2 0 0 0-2-2H4z M20 6h-6a2 2 0 0 0-2 2v11a2 2 0 0 1 2-2h6z' },
+  '숙박':       { color: '#7048E8', icon: 'M3 18V7 M3 14h18v4 M21 14v-2a3 3 0 0 0-3-3h-7v5 M7 11.5h.01' },
+  '예술·스포츠': { color: '#9B5DE5', icon: 'M12 5l2 4.5 5 .5-3.8 3.3 1.1 4.9L12 15.8l-4.3 2.4 1.1-4.9L5 10l5-.5z' },
+  '수리·개인':   { color: '#868E96', icon: 'M14 6a4 4 0 0 0-5 5l-5 5 3 3 5-5a4 4 0 0 0 5-5l-2.5 2.5-2-2z' }
+};
 const NEAR_KIND = Object.fromEntries(NEAR_KINDS.map(k => [k.code, k]));
 const NEAR_TW = 0.006, NEAR_TH = 0.0045, NEAR_MAX_TILES = 24, NEAR_MAX_DEPTH = 2, NEAR_PARALLEL = 4;
 const NEAR_PREF = 'gongan-sillok:near3'; // 처음 켜지는 종류가 바뀌면(편의점·약국·은행 추가, 음식점 빼기) 예전에 기억한 값은 버리고 새로 시작한다
@@ -3288,7 +3317,49 @@ function pumpNear(){
     loadRect(job).finally(() => { nearBusy--; pumpNear(); });
   }
 }
+// 모든 가게(우리 DB): 한 칸에 800곳이 넘으면 4등분해서 다시. 카카오 점과 같은 가게(20m 안, 이름 앞 두 글자 같음)는 찍지 않는다
+const nameKey = s => normQ(s).slice(0, 2);
+async function loadShopRect(job){
+  if (!sb) { nearTiles.delete(job.key); return; }
+  const [ax, ay, bx, by] = job.rect;
+  const { data, error } = await sb.rpc('shops_in_box', { min_lng: ax, min_lat: ay, max_lng: bx, max_lat: by, lim: 800 });
+  if (error) { if (job.depth === 0) nearTiles.delete(job.key); return; }
+  if (data.length >= 800 && job.depth < NEAR_MAX_DEPTH + 1) {
+    const mx = (ax + bx) / 2, my = (ay + by) / 2;
+    for (const q of [[ax, ay, mx, my], [mx, ay, bx, my], [ax, my, mx, by], [mx, my, bx, by]]) nearQueue.push({ ...job, rect: q, depth: job.depth + 1 });
+    return;
+  }
+  let added = 0;
+  for (const s of data) {
+    const id = 's' + s.id; if (state.near.has(id)) continue;
+    const c = SHOP_CAT[s.cat1] || {};
+    state.near.set(id, { id, ext: true, near: true, shop: true, kind: 'SHP', name: cleanText([s.name, s.branch].filter(Boolean).join(' '), 40),
+      category: cleanText([s.cat1, s.cat2, s.cat3].filter(Boolean).join(' > '), 60), type: cleanText(s.cat3 || s.cat2 || '', 20),
+      addr: cleanText(s.addr, 60), phone: '', url: '', floor: cleanText(s.floor, 4), lat: +s.lat, lng: +s.lng, color: c.color, icon: c.icon });
+    added++;
+  }
+  if (job.depth === 0) nearTiles.set(job.key, 'done');
+  if (added) { pruneShops(); syncNearMarkers(); }
+}
+// 가게 표식이 너무 많이 쌓이면(휴대폰이 느려진다) 지금 화면에서 먼 것부터 지운다. 다시 오면 그 칸을 새로 불러온다
+const SHOP_KEEP = 1500;
+function pruneShops(){
+  const shops = [...state.near.values()].filter(p => p.shop && p.id !== state.sel);
+  if (shops.length <= SHOP_KEEP || !map) return;
+  const c = map.getCenter(), d = p => (p.lat - c.lat()) ** 2 + (p.lng - c.lng()) ** 2;
+  for (const p of shops.sort((a, b) => d(b) - d(a)).slice(0, shops.length - SHOP_KEEP)) {
+    state.near.delete(p.id);
+    const mk = nearMarkers.get(p.id); if (mk) { mk.setMap(null); nearMarkers.delete(p.id); }
+  }
+  for (const k of [...nearTiles.keys()]) if (k.startsWith('SHP:')) nearTiles.delete(k); // 지운 칸을 다시 불러올 수 있게
+}
+// 카카오 주변 장소와 겹치는 가게인지(같은 가게를 두 번 찍지 않게)
+function shopDup(p){
+  for (const q of state.near.values()) if (!q.shop && Math.abs(q.lat - p.lat) < 0.0002 && Math.abs(q.lng - p.lng) < 0.00025 && nameKey(q.name) === nameKey(p.name)) return true;
+  return false;
+}
 async function loadRect(job){
+  if (job.code === 'SHP') return loadShopRect(job);
   const rect = job.rect.map(v => v.toFixed(4)).join(',');
   try {
     const r = await proxyPost('/nearby', { rect, code: job.code });
@@ -3317,7 +3388,8 @@ async function loadRect(job){
   } catch (e) { if (job.depth === 0) nearTiles.delete(job.key); } // 다음에 지도를 움직이면 다시 시도
 }
 // 이미 기록한 곳, 검색 결과로 이미 흰 핀이 있는 곳, 꺼 둔 종류는 점을 찍지 않는다
-const nearVisible = p => state.nearKinds.has(p.kind) && map.getZoom() >= NEAR_KIND[p.kind].zoom && !isRecorded(p) && !state.ext.results.some(x => x.id === p.id);
+const nearVisible = p => state.nearKinds.has(p.kind) && map.getZoom() >= NEAR_KIND[p.kind].zoom && !isRecorded(p) && !state.ext.results.some(x => x.id === p.id)
+  && !(p.shop && (p.dup ??= shopDup(p))); // 겹침 검사는 가게마다 한 번만(카카오 점이 나중에 와도 크게 틀리지 않는다)
 function syncNearMarkers(){
   if (!map) return;
   for (const p of state.near.values()) {
@@ -3329,7 +3401,7 @@ function syncNearMarkers(){
   renderNearMarkers(); renderLegend();
 }
 // 업종 그림(흰 선). 지도 점 안과 종류 칩에 같이 쓴다
-const nearIcon = code => `<svg viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${NEAR_KIND[code].icon}"/></svg>`;
+const nearIcon = (code, path) => `<svg viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${path || NEAR_KIND[code].icon}"/></svg>`;
 function renderNearMarkers(){
   if (!map) return;
   const on = nearShown(), big = map.getZoom() >= 18; // 아주 가까이 보면 이름도 같이
@@ -3340,7 +3412,7 @@ function renderNearMarkers(){
     if (!show) continue;
     mk.setIcon(sel
       ? { content: `<div class="pin ext sel"><span class="pin-head"></span><span class="pin-label">${esc(p.name)}</span></div>`, anchor: new naver.maps.Point(14, 29) }
-      : { content: `<div class="near-dot${big ? ' named' : ''}" style="--nc:${NEAR_KIND[p.kind].color}"><i>${nearIcon(p.kind)}</i>${big ? `<span>${esc(p.name)}</span>` : ''}</div>`, anchor: new naver.maps.Point(10, 10) });
+      : { content: `<div class="near-dot${big ? ' named' : ''}" style="--nc:${p.color || NEAR_KIND[p.kind].color}"><i>${nearIcon(p.kind, p.icon)}</i>${big ? `<span>${esc(p.name)}</span>` : ''}</div>`, anchor: new naver.maps.Point(10, 10) });
     mk.setZIndex(sel ? 300 : 50);
   }
 }
@@ -3397,7 +3469,7 @@ function renderExtList(){
     }
     box.appendChild(ul);
   }
-  box.appendChild(el('p','add-src','누르면 지도에서 위치를 보고, 바로 기록할 수 있어요. 장소 정보: 카카오'));
+  box.appendChild(el('p','add-src','누르면 지도에서 위치를 보고, 바로 기록할 수 있어요. 장소 정보: 카카오' + (x.results.some(r => r.shop) ? ', 소상공인시장진흥공단 상가(상권)정보' : '')));
 }
 
 /* ---------- 장소 추가 (카카오 장소 검색) ---------- */
