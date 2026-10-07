@@ -3139,17 +3139,30 @@ async function runExtSearch(query){
   setExt({ query, status: 'loading', results: state.ext.results });
   let results, fixed = '';
   try {
-    const ask = async text => {
-      const r = await proxyPost('/search', { query: text, ...(near && { x: String(near.lng), y: String(near.lat) }) });
+    const ask = async (text, extra) => {
+      const r = await proxyPost('/search', { query: text, ...(near && { x: String(near.lng), y: String(near.lat) }), ...extra });
       const j = await r.json();
       if (!r.ok) throw new Error(j && j.error);
       return j.places || [];
     };
+    // 결과 중에 적은 말(낱말 하나라도)이 이름에 든 곳이 있는지. 카카오는 낱말을 통째로만 찾아서 '업사이'에 엉뚱한 곳을 줄 때가 있다
+    const words = query.split(/\s+/).filter(w => w.length >= 2);
+    const has = (name, w) => normQ(name).includes(normQ(w)); // 오타 허용 없이 글자 그대로(오타 허용이면 '블루보'에 '블루버드'가 맞는 걸로 나온다)
+    const hasHit = ps => ps.some(p => words.some(w => has(p.name, w)));
     let places = await ask(query);
     // 결과가 없으면 흔한 오타·줄임말을 고친 말(스벅 → 스타벅스, 까페 → 카페)과 띄어쓰기를 뺀 말로 한 번 더 찾는다
     if (!places.length) {
       for (const alt of [...new Set([normQ(query), query.replace(/\s+/g, '')])].filter(a => a.length >= 2 && a !== query)) {
         places = await ask(alt); if (places.length) { fixed = alt; break; }
+      }
+    }
+    // 상호를 끝까지 안 적었을 때('블루보', '업사이'): 앞부분만으로 가까운 순으로 찾고(최대 30곳), 적은 말이 이름에 든 곳만 남긴다
+    if (!hasHit(places) && !/\s/.test(query) && query.length >= 3) {
+      for (let n = query.length - 1; n >= Math.max(2, query.length - 2); n--) { // 한두 글자만 줄여 본다(카카오 호출을 아끼려고)
+        const head = query.slice(0, n), more = [];
+        for (const page of [1, 2]) { const ps = await ask(head, { sort: 'distance', page }); more.push(...ps); if (ps.length < 15) break; }
+        const hit = more.filter(p => has(p.name, query));
+        if (hit.length) { places = hit; fixed = ''; break; }
       }
     }
     results = places.map((x, i) => {
