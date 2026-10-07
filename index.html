@@ -501,6 +501,11 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
 .tb-search svg{width:18px;height:18px;color:var(--muted);flex:none}
 .tb-search input.search{flex:1;min-width:0;width:auto;height:100%;margin:0;padding:0;border:0;background:transparent;font-size:15px;outline:none;box-shadow:none}
 .tb-search:focus-within{box-shadow:0 0 0 2px var(--blue),0 2px 10px rgba(15,20,40,.2)}
+/* 검색 지우기(×): 글자가 있을 때만. 브라우저 기본 ×는 숨기고 이것 하나만 쓴다 */
+.tb-search input.search::-webkit-search-cancel-button{display:none;-webkit-appearance:none}
+.tb-clear{flex:none;width:30px;height:30px;margin-right:-8px;padding:0;border:0;border-radius:50%;background:var(--paper);color:var(--muted);display:grid;place-items:center;cursor:pointer}
+.tb-clear[hidden]{display:none}
+.tb-search .tb-clear svg{width:14px;height:14px;color:inherit}
 /* 최근 검색어: 검색창이 비어 있을 때 누르면 바로 아래에 뜬다 */
 .recent{position:absolute;left:0;right:52px;top:52px;z-index:5;padding:6px 0;background:var(--panel);border-radius:14px;box-shadow:0 6px 20px rgba(15,20,40,.22);pointer-events:auto}
 .recent-head{display:flex;justify-content:space-between;align-items:center;padding:4px 16px 6px;font-size:13px;color:var(--muted)}
@@ -853,6 +858,7 @@ html{touch-action:manipulation}
         <div class="tb-search">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
           <input class="search" id="q" type="search" placeholder="장소 이름 또는 '아이랑 조용한 곳'" aria-label="장소 이름, 동네, 좌석 종류, 마감으로 찾기. '유모차로 갈 조용한 곳'처럼 목적을 적으면 조건으로 바꿔 줘요. 기록 안 된 가게도 함께 찾아요" maxlength="40" enterkeyhint="search">
+          <button class="tb-clear" id="qClear" type="button" aria-label="검색 지우고 처음 화면으로" title="검색 지우기" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M7 7l10 10M17 7 7 17"/></svg></button>
         </div>
         <button class="acct" id="acctBtn" type="button" aria-expanded="false" aria-controls="acctMenu" aria-label="계정 메뉴"></button>
         <div class="acct-menu" id="acctMenu" hidden>
@@ -4235,6 +4241,7 @@ function renderAll(){
   $('zloc').setAttribute('aria-pressed', String(!!state.me));
   renderSummary(); renderPicks(vis); renderList(vis); renderExtList(); renderIntent(); renderMap(vis); renderExtMarkers(); renderLegend(); renderQuick(); renderDetail();
   renderQuickChips(); renderPeek(vis); syncFilterChips(); renderRouteBar(); renderCollectBar(); if ($('filterDlg').open) renderFilterExtras();
+  $('qClear').hidden = !$('q').value; // 검색어가 있을 때만 × 버튼
   $('summary').hidden = $('picks').hidden = !!state.ext.query; // 검색 중에는 검색 결과가 맨 위에 오도록 요약·추천을 접는다
 }
 
@@ -4576,6 +4583,13 @@ $('btnReset').addEventListener('click', () => {
   closeAcct();
   try { localStorage.removeItem(STORE_KEY); } catch {}
   setMine(rowsToPlaces(SAMPLE_ROWS).places, '예시 데이터 (가상의 장소 14곳)', false, true); setStatus('예시 데이터로 되돌렸어요.', false);
+});
+// 검색 지우기(×): 검색어와 검색 결과를 비우고, 휴대폰은 목록 패널을 처음처럼 접어 지도를 넓게 보여 준다
+$('qClear').addEventListener('pointerdown', e => e.preventDefault()); // 누를 때 키보드가 깜빡 닫혔다 열리지 않게
+$('qClear').addEventListener('click', () => {
+  const q = $('q'); q.value = ''; state.q = ''; state.intentPick.clear();
+  hideRecent(); queueExtSearch(''); q.blur(); renderAll();
+  if (isPhone() && listSheet && !state.sel) listSheet.set(PEEK_H, true);
 });
 $('q').addEventListener('input', e => { if (!e.target.value.trim()) state.intentPick.clear(); state.q = cleanText(e.target.value, 40).toLowerCase(); renderAll(); queueExtSearch(e.target.value); renderRecent(); });
 $('q').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing) { addRecent(e.target.value); hideRecent(); e.target.blur(); } });
