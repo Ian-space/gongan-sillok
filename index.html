@@ -278,6 +278,17 @@ button.stat[aria-pressed="true"] span{color:#FFFFFF}
 .sortsel{border:1px solid var(--line);background:var(--panel);border-radius:999px;padding:2px 8px;font:inherit;font-size:12px;font-weight:600;color:var(--ink);cursor:pointer}
 .item-dist{font-size:12px;font-weight:600;color:var(--blue);margin-top:2px;font-variant-numeric:tabular-nums}
 .mapctl .loc[aria-pressed="true"]{background:var(--blue);border-color:var(--blue);color:#FFFFFF}
+.me-wrap{position:relative;width:44px;height:44px}
+.me-wrap .me-dot{position:absolute;left:10px;top:10px}
+/* 보고 있는(걷는) 방향: 점 위쪽 부채꼴. 상자 전체를 돌린다 */
+.me-head{position:absolute;inset:0;transition:transform .15s linear}
+.me-head[hidden]{display:none}
+.me-head::before{content:"";position:absolute;left:50%;top:-2px;width:28px;height:22px;margin-left:-14px;background:radial-gradient(ellipse at 50% 100%,rgba(31,94,255,.55),rgba(31,94,255,0) 70%);clip-path:polygon(50% 100%,0 0,100% 0)}
+.me-head::after{content:"";position:absolute;left:50%;top:1px;margin-left:-5px;border-left:5px solid transparent;border-right:5px solid transparent;border-bottom:8px solid #1F5EFF}
+.mapctl .loc.finding svg{animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.collect-bar.guide-bar{background:#0F7B4A}
+.d-guide{margin-top:12px}
 .me-dot{width:18px;height:18px;border-radius:50%;background:#1F5EFF;border:3px solid #FFFFFF;box-shadow:0 0 0 2px rgba(31,94,255,.35),0 1px 4px rgba(15,20,40,.4)}
 @media (prefers-reduced-motion:no-preference){
   .me-dot{animation:pulse 2s ease-out infinite}
@@ -858,6 +869,7 @@ html{touch-action:manipulation}
       <div class="qchips nchips" id="nchips" role="toolbar" aria-label="주변 장소 종류" hidden></div>
       <div class="collect-bar" id="collectBar" hidden></div>
       <div class="collect-bar route-bar" id="routeBar" hidden></div>
+      <div class="collect-bar guide-bar" id="guideBar" hidden role="status" aria-live="polite"></div>
     </div>
     <div class="legend" id="legend" hidden aria-label="장소 유형별 색"></div>
     <div class="mapctl">
@@ -1897,6 +1909,7 @@ function initMap(){
     zoomControl: false, mapDataControl: false, scaleControl: true, logoControl: true
   });
   naver.maps.Event.addListener(map, 'zoom_changed', () => { renderMap(state.places.filter(matches)); renderNearMarkers(); renderLegend(); });
+  naver.maps.Event.addListener(map, 'dragstart', () => { lastDrag = Date.now(); }); // 안내 중 지도를 직접 움직이면 잠시 따라가지 않는다
   naver.maps.Event.addListener(map, 'idle', queueNearby); // 지도가 멈추면 화면 안의 주변 카페를 불러온다
   naver.maps.Event.addListener(map, 'idle', () => renderPeek(state.places.filter(matches))); // '이 지역 n곳'은 보이는 범위가 바뀔 때마다
   // 지도의 빈 곳을 짧게 누르면(끌지 않고) 고른 장소를 닫는다. 핀·점을 누를 때는 그 장소가 열린다.
@@ -2808,6 +2821,20 @@ function renderTransit(d, p){
     else if (hidden && !tabCount(t, 'all')) box.appendChild(el('p','d-tnote','지금은 운행하는 대중교통이 없어요.'));
     if (hidden) box.appendChild(el('p','d-tnote', `지금 시간에 운행하지 않는 경로 ${hidden}개는 뺐어요.`));
     box.appendChild(el('p','d-tsrc', t.source === 'tmap' ? '경로 정보: TMAP (지금 시각 기준)' : '경로 정보: ODsay (막차·첫차 시간은 대략적으로 걸렀어요)'));
+    // 안내: 지도가 나를 따라가며 도착지까지 남은 거리를 보여 주고, 도착하면 기록·확인으로 이어 준다.
+    // 다른 곳에서 출발하는 경로여도 쓸 수 있다(출발지에 가서 누르면 된다). 도착지가 '내 위치'면 안내할 곳이 없다
+    const to = e && e.to;
+    if (to && !to.me) {
+      const dest = sw ? state.places.find(x => sameSpot(x, to)) : p; // 도착지가 기록된 장소면 도착 뒤 그 장소로 이어 준다
+      const target = { id: dest ? dest.id : null, name: to.name, lat: to.lat, lng: to.lng };
+      const on = !!state.guide && sameSpot(state.guide, target);
+      const g = el('button', on ? 'd-go ghost d-guide' : 'd-go d-guide', on ? '안내 끝내기' : '안내 시작'); g.type = 'button';
+      g.addEventListener('click', () => { on ? endGuide() : startGuide(target); renderDetail(); });
+      box.appendChild(g);
+      if (!on) box.appendChild(el('p','d-tnote', e.from.me
+        ? '지도가 내 위치를 따라가며 남은 거리를 알려 줘요. 도착하면 기록을 남기거나 확인할 수 있어요.'
+        : `지금 내 위치에서 '${to.name}'까지 남은 거리를 알려 줘요. 출발지에 도착한 뒤 누르면 좋아요. 도착하면 기록을 남기거나 확인할 수 있어요.`));
+    }
   }
   naverLinks(box, p, false);
   d.appendChild(box);
@@ -4055,40 +4082,89 @@ function readAuthError(){
 
 /* ---------- 내 위치 ---------- */
 let watchId = null, meMarker = null, meCircle = null, panOnFix = false;
+let meLive = null, meAnchor = null, heading = null, compassOn = false, compassAt = 0, lastDrag = 0;
+
+/* 방향 화살표: 휴대폰 나침반(보고 있는 방향)을 먼저 쓰고, 나침반이 없으면 걸어간 방향(앞뒤 위치)으로 */
+const bearing = (a, b) => {
+  const r = Math.PI / 180, y = Math.sin((b.lng - a.lng) * r) * Math.cos(b.lat * r);
+  const x = Math.cos(a.lat * r) * Math.sin(b.lat * r) - Math.sin(a.lat * r) * Math.cos(b.lat * r) * Math.cos((b.lng - a.lng) * r);
+  return Math.atan2(y, x) / r;
+};
+function setHeading(h){
+  if (h == null || isNaN(h)) return;
+  h = ((h % 360) + 360) % 360;
+  if (heading != null && Math.abs(((h - heading + 540) % 360) - 180) < 3) return; // 3도 미만 흔들림은 무시
+  heading = h;
+  const e = document.getElementById('meHead'); if (e) { e.hidden = false; e.style.transform = `rotate(${h}deg)`; }
+}
+function startCompass(){
+  if (compassOn || !IS_MOBILE || !window.DeviceOrientationEvent) return;
+  const onOri = e => {
+    // 아이폰은 webkitCompassHeading(북쪽 기준 시계 방향), 안드로이드는 절대 방향 alpha(반시계)
+    const h = typeof e.webkitCompassHeading === 'number' ? e.webkitCompassHeading : (e.absolute && e.alpha != null ? 360 - e.alpha : null);
+    if (h == null) return;
+    compassAt = Date.now();
+    setHeading(h + ((screen.orientation && screen.orientation.angle) || window.orientation || 0));
+  };
+  const on = () => { compassOn = true; addEventListener('ondeviceorientationabsolute' in window ? 'deviceorientationabsolute' : 'deviceorientation', onOri); };
+  const D = window.DeviceOrientationEvent;
+  // 아이폰은 버튼을 누른 그 순간에만 나침반 권한을 물을 수 있다(그래서 locate 맨 앞에서 부른다)
+  if (typeof D.requestPermission === 'function') D.requestPermission().then(r => { if (r === 'granted') on(); }).catch(() => {});
+  else on();
+}
 
 function locate(thenSort, noPan){
+  startCompass();
   if (thenSort) state.sortNear = true;
-  if (state.me) { if (map && !noPan) map.panTo(new naver.maps.LatLng(state.me.lat, state.me.lng)); renderAll(); return; }
+  if (state.me) { const m = meLive || state.me; if (map && !noPan) map.panTo(new naver.maps.LatLng(m.lat, m.lng)); renderAll(); return; }
   if (!('geolocation' in navigator)) { setStatus('이 브라우저는 위치 확인을 지원하지 않아요.', true); state.sortNear = false; renderAll(); return; }
   if (watchId !== null) return; // 이미 위치를 찾는 중
   setStatus('내 위치를 찾는 중이에요…', false);
+  if (isPhone()) toast('내 위치를 찾는 중이에요…'); // 휴대폰은 상태 문구가 패널에 가려질 수 있다
+  $('zloc').classList.add('finding');
   state.locError = null;
   panOnFix = !thenSort && !noPan;
-  watchId = navigator.geolocation.watchPosition(onFix, onFixError, { enableHighAccuracy:true, maximumAge:15000, timeout:20000 });
+  // 빠른 첫 위치: 최근 위치나 와이파이로 대략 먼저 보여 주고, 정확한 위치(GPS)가 오면 바로 바꾼다
+  navigator.geolocation.getCurrentPosition(pos => { if (!state.me) onFix(pos); }, () => {}, { enableHighAccuracy:false, maximumAge:300000, timeout:4000 });
+  watchId = navigator.geolocation.watchPosition(onFix, onFixError, { enableHighAccuracy:true, maximumAge:2000, timeout:20000 });
   renderDetail(); // "찾는 중" 표시
 }
 function onFix(pos){
-  const first = !state.me;
-  const next = { lat: pos.coords.latitude, lng: pos.coords.longitude, acc: pos.coords.accuracy };
-  if (!first && distM(state.me, next) < 20) return; // 20m 미만 움직임은 화면을 다시 그리지 않는다
-  state.me = next;
-  if (first) setStatus('내 위치를 찾았어요.', false);
+  const first = !state.me, c = pos.coords;
+  const next = { lat: c.latitude, lng: c.longitude, acc: c.accuracy };
+  $('zloc').classList.remove('finding');
+  // 나침반이 없거나 잠깐 끊겼으면 움직인 방향으로 화살표를 돌린다
+  if (Date.now() - compassAt > 3000) {
+    if (typeof c.heading === 'number' && !isNaN(c.heading) && (c.speed || 0) > 0.7) setHeading(c.heading);
+    else if (meAnchor && distM(meAnchor, next) >= 8 && next.acc < 40) setHeading(bearing(meAnchor, next));
+  }
+  if (!meAnchor || distM(meAnchor, next) >= 8) meAnchor = next;
+  meLive = next;
+  // 점과 정확도 원은 위치가 올 때마다 바로 옮긴다(가볍다). 목록·거리는 20m 넘게 움직였거나 더 정확해졌을 때만 다시 그린다
   if (map) {
-    const ll = new naver.maps.LatLng(state.me.lat, state.me.lng);
+    const ll = new naver.maps.LatLng(next.lat, next.lng);
     if (!meMarker) {
       meMarker = new naver.maps.Marker({ map, position: ll, zIndex: 400, clickable: false,
-        icon: { content: '<div class="me-dot" aria-label="내 위치"></div>', anchor: new naver.maps.Point(9, 9) } });
-      meCircle = new naver.maps.Circle({ map, center: ll, radius: Math.min(state.me.acc, 500),
+        icon: { content: `<div class="me-wrap" aria-label="내 위치"><div class="me-head" id="meHead"${heading == null ? ' hidden' : ` style="transform:rotate(${heading}deg)"`}></div><div class="me-dot"></div></div>`, anchor: new naver.maps.Point(22, 22) } });
+      meCircle = new naver.maps.Circle({ map, center: ll, radius: Math.min(next.acc, 500),
         fillColor:'#1F5EFF', fillOpacity:.1, strokeColor:'#1F5EFF', strokeOpacity:.35, strokeWeight:1, clickable:false });
-    } else { meMarker.setPosition(ll); meCircle.setCenter(ll); meCircle.setRadius(Math.min(state.me.acc, 500)); }
+    } else { meMarker.setPosition(ll); meCircle.setCenter(ll); meCircle.setRadius(Math.min(next.acc, 500)); }
     if (first && panOnFix) map.panTo(ll);
   }
-  renderAll();
-  // '내 위치에서 경로 찾기'를 눌러 위치를 찾은 거라면 바로 경로를 찾는다
-  if (first && state.routeAfterFix && state.routeAfterFix === state.sel) { const p = findPlace(state.sel); state.routeAfterFix = null; if (p) findTransit(p); }
+  const moved = first || distM(state.me, next) >= 20 || next.acc < state.me.acc / 2;
+  if (moved) {
+    state.me = next;
+    if (first) setStatus('내 위치를 찾았어요.', false);
+    renderAll();
+    // '내 위치에서 경로 찾기'를 눌러 위치를 찾은 거라면 바로 경로를 찾는다
+    if (first && state.routeAfterFix && state.routeAfterFix === state.sel) { const p = findPlace(state.sel); state.routeAfterFix = null; if (p) findTransit(p); }
+  }
+  guideTick(next);
 }
 function onFixError(err){
+  if (state.me && !(err && err.code === 1)) return; // 대략 위치는 이미 있고 GPS만 늦는 경우: 계속 기다린다
   navigator.geolocation.clearWatch(watchId); watchId = null; state.sortNear = false; state.routeAfterFix = null;
+  $('zloc').classList.remove('finding');
   const msg = err && err.code === 1
     ? (IS_IOS
         ? '위치 권한이 막혀 있어요. 아이폰 설정 → 개인정보 보호 및 보안 → 위치 서비스 → Safari 웹사이트를 "앱을 사용하는 동안"으로 바꾸고, 사파리 주소창 왼쪽 메뉴의 웹 사이트 설정에서 위치를 허용한 뒤 다시 눌러 주세요.'
@@ -4098,6 +4174,56 @@ function onFixError(err){
   state.locError = msg;
   setStatus(msg, true); renderAll();
 }
+
+/* ---------- 따라가기 안내 ----------
+   길찾기 뒤 '안내 시작'을 누르면 지도가 내 위치를 따라가고, 남은 거리를 위쪽 막대에 보여 준다.
+   차례차례 음성 안내는 하지 않는다(네이버 지도 앱으로 넘긴다). 도착하면(40m 안) 기록·확인으로 이어 준다 */
+state.guide = null;   // { id, name, lat, lng, dist }
+state.arrived = null; // { id, name }
+let wakeLock = null;
+function startGuide(p){
+  state.arrived = null;
+  state.guide = { id: p.id, name: p.name, lat: p.lat, lng: p.lng, dist: null };
+  lastDrag = 0;
+  try { if (navigator.wakeLock) navigator.wakeLock.request('screen').then(w => { wakeLock = w; }).catch(() => {}); } catch {} // 안내 중에는 화면이 꺼지지 않게
+  if (isPhone() && detailSheet) detailSheet.set(detailSheet.snaps()[0], true); // 지도가 보이도록 상세 패널을 내린다
+  toast('지도가 내 위치를 따라가요. 지도를 움직이면 잠시 멈춰요.');
+  if (!meLive && !state.me) locate(false, true); // 다른 곳에서 출발하는 경로라 위치를 아직 안 켰으면 켠다
+  renderGuideBar(); guideTick(meLive || state.me);
+}
+function endGuide(){
+  state.guide = null;
+  try { if (wakeLock) wakeLock.release(); } catch {} wakeLock = null;
+  if (state.sel) renderDetail();
+  renderGuideBar();
+}
+function guideTick(me){
+  const g = state.guide; if (!g || !me) return;
+  g.dist = distM(me, g);
+  if (g.dist <= 40) { const a = { id: g.id, name: g.name }; endGuide(); state.arrived = a; renderGuideBar(); return; }
+  if (map && Date.now() - lastDrag > 8000) map.panTo(new naver.maps.LatLng(me.lat, me.lng));
+  renderGuideBar();
+}
+function renderGuideBar(){
+  const bar = $('guideBar'), g = state.guide, a = state.arrived;
+  bar.hidden = !g && !a; bar.replaceChildren(); if (bar.hidden) return;
+  const btn = (text, fn) => { const b = el('button', null, text); b.type = 'button'; b.addEventListener('click', fn); bar.appendChild(b); };
+  if (g) {
+    // 걷는 길은 직선보다 약 1.3배 길고, 1분에 약 75m 걷는다고 어림한다
+    bar.appendChild(el('span', null, g.dist == null ? `${g.name}(으)로 안내 중` : `${g.name}까지 ${fmtDist(g.dist)} · 걸어서 약 ${Math.max(1, Math.round(g.dist * 1.3 / 75))}분`));
+    btn('끝내기', endGuide);
+    return;
+  }
+  const p = findPlace(a.id);
+  bar.appendChild(el('span', null, `${a.name}에 도착했어요`));
+  if (p) btn(p.ext ? '기록 남기기' : p.pid && !p.sample ? '지금도 맞나요?' : '기록 보기', () => {
+    state.arrived = null; renderGuideBar(); select(p.id, true);
+    // 기록 안 된 곳은 '이 장소 기록하기', 기록된 곳은 '지금도 이 기록이 맞나요?'로 데려간다
+    setTimeout(() => { const t = document.querySelector('#detail .check-box') || document.querySelector('#detail .ext-info'); if (t) t.scrollIntoView({ block: 'center', behavior: 'smooth' }); }, 300);
+  });
+  btn('닫기', () => { state.arrived = null; renderGuideBar(); });
+}
+
 
 function renderAll(){
   let vis = state.places.filter(matches);
