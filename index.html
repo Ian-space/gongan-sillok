@@ -1395,7 +1395,7 @@ async function handleFile(file){
     }
     const { places, issues } = rowsToPlaces(rows);
     if (!places.length) throw new Error('불러올 수 있는 장소가 없어요.' + (issues.length ? ' ' + issues.slice(0,3).join(', ') : ''));
-    setMine(places, `불러온 파일: ${name}`, true);
+    state.homeMode = false; setMine(places, `불러온 파일: ${name}`, true); // 불러온 파일은 그 장소들이 다 보이게
     let msg = `${places.length}곳을 불러왔어요.`;
     if (issues.length) msg += ` 확인할 점 ${issues.length}건: ${issues.slice(0,4).join(' / ')}${issues.length > 4 ? ' 외' : ''}`;
     setStatus(msg, false);
@@ -1490,7 +1490,7 @@ function rebuild(opt = {}){
   const nMine = merged.filter(x => x.mine && !x.sample).length, nPub = merged.filter(x => !x.mine && !x.sample).length;
   $('source').textContent = [nMine ? `${state.mineLabel || '내 기록'} ${nMine}곳` : '', nPub ? `다른 사람 공개 기록 ${nPub}곳` : '', nSample ? `예시(가상) ${nSample}곳` : '']
     .filter(Boolean).join(' · ') || '아직 기록된 곳이 없어요';
-  syncMarkers(); if (opt.fit) fitAll(); renderAll();
+  syncMarkers(); if (opt.fit) (state.homeMode ? homeView() : fitAll()); renderAll();
 }
 // 공개 기록을 불러온다 (로그인하지 않아도 보인다). 실패하면 조용히 넘어간다
 async function loadPublic(){
@@ -1941,6 +1941,7 @@ function setMapOnly(on){
 }
 const SEL_KEY = 'gongan-sillok:sel';
 function select(id, center){
+  if (id) state.homeMode = false;
   if (id) document.body.classList.remove('map-only'); // 장소를 열면 다시 모두 보인다
   if (state.sel !== id) state.delAsk = null; // 다른 장소로 넘어가면 삭제 확인을 접는다
   if (id && $('q').value.trim()) addRecent($('q').value); // 검색해서 장소를 열었으면 그 검색어를 최근 검색어로
@@ -1987,11 +1988,11 @@ function loadNaver(){
 }
 function initMap(){
   map = new naver.maps.Map('map', {
-    center: new naver.maps.LatLng(37.5450, 127.0540), zoom: 15,
+    center: new naver.maps.LatLng(HOME.lat, HOME.lng), zoom: 15,
     zoomControl: false, mapDataControl: false, scaleControl: true, logoControl: true
   });
   naver.maps.Event.addListener(map, 'zoom_changed', () => { renderMap(state.places.filter(matches)); renderNearMarkers(); renderLegend(); });
-  naver.maps.Event.addListener(map, 'dragstart', () => { lastDrag = Date.now(); }); // 안내 중 지도를 직접 움직이면 잠시 따라가지 않는다
+  naver.maps.Event.addListener(map, 'dragstart', () => { lastDrag = Date.now(); state.homeMode = false; }); // 안내 중 지도를 직접 움직이면 잠시 따라가지 않는다
   naver.maps.Event.addListener(map, 'idle', queueNearby); // 지도가 멈추면 화면 안의 주변 카페를 불러온다
   naver.maps.Event.addListener(map, 'idle', () => renderPeek(state.places.filter(matches))); // '이 지역 n곳'은 보이는 범위가 바뀔 때마다
   // 지도의 빈 곳을 짧게 누르면(끌지 않고) 고른 장소를 닫는다. 핀·점을 누를 때는 그 장소가 열린다.
@@ -2026,7 +2027,7 @@ function initMap(){
     }, DOUBLE_MS);
   });
   mapEl.addEventListener('contextmenu', e => { if (isPhone()) e.preventDefault(); }); // 꾹 누를 때 뜨는 메뉴 막기
-  syncMarkers(); syncExtMarkers(); fitAll(); renderAll();
+  syncMarkers(); syncExtMarkers(); homeView(); renderAll();
   if (state.sel && isPhone()) centerAboveDetail(state.sel); // 새로고침 뒤 다시 열린 장소
   naver.maps.Event.once(map, 'tilesloaded', hideSplash);
   // 처음 온 사람 안내: 로딩 화면이 걷힌 뒤에 (로딩 화면은 최대 3.5초)
@@ -2039,7 +2040,7 @@ function initMap(){
     const w = box.clientWidth, h = box.clientHeight;
     if (!w || !h) { wasEmpty = true; return; }
     map.setSize(new naver.maps.Size(w, h));
-    if (wasEmpty) { wasEmpty = false; if (state.sel && isPhone()) centerAboveDetail(state.sel); else fitAll(); }
+    if (wasEmpty) { wasEmpty = false; if (state.sel && isPhone()) centerAboveDetail(state.sel); else if (state.homeMode) homeView(); else fitAll(); }
   }).observe(box);
 }
 function syncMarkers(){
@@ -2051,6 +2052,16 @@ function syncMarkers(){
     naver.maps.Event.addListener(mk, 'click', () => { pinTapAt = Date.now(); if (matches(p)) select(p.id); });
     markers.set(p.id, mk);
   }
+}
+// 처음 화면: 위치 권한을 이미 허용했으면 내 위치, 아니면 롯데월드타워(잠실. 둔촌과 가깝고 누구나 아는 곳).
+// 기록 전체 보기는 멀리 떨어진 공개 기록 때문에 지도 가운데가 엉뚱한 곳(가평 등)에 잡혀서 처음 화면으로 쓰지 않는다.
+// 이용자가 지도를 움직이거나 장소를 고르면 그때부터는 손대지 않는다(homeMode 끔)
+const HOME = { lat: 37.5126, lng: 127.1025 };
+state.homeMode = true;
+function homeView(){
+  if (!map || state.sel) return;
+  const m = meLive || state.me || HOME;
+  map.setCenter(new naver.maps.LatLng(m.lat, m.lng)); map.setZoom(15);
 }
 // 장소들이 모두 보이게 맞춘다 (list를 주면 그 장소들만, 모아 보기에서 쓴다)
 function fitAll(list){
@@ -4370,6 +4381,7 @@ function readAuthError(){
 /* ---------- 내 위치 ---------- */
 let watchId = null, meMarker = null, meCircle = null, panOnFix = false;
 let meLive = null, meAnchor = null, heading = null, compassOn = false, compassAt = 0, lastDrag = 0;
+let homeFollow = false; // 처음 화면을 내 위치로: 첫 위치가 오면 한 번만 옮긴다(그 사이 지도를 움직였으면 두지 않음)
 
 /* 방향 화살표: 휴대폰 나침반(보고 있는 방향)을 먼저 쓰고, 나침반이 없으면 걸어간 방향(앞뒤 위치)으로 */
 const bearing = (a, b) => {
@@ -4437,6 +4449,8 @@ function onFix(pos){
         fillColor:'#1F5EFF', fillOpacity:.1, strokeColor:'#1F5EFF', strokeOpacity:.35, strokeWeight:1, clickable:false });
     } else { meMarker.setPosition(ll); meCircle.setCenter(ll); meCircle.setRadius(Math.min(next.acc, 500)); }
     if (first && panOnFix) map.panTo(ll);
+    else if (first && homeFollow && state.homeMode && !state.sel) map.setCenter(ll);
+    homeFollow = false;
   }
   const moved = first || distM(state.me, next) >= 20 || next.acc < state.me.acc / 2;
   if (moved) {
@@ -4667,7 +4681,8 @@ function renderPeek(vis){
   const c = (k, v) => list.filter(p => p[k] === v).length;
   const facts = [[c('noise', '조용함'), '조용한 곳'], [c('entrance', '턱 없음'), '턱 없는 곳'], [c('outlet', '많음'), '콘센트 많은 곳']]
     .filter(([n]) => n).map(([n, t]) => `${t} ${n}`).join(' · ');
-  $('peekFacts').textContent = facts || (list.length ? '목록을 올려 자세히 보기' : '지도를 옮기거나 조건을 풀어 보세요');
+  // 처음 화면(잠실·내 위치)에 기록이 없을 수 있다: 조건 때문이면 풀라고, 아니면 첫 기록을 권한다
+  $('peekFacts').textContent = facts || (list.length ? '목록을 올려 자세히 보기' : filterCount() || state.purpose ? '조건을 풀거나 지도를 옮겨 보세요' : '이 근처는 아직 기록이 없어요. 첫 기록을 남겨 주세요');
 }
 
 /* ---------- 찜, 내 장소 모아 보기 ---------- */
@@ -4917,7 +4932,7 @@ loadNaver();
 setTimeout(hideSplash, 3500);
 // 예전에 위치 권한을 허용했다면 묻지 않고 미리 위치를 찾아 둔다 (지도는 움직이지 않음)
 if (navigator.permissions && navigator.permissions.query) {
-  navigator.permissions.query({ name: 'geolocation' }).then(s => { if (s.state === 'granted') locate(false, true); }).catch(() => {});
+  navigator.permissions.query({ name: 'geolocation' }).then(s => { if (s.state === 'granted') { homeFollow = true; locate(false, true); } }).catch(() => {});
 }
 })();
 </script>
