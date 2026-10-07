@@ -232,6 +232,10 @@ button.stat[aria-pressed="true"] span{color:#FFFFFF}
 .intent-go:disabled{opacity:.5;cursor:default}
 .intent-ai{display:block;margin-top:10px}
 .bld-list{margin:6px 0 10px;max-height:320px;overflow-y:auto}
+/* 가게 화면에 함께 보이는 건물 기록(입구·엘리베이터) */
+.bld-note{display:flex;align-items:center;gap:10px;margin:10px 0;padding:10px 12px;border-radius:10px;background:var(--paper);font-size:13px}
+.bld-note div{flex:1;display:grid;gap:2px}
+.bld-note b{font-size:13px}
 /* 사진으로 항목 채우기(AI 제안) */
 .ai-photo{display:grid;gap:8px;margin-top:10px;padding:10px 12px;border:1px dashed var(--line);border-radius:10px}
 .ai-photo .ai-photo-go{width:100%}
@@ -1032,6 +1036,7 @@ const GRILL = /고기|육류|구이|갈비|삼겹|곱창|막창|대창|양꼬치
 const GROUPS = [{ id:'space', label:'공간' }, { id:'access', label:'접근·돌봄' }];
 const groupOf = k => ENUMS[k].group || 'space';
 const ACCESS_KEYS = Object.keys(ENUMS).filter(k => groupOf(k) === 'access');
+const BUILDING_KEYS = ['entrance', 'floor', 'toilet', 'parking']; // 건물 기록에서 묻는 항목
 const dbCol = k => ENUMS[k].db || k;
 const PHOTO_PATH = /^[0-9a-f-]{36}\/[0-9a-f-]{36}\.jpg$/; // 사진 저장 위치 모양: 사용자 번호/임의 번호.jpg
 const PHOTO_LIMIT = 5; // 기록 하나에 사진 최대 5장 (서버 규칙과 같다)
@@ -1220,6 +1225,7 @@ const CATEGORIES = [
   { name:'찻집',      color:'#00A86B', test:/찻집|티|차/ },
   { name:'문화공간',  color:'#0E9AA7', test:/복합|문화|전시|갤러리/ },
   { name:'카페',      color:'#1F5EFF', test:/카페|커피|로스터/ },
+  { name:'건물',      color:'#343A40', test:/^건물$/ }, // 건물 기록(빌라·상가 건물의 입구·엘리베이터). 유형이 '건물'이면 건물이다
   { name:'기타',      color:'#5B6475', test:/.*/ }
 ];
 const category = p => CATEGORIES.find(c => c.test.test(p.type || '')) || CATEGORIES[CATEGORIES.length - 1];
@@ -1767,6 +1773,8 @@ function renderDetail(){
   }
   renderTransit(d, p);
   d.appendChild(el('h3','sec-title','공간 정보'));
+  // 이 장소가 든 건물의 기록(입구·엘리베이터)이 있으면 가게 화면에도 보여 준다
+  if (!p.building && p.type !== '건물') { const br = buildingRecFor(p); if (br) d.appendChild(buildingNote(br)); }
   if (p.building) { // 지도에서 누른 건물: 주소와 이 건물 안 가게(상가정보)
     const box = el('div','ext-info');
     if (p.jibun && p.jibun !== p.addr) box.appendChild(el('p','ext-phone', `지번 ${p.jibun}`));
@@ -1783,10 +1791,16 @@ function renderDetail(){
       box.appendChild(ul);
       if (p.shops.length > 30) box.appendChild(el('p','add-hint', `가까운 30곳만 보여요. 가게 이름으로 검색하면 나머지도 찾을 수 있어요.`));
     } else box.appendChild(el('p','ext-none','상가정보에 등록된 가게가 없는 건물이에요. 주택·빌라이거나 아직 정보가 없는 곳이에요.'));
-    const acts = el('div','ext-acts');
-    const rec = el('button','btn ghost','이 자리를 장소로 기록하기'); rec.type = 'button';
-    rec.addEventListener('click', () => startAdd({ name: p.name, category: '', address: p.addr, lat: p.lat, lng: p.lng, kid: '' }));
-    acts.appendChild(rec); box.appendChild(acts);
+    const acts = el('div','ext-acts'), br = buildingRecFor(p);
+    if (br) { // 이미 기록한 건물이면 그 기록을 보여 주고 연다
+      box.insertBefore(buildingNote(br), box.firstChild);
+    } else {
+      const rec = el('button','btn add rec','이 건물 기록하기'); rec.type = 'button';
+      rec.addEventListener('click', () => startAdd({ name: p.name, category: '건물', address: p.addr, lat: p.lat, lng: p.lng, kid: '' }));
+      acts.appendChild(rec);
+      box.appendChild(el('p','add-hint', '입구 계단, 엘리베이터를 남기면 이 건물 안 가게 모두에 함께 보여요.'));
+    }
+    box.appendChild(acts);
     box.appendChild(el('p','add-src', '주소: 카카오' + (p.shops.length ? ' · 가게: 소상공인시장진흥공단 상가(상권)정보(2026년 6월)' : '')));
     d.appendChild(box);
   } else if (p.ext) { // 카카오에서 찾은, 아직 기록 안 된 장소
@@ -1815,6 +1829,7 @@ function renderDetail(){
   const accessEmpty = ACCESS_KEYS.every(k => !p[k]);
   let lastGroup = null;
   for (const [k, def] of Object.entries(ENUMS)) {
+    if (p.type === '건물' && !BUILDING_KEYS.includes(k)) continue; // 건물 기록은 입구·층 이동·화장실·주차만
     if (groupOf(k) !== lastGroup) {
       lastGroup = groupOf(k);
       dl.appendChild(el('dt','scale-group', GROUPS.find(g => g.id === lastGroup).label));
@@ -3352,6 +3367,19 @@ function shopPlace(s){
 // 지도에서 누른 자리 → 그 자리의 건물(카카오 좌표→주소) → 같은 도로명주소의 상가.
 // 가게가 하나면 그 가게, 여럿이면 '이 건물 가게 n곳' 목록, 없으면(빌라·주택) 건물 이름과 주소만.
 // 가장 가까운 가게를 고르던 예전 방식은 빌라를 눌러도 옆 가게가 열려서 바꿨다. 많이 확대했을 때만(줌 17 이상)
+// 같은 건물의 '건물 기록'(유형이 건물인 장소): 도로명주소가 같거나 아주 가까운 곳
+function buildingRecFor(p){
+  const k = roadKey(p.addr);
+  return state.places.find(x => x.type === '건물' && x.id !== p.id && ((k && roadKey(x.addr) === k) || distM(x, p) < 12)) || null;
+}
+function buildingNote(br){
+  const box = el('div','bld-note');
+  const facts = BUILDING_KEYS.filter(k => br[k]).map(k => FACT[k][level(br, k)]).join(' · ') || '아직 남긴 항목이 없어요';
+  const t = el('div'); t.append(el('b', null, `건물 기록 · ${br.name}`), el('span', null, facts));
+  const b = el('button','linkbtn','보기'); b.type = 'button'; b.addEventListener('click', () => select(br.id, true));
+  box.append(t, b);
+  return box;
+}
 const roadKey = a => { const t = String(a || '').trim().split(/\s+/); return t.length >= 3 ? `${t[1]} ${t[t.length - 2]} ${t[t.length - 1]}` : ''; }; // '구 도로명 번호'
 async function placeAt(x, y){
   if (!map || map.getZoom() < 17 || !ROUTE_PROXY) return null;
@@ -3380,7 +3408,8 @@ async function placeAt(x, y){
 }
 function openShop(p){
   // 이미 기록한 가게면 우리 기록을 연다
-  const rec = state.places.find(x => sameSpot(x, p) || (x.name.replace(/\s/g, '') === p.name.replace(/\s/g, '') && distM(x, p) < 60));
+  // 건물 카드는 가게 목록이 있어서 그대로 연다(건물 기록은 카드 안에 보인다)
+  const rec = !p.building && state.places.find(x => sameSpot(x, p) || (x.name.replace(/\s/g, '') === p.name.replace(/\s/g, '') && distM(x, p) < 60));
   if (rec) { select(rec.id); return; }
   if (!state.near.has(p.id) || p.building) { state.near.set(p.id, p); syncNearMarkers(); } // 건물은 누를 때마다 가게 목록을 새로
   select(p.id);
@@ -3568,6 +3597,7 @@ function openEdit(id){
   renderAdd(); if (!$('addDlg').open) $('addDlg').showModal();
 }
 function guessType(cat){
+  if (String(cat || '').trim() === '건물') return '건물';
   const c = String(cat || ''), last = (c.split('>').pop() || '').trim();
   if (/베이커리|제과|빵/.test(c)) return '베이커리 카페';
   if (/북카페|서점/.test(c)) return '북카페';
@@ -3665,7 +3695,11 @@ function renderAdd(){
   // 소음, 좌석 간격… : 칩을 눌러 고르고, 다시 누르면 '기록 안 함'
   let lastGroup = null;
   addUI = { enums: {}, tags: {} };
+  // 건물 기록: 입구·층 이동·화장실·주차만 묻는다(빌라에 소음·콘센트를 묻는 건 어색하다). 이 건물 안 가게 모두에 함께 보인다
+  const bld = typeI.value.trim() === '건물';
+  if (bld) body.appendChild(el('p','add-src add-left','건물 기록이에요. 입구와 엘리베이터를 남기면 이 건물 안 가게 모두에 함께 보여요.'));
   for (const [k, def] of Object.entries(ENUMS)) {
+    if (bld && !BUILDING_KEYS.includes(k)) continue;
     if (groupOf(k) !== lastGroup) {
       lastGroup = groupOf(k);
       body.appendChild(el('h3','add-group', GROUPS.find(g => g.id === lastGroup).label));
@@ -3746,7 +3780,8 @@ function renderAdd(){
   const visitW = el('div','add-field'), visitL = el('label', null, '방문일 · 시간'); dateI.id = 'add-방문일'; visitL.htmlFor = dateI.id;
   const visitRow = el('div','visit-row'); visitRow.append(dateI, hourI);
   visitW.append(visitL, visitRow, el('span','add-hint', '시간은 선택이에요. 소음·채광은 시간대마다 달라서, 남기면 시간대별로 모아 보여 줘요.'));
-  body.append(furT.node, matT.node, field('한 줄 기록', noteI), visitW);
+  if (!bld) body.append(furT.node, matT.node); // 건물은 좌석·마감을 묻지 않는다
+  body.append(field('한 줄 기록', noteI), visitW);
   if (addState.status) body.appendChild(el('p','add-status' + (addState.err ? ' err' : ''), addState.status));
   // 로그인했으면 공개 여부를 고른다(기본은 나만 보기)
   let pubI = null;
