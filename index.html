@@ -3854,18 +3854,21 @@ function aiPhotoBox(list){
         : '사진에서 눈으로 확인되는 것(입구 계단, 좌석 종류, 마감 등)만 제안해요. 고른 것만 채워지고, 잰 숫자는 채우지 않아요.'));
       return;
     }
-    const items = [...Object.entries(r.w).map(([k, v]) => ({ id: k, label: `${ENUMS[k].label}: ${v}` })),
+    // 입구·층 이동·콘센트는 실내 사진만 보고 짐작하는 일이 있어(테스트에서 확인) 처음엔 꺼 두고 '직접 확인'을 붙인다. 틀린 접근 정보는 해롭다
+    const CAREFUL = new Set(['entrance', 'floor', 'outlet']);
+    const items = [...Object.entries(r.w).map(([k, v]) => ({ id: k, label: `${ENUMS[k].label}: ${v}` + (CAREFUL.has(k) ? ' · 직접 확인' : ''), off: CAREFUL.has(k) })),
       ...Object.entries(r.t).map(([k, vals]) => ({ id: 't:' + k, label: `${TAGS[k].label}: ${vals.join('·')}` }))];
     if (!items.length) { w.appendChild(el('p','add-hint', '사진에서 분명하게 확인되는 항목을 찾지 못했어요. 입구나 좌석이 잘 보이는 사진이면 더 잘 찾아요.')); return; }
     w.appendChild(el('p','ai-photo-title', '사진에서 찾은 것 · 맞는 것만 남겨 주세요'));
+    if (items.some(it => it.off)) w.appendChild(el('p','add-hint', "'직접 확인' 항목은 사진만으로 틀리기 쉬워서 꺼 두었어요. 실제로 확인했다면 눌러서 켜 주세요."));
     const chips = el('div','chips');
     for (const it of items) {
-      const on = aiPhoto.pick.has(it.id) ? aiPhoto.pick.get(it.id) : true;
+      const on = aiPhoto.pick.has(it.id) ? aiPhoto.pick.get(it.id) : !it.off;
       const b = el('button','chip', it.label); b.type = 'button'; b.setAttribute('aria-pressed', String(on));
       b.addEventListener('click', () => { aiPhoto.pick.set(it.id, !on); draw(); });
       chips.appendChild(b);
     }
-    const use = items.filter(it => aiPhoto.pick.has(it.id) ? aiPhoto.pick.get(it.id) : true);
+    const use = items.filter(it => aiPhoto.pick.has(it.id) ? aiPhoto.pick.get(it.id) : !it.off);
     const go = el('button','btn add rec ai-photo-go', use.length ? `${use.length}개 채우기` : '하나 이상 골라 주세요'); go.type = 'button'; go.disabled = !use.length;
     go.addEventListener('click', () => {
       let n = 0, kept = 0;
