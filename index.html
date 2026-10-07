@@ -3174,7 +3174,9 @@ async function runExtSearch(query){
     const has = (name, w) => normQ(name).includes(normQ(w)); // 오타 허용 없이 글자 그대로(오타 허용이면 '블루보'에 '블루버드'가 맞는 걸로 나온다)
     const hasHit = ps => ps.some(p => words.some(w => has(p.name, w)));
     // 우리 상가 DB(상호 일부로 찾기)를 카카오와 동시에 부른다. 카카오가 낱말을 통째로만 찾는 약점을 메운다
-    shopP = sb ? sb.rpc('search_shops', { q: query, at_lat: near ? near.lat : null, at_lng: near ? near.lng : null }).then(r => r.data || []).catch(() => []) : Promise.resolve([]);
+    // 가장 긴 낱말이 세 글자 이상일 때만(두 글자 '카페', '성수 카페' 같은 말은 카카오가 잘 찾고, 서울 전체 DB에서는 무겁다)
+    const longest = Math.max(...query.split(/\s+/).map(w => w.length));
+    shopP = sb && longest >= 3 ? sb.rpc('search_shops', { q: query, at_lat: near ? near.lat : null, at_lng: near ? near.lng : null }).then(r => r.data || []).catch(() => []) : Promise.resolve([]);
     let places = await ask(query);
     // 결과가 없으면 흔한 오타·줄임말을 고친 말(스벅 → 스타벅스, 까페 → 카페)과 띄어쓰기를 뺀 말로 한 번 더 찾는다
     if (!places.length) {
