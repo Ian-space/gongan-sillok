@@ -231,6 +231,7 @@ button.stat[aria-pressed="true"] span{color:#FFFFFF}
 .intent-go{margin-top:10px;width:100%}
 .intent-go:disabled{opacity:.5;cursor:default}
 .intent-ai{display:block;margin-top:10px}
+.bld-list{margin:6px 0 10px;max-height:320px;overflow-y:auto}
 /* 사진으로 항목 채우기(AI 제안) */
 .ai-photo{display:grid;gap:8px;margin-top:10px;padding:10px 12px;border:1px dashed var(--line);border-radius:10px}
 .ai-photo .ai-photo-go{width:100%}
@@ -1766,7 +1767,29 @@ function renderDetail(){
   }
   renderTransit(d, p);
   d.appendChild(el('h3','sec-title','공간 정보'));
-  if (p.ext) { // 카카오에서 찾은, 아직 기록 안 된 장소
+  if (p.building) { // 지도에서 누른 건물: 주소와 이 건물 안 가게(상가정보)
+    const box = el('div','ext-info');
+    if (p.jibun && p.jibun !== p.addr) box.appendChild(el('p','ext-phone', `지번 ${p.jibun}`));
+    if (p.shops.length) {
+      box.appendChild(el('h3','sec-title', `이 건물 가게 ${p.shops.length >= 300 ? '300곳 넘게' : p.shops.length + '곳'}`));
+      const ul = el('ul','list bld-list');
+      for (const s of p.shops.slice(0, 30)) {
+        const li = el('li'), b = el('button','item'); b.type = 'button';
+        const fl = s.floor ? (/^\d+$/.test(s.floor) ? s.floor + '층' : s.floor === '지' ? '지하' : s.floor) : '';
+        b.append(el('div','item-name', s.name), el('div','item-sub', [s.type, fl].filter(Boolean).join(' · ')));
+        b.addEventListener('click', () => openShop(s));
+        li.appendChild(b); ul.appendChild(li);
+      }
+      box.appendChild(ul);
+      if (p.shops.length > 30) box.appendChild(el('p','add-hint', `가까운 30곳만 보여요. 가게 이름으로 검색하면 나머지도 찾을 수 있어요.`));
+    } else box.appendChild(el('p','ext-none','상가정보에 등록된 가게가 없는 건물이에요. 주택·빌라이거나 아직 정보가 없는 곳이에요.'));
+    const acts = el('div','ext-acts');
+    const rec = el('button','btn ghost','이 자리를 장소로 기록하기'); rec.type = 'button';
+    rec.addEventListener('click', () => startAdd({ name: p.name, category: '', address: p.addr, lat: p.lat, lng: p.lng, kid: '' }));
+    acts.appendChild(rec); box.appendChild(acts);
+    box.appendChild(el('p','add-src', '주소: 카카오' + (p.shops.length ? ' · 가게: 소상공인시장진흥공단 상가(상권)정보(2026년 6월)' : '')));
+    d.appendChild(box);
+  } else if (p.ext) { // 카카오에서 찾은, 아직 기록 안 된 장소
     const box = el('div','ext-info');
     box.appendChild(el('p','ext-none','아직 공간실록에 기록이 없는 곳이에요. 다녀오셨다면 소음, 콘센트 같은 사실을 남겨 주세요.'));
     if (p.phone) { const ph = el('p','ext-phone'); ph.append('전화 ', el('span', null, p.phone)); box.appendChild(ph); }
@@ -2029,7 +2052,7 @@ function initMap(){
     if (Date.now() - lastTapAt < DOUBLE_MS + 150) { lastTapAt = 0; return; } // 두 번째 톡(두 번 톡톡 확대)은 세지 않는다
     lastTapAt = Date.now();
     // 누른 자리 가까이에 상가정보의 가게가 있으면 그 가게를 연다(네이버 지도 그림 속 가게 아이콘을 누른 것처럼)
-    const r = mapEl.getBoundingClientRect(), lookup = shopAt(e.clientX - r.left, e.clientY - r.top);
+    const r = mapEl.getBoundingClientRect(), lookup = placeAt(e.clientX - r.left, e.clientY - r.top);
     tapTimer = setTimeout(async () => {
       tapTimer = null;
       if (Date.now() - pinTapAt <= 400) return; // 같은 누름으로 핀이 열렸다
@@ -3326,24 +3349,40 @@ function shopPlace(s){
     category: cleanText([s.cat1, s.cat2, s.cat3].filter(Boolean).join(' > '), 60), type: cleanText(s.cat3 || s.cat2 || '', 20),
     addr: cleanText(s.addr, 60), phone: '', url: '', floor: cleanText(s.floor, 4), lat: +s.lat, lng: +s.lng, color: c.color, icon: c.icon };
 }
-// 지도에서 누른 자리(화면 좌표) 가까이(약 20px 안)의 가게. 많이 확대했을 때만(멀리서는 가게가 겹쳐 엉뚱한 곳이 열린다)
-async function shopAt(x, y){
-  if (!sb || !map || map.getZoom() < 17) return null;
+// 지도에서 누른 자리 → 그 자리의 건물(카카오 좌표→주소) → 같은 도로명주소의 상가.
+// 가게가 하나면 그 가게, 여럿이면 '이 건물 가게 n곳' 목록, 없으면(빌라·주택) 건물 이름과 주소만.
+// 가장 가까운 가게를 고르던 예전 방식은 빌라를 눌러도 옆 가게가 열려서 바꿨다. 많이 확대했을 때만(줌 17 이상)
+const roadKey = a => { const t = String(a || '').trim().split(/\s+/); return t.length >= 3 ? `${t[1]} ${t[t.length - 2]} ${t[t.length - 1]}` : ''; }; // '구 도로명 번호'
+async function placeAt(x, y){
+  if (!map || map.getZoom() < 17 || !ROUTE_PROXY) return null;
   try {
-    const pr = map.getProjection(), at = pr.fromOffsetToCoord(new naver.maps.Point(x, y)), far = pr.fromOffsetToCoord(new naver.maps.Point(x + 20, y + 20));
-    const dx = Math.abs(far.lng() - at.lng()), dy = Math.abs(far.lat() - at.lat());
-    const { data, error } = await sb.rpc('shops_in_box', { min_lng: at.lng() - dx, min_lat: at.lat() - dy, max_lng: at.lng() + dx, max_lat: at.lat() + dy, lim: 50 });
-    if (error || !data || !data.length) return null;
-    const d = s => ((s.lat - at.lat()) / dy) ** 2 + ((s.lng - at.lng()) / dx) ** 2;
-    const best = data.filter(s => d(s) <= 1).sort((a, b) => d(a) - d(b))[0];
-    return best ? shopPlace(best) : null;
+    const at = map.getProjection().fromOffsetToCoord(new naver.maps.Point(x, y));
+    const r = await proxyPost('/addr', { x: String(at.lng()), y: String(at.lat()) });
+    if (!r.ok) return null;
+    const a = await r.json(), key = roadKey(a.road);
+    let shops = [];
+    if (sb && key) {
+      // 같은 도로명주소의 가게(supabase/18_shops_at_addr.sql, 누른 자리에서 가까운 순). 함수가 아직 없으면 근처 칸에서 주소로 거른다
+      let { data, error } = await sb.rpc('shops_at_addr', { p_addr: a.road, at_lat: at.lat(), at_lng: at.lng() });
+      if (error) {
+        ({ data } = await sb.rpc('shops_in_box', { min_lng: at.lng() - 0.0012, min_lat: at.lat() - 0.0009, max_lng: at.lng() + 0.0012, max_lat: at.lat() + 0.0009, lim: 400 }));
+        data = (data || []).filter(s => roadKey(s.addr) === key);
+      }
+      shops = (data || []).map(shopPlace);
+    }
+    if (shops.length === 1) return shops[0];
+    if (!a.road && !shops.length) return null; // 길·공원 등: 건물이 아니다
+    const short = a.road ? a.road.split(/\s+/).slice(-2).join(' ') : a.jibun;
+    return { id: 'b' + (key || a.jibun).replace(/\s+/g, '_'), ext: true, building: true, kind: 'BLD', name: cleanText(a.building || short, 40),
+      category: '건물', type: a.building ? '건물' : '', addr: cleanText(a.road || a.jibun, 60), jibun: cleanText(a.jibun, 60),
+      phone: '', url: '', lat: at.lat(), lng: at.lng(), shops };
   } catch { return null; }
 }
 function openShop(p){
   // 이미 기록한 가게면 우리 기록을 연다
   const rec = state.places.find(x => sameSpot(x, p) || (x.name.replace(/\s/g, '') === p.name.replace(/\s/g, '') && distM(x, p) < 60));
   if (rec) { select(rec.id); return; }
-  if (!state.near.has(p.id)) { state.near.set(p.id, p); syncNearMarkers(); }
+  if (!state.near.has(p.id) || p.building) { state.near.set(p.id, p); syncNearMarkers(); } // 건물은 누를 때마다 가게 목록을 새로
   select(p.id);
 }
 // 모든 가게(우리 DB): 한 칸에 800곳이 넘으면 4등분해서 다시. 카카오 점과 같은 가게(20m 안, 이름 앞 두 글자 같음)는 찍지 않는다
