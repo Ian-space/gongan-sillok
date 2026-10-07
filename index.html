@@ -2026,17 +2026,17 @@ function initMap(){
     const d = down; down = null;
     if (!d || d.moved || Math.hypot(e.clientX - d.x, e.clientY - d.y) > 8 || Date.now() - d.t > TAP_MS) return;
     if (!onBlank(e)) return;
-    if (state.sel) { // 장소가 열려 있으면 닫기
-      setTimeout(() => { if (Date.now() - pinTapAt > 300) select(null); }, 60); // 같은 누름으로 핀이 열렸으면 두지 않는다
-      return;
-    }
-    if (!isPhone()) return;
     if (Date.now() - lastTapAt < DOUBLE_MS + 150) { lastTapAt = 0; return; } // 두 번째 톡(두 번 톡톡 확대)은 세지 않는다
     lastTapAt = Date.now();
-    tapTimer = setTimeout(() => {
+    // 누른 자리 가까이에 상가정보의 가게가 있으면 그 가게를 연다(네이버 지도 그림 속 가게 아이콘을 누른 것처럼)
+    const r = mapEl.getBoundingClientRect(), lookup = shopAt(e.clientX - r.left, e.clientY - r.top);
+    tapTimer = setTimeout(async () => {
       tapTimer = null;
-      if (state.sel || Date.now() - pinTapAt <= 400) return;
-      setMapOnly(!document.body.classList.contains('map-only'));
+      if (Date.now() - pinTapAt <= 400) return; // 같은 누름으로 핀이 열렸다
+      if (state.sel) { select(null); return; } // 장소가 열려 있으면 닫기만(가게가 빽빽한 곳에서도 닫을 수 있게)
+      const shop = await lookup;
+      if (shop) { openShop(shop); return; }
+      if (isPhone()) setMapOnly(!document.body.classList.contains('map-only')); // 휴대폰: 빈 곳 한 번 톡 → 지도만 보기
     }, DOUBLE_MS);
   });
   mapEl.addEventListener('contextmenu', e => { if (isPhone()) e.preventDefault(); }); // 꾹 누를 때 뜨는 메뉴 막기
@@ -3317,6 +3317,33 @@ function pumpNear(){
     loadRect(job).finally(() => { nearBusy--; pumpNear(); });
   }
 }
+// 상가정보 한 줄 → 지도 장소(기록 안 된 곳). 검색·모든 가게·지도 누르기가 함께 쓴다
+function shopPlace(s){
+  const c = SHOP_CAT[s.cat1] || {};
+  return { id: 's' + s.id, ext: true, near: true, shop: true, kind: 'SHP', name: cleanText([s.name, s.branch].filter(Boolean).join(' '), 40),
+    category: cleanText([s.cat1, s.cat2, s.cat3].filter(Boolean).join(' > '), 60), type: cleanText(s.cat3 || s.cat2 || '', 20),
+    addr: cleanText(s.addr, 60), phone: '', url: '', floor: cleanText(s.floor, 4), lat: +s.lat, lng: +s.lng, color: c.color, icon: c.icon };
+}
+// 지도에서 누른 자리(화면 좌표) 가까이(약 20px 안)의 가게. 많이 확대했을 때만(멀리서는 가게가 겹쳐 엉뚱한 곳이 열린다)
+async function shopAt(x, y){
+  if (!sb || !map || map.getZoom() < 17) return null;
+  try {
+    const pr = map.getProjection(), at = pr.fromOffsetToCoord(new naver.maps.Point(x, y)), far = pr.fromOffsetToCoord(new naver.maps.Point(x + 20, y + 20));
+    const dx = Math.abs(far.lng() - at.lng()), dy = Math.abs(far.lat() - at.lat());
+    const { data, error } = await sb.rpc('shops_in_box', { min_lng: at.lng() - dx, min_lat: at.lat() - dy, max_lng: at.lng() + dx, max_lat: at.lat() + dy, lim: 50 });
+    if (error || !data || !data.length) return null;
+    const d = s => ((s.lat - at.lat()) / dy) ** 2 + ((s.lng - at.lng()) / dx) ** 2;
+    const best = data.filter(s => d(s) <= 1).sort((a, b) => d(a) - d(b))[0];
+    return best ? shopPlace(best) : null;
+  } catch { return null; }
+}
+function openShop(p){
+  // 이미 기록한 가게면 우리 기록을 연다
+  const rec = state.places.find(x => sameSpot(x, p) || (x.name.replace(/\s/g, '') === p.name.replace(/\s/g, '') && distM(x, p) < 60));
+  if (rec) { select(rec.id); return; }
+  if (!state.near.has(p.id)) { state.near.set(p.id, p); syncNearMarkers(); }
+  select(p.id);
+}
 // 모든 가게(우리 DB): 한 칸에 800곳이 넘으면 4등분해서 다시. 카카오 점과 같은 가게(20m 안, 이름 앞 두 글자 같음)는 찍지 않는다
 const nameKey = s => normQ(s).slice(0, 2);
 async function loadShopRect(job){
@@ -3332,10 +3359,7 @@ async function loadShopRect(job){
   let added = 0;
   for (const s of data) {
     const id = 's' + s.id; if (state.near.has(id)) continue;
-    const c = SHOP_CAT[s.cat1] || {};
-    state.near.set(id, { id, ext: true, near: true, shop: true, kind: 'SHP', name: cleanText([s.name, s.branch].filter(Boolean).join(' '), 40),
-      category: cleanText([s.cat1, s.cat2, s.cat3].filter(Boolean).join(' > '), 60), type: cleanText(s.cat3 || s.cat2 || '', 20),
-      addr: cleanText(s.addr, 60), phone: '', url: '', floor: cleanText(s.floor, 4), lat: +s.lat, lng: +s.lng, color: c.color, icon: c.icon });
+    state.near.set(id, shopPlace(s));
     added++;
   }
   if (job.depth === 0) nearTiles.set(job.key, 'done');
