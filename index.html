@@ -3254,7 +3254,8 @@ async function runExtSearch(query){
   const shops = (await shopP).map(s => ({ id: 's' + s.id, ext: true, shop: true, name: cleanText([s.name, s.branch].filter(Boolean).join(' '), 40),
     category: cleanText([s.cat1, s.cat2, s.cat3].filter(Boolean).join(' > '), 60), type: cleanText(s.cat3 || s.cat2 || '', 20), addr: cleanText(s.addr, 60),
     phone: '', url: '', floor: cleanText(s.floor, 4), lat: +s.lat, lng: +s.lng }))
-    .filter(s => s.lat >= 33 && s.lat <= 39 && !results.some(r => sameShop(r, s)) && !hits.some(h => sameShop(h, s)));
+    // 상가 DB는 서울만 있다: 지도가 서울 밖(동탄 등)에 있으면 먼 서울 가게가 맨 앞에 끼지 않게 15km 안만
+    .filter(s => s.lat >= 33 && s.lat <= 39 && (!near || distM(near, s) < 15000) && !results.some(r => sameShop(r, s)) && !hits.some(h => sameShop(h, s)));
   if (state.ext.query !== query) return;
   // 카카오가 적은 말을 이름에 담은 곳을 못 찾았으면 상가 DB 결과를 앞에, 아니면 뒤에
   const kakaoHit = results.some(r => normQ(r.name).includes(normQ(query.split(/\s+/)[0])));
