@@ -16,7 +16,7 @@
 //   POST /photo    { images: [base64 JPEG, 최대 3장] }          → 사진에서 눈으로 확인되는 기록 항목 제안 (Claude, 같은 비밀 변수)
 
 const ALLOWED_ORIGINS = ['https://ian-space.github.io', 'http://localhost:8765'];
-const VERSION = '2026-10-08.3'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
+const VERSION = '2026-10-08.4'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
 // 경로 결과 저장 시간(초). KV 바인딩(ROUTE_CACHE)이 없으면 저장하지 않고 그대로 동작한다
 const CACHE_SECONDS = { transit: 600, walk: 86400 };
 // 주변 장소 종류. 카카오 업종 코드(CE7 카페, FD6 음식점, CT1 문화시설)로 찾고,
@@ -32,6 +32,7 @@ const NEARBY = {
   AT4: { api: 'category', params: { category_group_code: 'AT4' } },
   PO3: { api: 'category', params: { category_group_code: 'PO3' } },
   MT1: { api: 'category', params: { category_group_code: 'MT1' } },
+  PS3: { api: 'category', params: { category_group_code: 'PS3' } }, // 어린이집·유치원
   LIB: { api: 'keyword', params: { query: '도서관' }, keep: d => /도서관/.test(d.category_name || '') },
 };
 
@@ -127,7 +128,7 @@ export default {
       if (!env.KAKAO_REST_KEY) return reply(500, { error: 'KAKAO_REST_KEY is not set' });
       const x = num(input.x), y = num(input.y);
       if (!inKorea(x, y)) return reply(400, { error: 'coordinates out of range' });
-      const cacheKey = `addr1:${x.toFixed(5)},${y.toFixed(5)}`;
+      const cacheKey = `addr2:${x.toFixed(5)},${y.toFixed(5)}`;
       const kv = env.ROUTE_CACHE;
       if (kv) { const hit = await kv.get(cacheKey).catch(() => null); if (hit) return new Response(hit, { status: 200, headers: { ...cors, 'Content-Type': 'application/json; charset=utf-8', 'X-Cache': 'HIT' } }); }
       const params = new URLSearchParams({ x: x.toFixed(6), y: y.toFixed(6) });
@@ -135,7 +136,16 @@ export default {
       const j = await up.json().catch(() => null);
       if (!up.ok || !j) return reply(up.status === 200 ? 502 : up.status, { error: (j && (j.message || j.msg)) || 'kakao error' });
       const d = (j.documents || [])[0] || {}, ra = d.road_address || null, ad = d.address || null;
-      const text = JSON.stringify({ road: ra ? ra.address_name : '', building: ra ? ra.building_name || '' : '', jibun: ad ? ad.address_name : '',
+      let building = ra ? ra.building_name || '' : '';
+      // 아파트 단지는 건물명이 '112동'처럼 동 번호만 온다 → 같은 도로명주소를 키워드로 찾아 단지 이름을 붙인다
+      if (ra && ra.address_name && (!building || /^[\dA-Za-z가-힣]{0,4}\d+동$/.test(building))) {
+        const kp = new URLSearchParams({ query: ra.address_name, x: x.toFixed(6), y: y.toFixed(6), radius: '500', sort: 'distance', size: '5' });
+        const kr = await fetch('https://dapi.kakao.com/v2/local/search/keyword.json?' + kp, { headers: { Authorization: 'KakaoAK ' + env.KAKAO_REST_KEY } }).catch(() => null);
+        const kj = kr && kr.ok ? await kr.json().catch(() => null) : null;
+        const apt = ((kj && kj.documents) || []).find(p => /아파트|주거시설|오피스텔/.test(p.category_name || '') && !/동$/.test(p.place_name));
+        if (apt && !building.includes(apt.place_name)) building = (apt.place_name + ' ' + building).trim();
+      }
+      const text = JSON.stringify({ road: ra ? ra.address_name : '', building, jibun: ad ? ad.address_name : '',
         roadName: ra ? ra.road_name : '', mainNo: ra ? ra.main_building_no : '', subNo: ra ? ra.sub_building_no : '' });
       if (kv) ctx.waitUntil(kv.put(cacheKey, text, { expirationTtl: 30 * 86400 }).catch(() => {}));
       return new Response(text, { status: 200, headers: { ...cors, 'Content-Type': 'application/json; charset=utf-8', 'X-Cache': kv ? 'MISS' : 'OFF' } });

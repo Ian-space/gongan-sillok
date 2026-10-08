@@ -236,6 +236,8 @@ button.stat[aria-pressed="true"] span{color:#FFFFFF}
 .bld-note{display:flex;align-items:center;gap:10px;margin:10px 0;padding:10px 12px;border-radius:10px;background:var(--paper);font-size:13px}
 .bld-note div{flex:1;display:grid;gap:2px}
 .bld-note b{font-size:13px}
+/* 기록한 가게가 폐업 신고된 곳일 때(인허가) */
+.d-closed{display:inline-block;margin:6px 0 0;padding:3px 8px;border-radius:6px;background:var(--paper);color:var(--seal-ink);font-size:12px;font-weight:600}
 /* 사진으로 항목 채우기(AI 제안) */
 .ai-photo{display:grid;gap:8px;margin-top:10px;padding:10px 12px;border:1px dashed var(--line);border-radius:10px}
 .ai-photo .ai-photo-go{width:100%}
@@ -1721,7 +1723,8 @@ function renderDetail(){
   t.appendChild(el('h2','d-name', p.name));
   const meta = [p.type, p.addr].filter(Boolean).join(', ');
   if (meta) t.appendChild(el('p','d-meta', meta));
-  const close = el('button','d-close','×'); close.type = 'button'; close.setAttribute('aria-label','닫기');
+  if (!p.ext && p.type !== '건물') closedNote(p, t);
+  const close =el('button','d-close','×'); close.type = 'button'; close.setAttribute('aria-label','닫기');
   close.addEventListener('click', () => select(null));
   const share = el('button','d-share'); share.type = 'button'; share.setAttribute('aria-label', `${p.name} 링크 공유하기`);
   share.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 8l5-5 5 5"/><path d="M5 12v8h14v-8"/></svg>';
@@ -3291,6 +3294,7 @@ const NEAR_KINDS = [
   { code: 'BK9', label: '은행',     color: '#C99A06', zoom: 15, on: true, icon: 'M4 10l8-5 8 5 M6.5 10v7 M10.5 10v7 M13.5 10v7 M17.5 10v7 M4 19h16' },
   { code: 'HP8', label: '병원',     color: '#0B7285', zoom: 16, icon: 'M12 6v12 M6 12h12' },
   { code: 'CT1', label: '문화시설', color: '#9B5DE5', zoom: 15, icon: 'M12 5l2 4.5 5 .5-3.8 3.3 1.1 4.9L12 15.8l-4.3 2.4 1.1-4.9L5 10l5-.5z' },
+  { code: 'PS3', label: '어린이집', color: '#F0A202', zoom: 16, on: true, icon: 'M12 4.5a2 2 0 1 0 0 4a2 2 0 1 0 0-4 M7 12l5-2 5 2 M9.5 20l1-6h3l1 6' }, // 어린이집·유치원(카카오 업종 PS3)
   { code: 'LIB', label: '도서관',   color: '#00A6A6', zoom: 15, icon: 'M4 6h6a2 2 0 0 1 2 2v11a2 2 0 0 0-2-2H4z M20 6h-6a2 2 0 0 0-2 2v11a2 2 0 0 1 2-2h6z' },
   { code: 'AT4', label: '관광명소', color: '#5C940D', zoom: 14, icon: 'M6 20V5 M6 5h11l-2.5 4 2.5 4H6' },
   { code: 'PO3', label: '공공기관', color: '#495057', zoom: 15, icon: 'M5 20V9l7-4 7 4v11 M9.5 20v-5h5v5' },
@@ -3380,6 +3384,29 @@ function buildingNote(br){
   box.append(t, b);
   return box;
 }
+// 기록한 가게가 폐업 신고된 곳인지(supabase/19_shops_closed.sql의 closed_at): 약 50m 안에서 이름이 같은 폐업 가게를 찾는다.
+// 주소 표기(도로명·지번)가 기록마다 달라서 좌표로 고른다. 기록은 지우지 않고 사실만 덧붙인다
+const closedCache = new Map();
+const closedKey = s => String(s || '').toLowerCase().replace(/[\s\p{P}\p{S}]/gu, '');
+function closedFor(p){
+  const id = `${p.id}:${p.lat},${p.lng}`;
+  if (!closedCache.has(id)) closedCache.set(id, !sb ? Promise.resolve(null) : sb.from('shops').select('name,branch,closed_at')
+    .not('closed_at', 'is', null).gte('lat', p.lat - 0.00045).lte('lat', p.lat + 0.00045).gte('lng', p.lng - 0.00057).lte('lng', p.lng + 0.00057).limit(50)
+    .then(({ data }) => { const k = closedKey(p.name);
+      const hit = (data || []).filter(s => k && (closedKey(s.name) === k || closedKey(s.name + (s.branch || '')) === k)).sort((a, b) => b.closed_at.localeCompare(a.closed_at))[0];
+      return hit ? hit.closed_at : null; })
+    .catch(() => null));
+  return closedCache.get(id);
+}
+function closedNote(p, box){
+  let q; try { q = closedFor(p); } catch { return; }
+  q.then(d => {
+    if (!d || !box.isConnected) return;
+    const n = el('p','d-closed', `폐업 신고됨 · ${d.replace(/-/g, '.')}`);
+    n.title = '지방행정 인허가 정보에 이 이름·자리로 폐업 신고가 있어요. 남긴 기록은 그대로 둬요.';
+    box.appendChild(n);
+  });
+}
 const roadKey = a => { const t = String(a || '').trim().split(/\s+/); return t.length >= 3 ? `${t[1]} ${t[t.length - 2]} ${t[t.length - 1]}` : ''; }; // '구 도로명 번호'
 async function placeAt(x, y){
   if (!map || map.getZoom() < 17 || !ROUTE_PROXY) return null;
@@ -3397,6 +3424,12 @@ async function placeAt(x, y){
         data = (data || []).filter(s => roadKey(s.addr) === key);
       }
       shops = (data || []).map(shopPlace);
+    }
+    // 상가정보에 없는 곳(어린이집·병원 등 지도에 이미 뜬 카카오 장소)도 같은 도로명주소면 목록에 함께
+    if (key) {
+      const nm = s => s.name.replace(/\s/g, '');
+      const kak = [...state.near.values()].filter(q => !q.shop && !q.building && q.addr && roadKey(q.addr) === key && !shops.some(s => nm(s) === nm(q)));
+      shops = [...kak, ...shops];
     }
     if (shops.length === 1) return shops[0];
     if (!a.road && !shops.length) return null; // 길·공원 등: 건물이 아니다
