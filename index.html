@@ -236,6 +236,8 @@ button.stat[aria-pressed="true"] span{color:#FFFFFF}
 .bld-note{display:flex;align-items:center;gap:10px;margin:10px 0;padding:10px 12px;border-radius:10px;background:var(--paper);font-size:13px}
 .bld-note div{flex:1;display:grid;gap:2px}
 .bld-note b{font-size:13px}
+.bld-note .bld-thumb{flex:none;width:52px;height:52px;padding:0;border:0;border-radius:8px;overflow:hidden;background:var(--line)}
+.bld-note .bld-thumb img{display:block;width:100%;height:100%;object-fit:cover}
 /* 기록한 가게가 폐업 신고된 곳일 때(인허가) */
 .d-closed{display:inline-block;margin:6px 0 0;padding:3px 8px;border-radius:6px;background:var(--paper);color:var(--seal-ink);font-size:12px;font-weight:600}
 /* 사진으로 항목 채우기(AI 제안) */
@@ -645,6 +647,8 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
 .d-hero-strip::-webkit-scrollbar,.photo-strip::-webkit-scrollbar{display:none}
 .photo.hero{flex:0 0 100%;border-radius:0;aspect-ratio:auto;height:min(260px,34dvh);scroll-snap-align:start}
 .d-hero-n{position:absolute;right:12px;bottom:10px;padding:2px 9px;border-radius:999px;background:rgba(15,20,40,.6);color:#FFFFFF;font-size:12px;font-weight:600;pointer-events:none}
+.d-hero-date{position:absolute;left:12px;bottom:10px;padding:2px 9px;border-radius:999px;background:rgba(15,20,40,.6);color:#FFFFFF;font-size:12px;font-weight:600;pointer-events:none}
+.d-hero-date[hidden]{display:none}
 /* 기록 창의 사진 고르기 */
 .photo-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:8px;width:100%}
 .photo-cell{position:relative}
@@ -905,7 +909,7 @@ html{touch-action:manipulation}
           <button class="acct-item" id="btnLoad" type="button">엑셀 파일 불러오기</button>
           <button class="acct-item" id="btnReset" type="button">예시 데이터로 되돌리기</button>
           <button class="acct-item leave" id="btnLeave" type="button" hidden>회원 탈퇴</button>
-          <div class="acct-legal"><a href="terms.html">이용약관</a><a href="privacy.html"><b>개인정보처리방침</b></a></div>
+          <div class="acct-legal"><a href="terms.html">이용약관 <span class="muted">(10/16 변경)</span></a><a href="privacy.html"><b>개인정보처리방침</b></a></div>
         </div>
       </div>
       <div class="recent" id="recent" hidden></div>
@@ -1737,15 +1741,17 @@ function renderDetail(){
   const acts = el('div','d-head-acts'); acts.append(save, share, close);
   head.append(t, acts); d.appendChild(head);
   // 사진이 있으면 맨 위에 크게: 내 사진 먼저, 그다음 다른 사람 공개 기록의 사진. 옆으로 밀어 넘기고, 누르면 화면 가득
-  const photos = [...new Set([...(p.mine ? p.photos || [] : []), ...(p.recs || []).flatMap(r => r.photos || [])])].slice(0, 20);
+  const photos = photosOf(p).slice(0, 20);
   if (photos.length) {
     const hero = el('div','d-hero'), strip = el('div','d-hero-strip');
-    photos.forEach((x, i) => strip.appendChild(photoImg(x, `${p.name} 사진 ${i + 1}`, 'hero', photos, i)));
+    photos.forEach((x, i) => strip.appendChild(photoImg(x.path, `${p.name} 사진 ${i + 1}`, 'hero', photos.map(y => y.path), i)));
     hero.appendChild(strip);
-    if (photos.length > 1) {
-      const n = el('span','d-hero-n', `1 / ${photos.length}`); hero.appendChild(n);
-      strip.addEventListener('scroll', () => { n.textContent = `${Math.round(strip.scrollLeft / Math.max(1, strip.clientWidth)) + 1} / ${photos.length}`; }, { passive: true });
-    }
+    // 사진마다 언제 본 모습인지(기록의 방문일). 접근성은 공사로 바뀌어서 1년이 넘으면 알린다
+    const dt = el('span','d-hero-date'), n = photos.length > 1 ? el('span','d-hero-n') : null;
+    const show = i => { dt.textContent = photoWhen(photos[i].date); dt.hidden = !dt.textContent; if (n) n.textContent = `${i + 1} / ${photos.length}`; };
+    hero.appendChild(dt); if (n) hero.appendChild(n);
+    show(0);
+    strip.addEventListener('scroll', () => show(Math.min(photos.length - 1, Math.round(strip.scrollLeft / Math.max(1, strip.clientWidth)))), { passive: true });
     d.appendChild(hero);
     fillPhotos(hero).then(() => { if (!hero.querySelector('.photo:not(.missing)')) hero.remove(); }); // 사진을 못 불러오면 빈 칸을 남기지 않는다
   }
@@ -3377,8 +3383,26 @@ function buildingRecFor(p){
   const k = roadKey(p.addr);
   return state.places.find(x => x.type === '건물' && x.id !== p.id && ((k && roadKey(x.addr) === k) || distM(x, p) < 12)) || null;
 }
+// 장소의 사진과 그 사진을 찍은 기록의 방문일: 내 사진 먼저, 그다음 다른 사람 공개 기록의 사진
+function photosOf(p){
+  const seen = new Map();
+  if (p.mine) for (const x of p.photos || []) if (!seen.has(x)) seen.set(x, p.date || '');
+  for (const r of p.recs || []) for (const x of r.photos || []) if (!seen.has(x)) seen.set(x, r.date || '');
+  return [...seen].map(([path, date]) => ({ path, date }));
+}
+function photoWhen(date){
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date || ''); if (!m) return '';
+  const old = Date.now() - new Date(+m[1], +m[2] - 1, +m[3]).getTime() > 365 * 86400000;
+  return `${m[1]}.${m[2]} 방문` + (old ? ' · 1년 넘은 사진' : '');
+}
 function buildingNote(br){
   const box = el('div','bld-note');
+  // 건물 기록의 사진(입구 등) 한 장을 함께: 건물 안 가게 화면에서도 입구가 어떻게 생겼는지 보인다
+  const ph = photosOf(br);
+  if (ph.length) {
+    box.appendChild(photoImg(ph[0].path, `${br.name} 건물 사진`, 'bld-thumb', ph.map(x => x.path), 0));
+    fillPhotos(box).then(() => { const t = box.querySelector('.bld-thumb.missing'); if (t) t.remove(); });
+  }
   const facts = BUILDING_KEYS.filter(k => br[k]).map(k => FACT[k][level(br, k)]).join(' · ') || '아직 남긴 항목이 없어요';
   const t = el('div'); t.append(el('b', null, `건물 기록 · ${br.name}`), el('span', null, facts));
   const b = el('button','linkbtn','보기'); b.type = 'button'; b.addEventListener('click', () => select(br.id, true));
