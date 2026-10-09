@@ -11,3 +11,18 @@ keep_vars = true # 대시보드에서 넣은 일반 변수도 지우지 않는�
 [[kv_namespaces]]
 binding = "ROUTE_CACHE"
 id = "08c80ee463d14c6d8b68f87f26b229c8"
+
+# 횟수 제한(접속 IP별, 1분 단위). 외부 서비스의 하루 한도를 누가 마구 써서 바닥내지 않게 한다
+[[ratelimits]]
+name = "LIMIT_ROUTE"   # TMAP 대중교통·도보 경로
+namespace_id = "1001"
+simple = { limit = 30, period = 60 }
+
+[[ratelimits]]
+name = "LIMIT_PLACE"   # 카카오 검색·주변 장소·주소·역
+namespace_id = "1002"
+simple = { limit = 300, period = 60 }
+
+# 로그(차단된 요청의 IP·회원번호 등)를 Cloudflare 대시보드에서 볼 수 있게
+[observability]
+enabled = true

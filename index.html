@@ -1618,7 +1618,8 @@ const ALIAS = [
   [/다이소|daiso/g, '다이소'], [/편의점|편점/g, '편의점'], [/gs25|지에스/g, 'gs25'], [/세븐일레븐|세븐|711/g, '세븐일레븐'],
   [/도서관|도선관|도서간/g, '도서관'], [/스터디카페|스터디까페/g, '스터디카페'], [/베이커리|베이커이|빵집/g, '베이커리']
 ];
-const squash = s => String(s || '').toLowerCase().replace(/[\s·.,'"()\-_/]/g, '');
+// 이름 비교용: 소문자로, 띄어쓰기·문장부호·기호(· . , ( ) - & 등)를 뺀다. 이름을 맞춰 보는 곳은 모두 이것을 쓴다
+const squash = s => String(s || '').toLowerCase().replace(/[\s\p{P}\p{S}]/gu, '');
 const normQ = s => ALIAS.reduce((t, [re, to]) => t.replace(re, to), squash(s));
 const CHO = 'ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ', JUNG = 'ㅏㅐㅑㅒㅓㅔㅕㅖㅗㅘㅙㅚㅛㅜㅝㅞㅟㅠㅡㅢㅣ', JONG = ' ㄱㄲㄳㄴㄵㄶㄷㄹㄺㄻㄼㄽㄾㄿㅀㅁㅂㅄㅅㅆㅇㅈㅊㅋㅌㅍㅎ';
 const eachSyl = (s, f) => [...s].map(ch => { const c = ch.charCodeAt(0) - 0xAC00; return c >= 0 && c < 11172 ? f(c, ch) : ch; }).join('');
@@ -2528,9 +2529,13 @@ function renderIntent(){
   }
   if (aiLoading) box.appendChild(el('p','intent-src', 'AI가 기록 항목으로 바꾸는 중이에요…'));
   else if (state.ai.text === text && state.ai.status === 'error') box.appendChild(el('p','intent-src', 'AI에게 묻지 못했어요. 잠시 뒤 다시 시도해 주세요.'));
-  if (canAsk && !aiLoading) {
+  if (canAsk && !aiLoading && auth.user) {
     const ask = el('button', ids.length ? 'linkbtn intent-ai' : 'btn ghost intent-ai', ids.length ? 'AI에게 다시 물어보기' : 'AI로 조건 찾기'); ask.type = 'button';
     ask.addEventListener('click', () => askAiIntent(text));
+    box.appendChild(ask);
+  } else if (canAsk && !aiLoading && sb) { // AI는 로그인한 사람만(비용 보호)
+    const ask = el('button','linkbtn intent-ai','로그인하면 AI로 조건을 찾아 드려요'); ask.type = 'button';
+    ask.addEventListener('click', login);
     box.appendChild(ask);
   }
   box.appendChild(el('p','intent-foot', '기록된 사실로만 골라요. 조건을 많이 채운 곳부터 보여 주고, 지도 핀 옆에 값을 표시해요.'));
@@ -2539,8 +2544,9 @@ function renderIntent(){
 async function askAiIntent(text){
   state.ai = { text, status: 'loading', res: null, off: false }; state.intentPick.clear(); renderIntent();
   try {
-    const r = await fetch(ROUTE_PROXY + '/intent', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) });
+    const r = await aiPost('/intent', { text });
     const j = await r.json().catch(() => null);
+    if (r.status === 401) { state.ai = { text: '', status: '', res: null, off: false }; toast('AI로 조건 찾기는 로그인하면 쓸 수 있어요.'); renderIntent(); return; }
     if (r.status === 503) { state.ai = { text: '', status: '', res: null, off: true }; toast('AI 해석은 아직 준비 중이에요.'); renderIntent(); return; }
     if (r.status === 429) { state.ai.status = 'error'; toast('AI 질문이 너무 많아요. 잠시 뒤 다시 시도해 주세요.'); renderIntent(); return; }
     if (!r.ok || !j) throw new Error('ai');
@@ -2751,6 +2757,12 @@ function fromTmap(it){
 }
 // TMAP은 키를 숨기려고 중계 서버(Cloudflare Worker, 코드는 worker/worker.js)를 거쳐 부른다
 const proxyPost = (path, body) => fetch(ROUTE_PROXY + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+// AI(/intent, /photo)는 로그인한 사람만: 로그인 토큰을 함께 보내면 중계 서버가 Supabase에 확인하고 사람마다 하루 한도를 센다
+async function aiPost(path, body){
+  let token = '';
+  try { const { data } = await sb.auth.getSession(); token = (data && data.session && data.session.access_token) || ''; } catch {}
+  return fetch(ROUTE_PROXY + path, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(token && { Authorization: 'Bearer ' + token }) }, body: JSON.stringify(body) });
+}
 async function tmapTransit(p){
   const { from: o, to: d } = routeEnds(p);
   const r = await proxyPost('/transit', { startX: String(o.lng), startY: String(o.lat), endX: String(d.lng), endY: String(d.lat), searchDttm: seoulNow().stamp });
@@ -3412,13 +3424,12 @@ function buildingNote(br){
 // 기록한 가게가 폐업 신고된 곳인지(supabase/19_shops_closed.sql의 closed_at): 약 50m 안에서 이름이 같은 폐업 가게를 찾는다.
 // 주소 표기(도로명·지번)가 기록마다 달라서 좌표로 고른다. 기록은 지우지 않고 사실만 덧붙인다
 const closedCache = new Map();
-const closedKey = s => String(s || '').toLowerCase().replace(/[\s\p{P}\p{S}]/gu, '');
 function closedFor(p){
   const id = `${p.id}:${p.lat},${p.lng}`;
   if (!closedCache.has(id)) closedCache.set(id, !sb ? Promise.resolve(null) : sb.from('shops').select('name,branch,closed_at')
     .not('closed_at', 'is', null).gte('lat', p.lat - 0.00045).lte('lat', p.lat + 0.00045).gte('lng', p.lng - 0.00057).lte('lng', p.lng + 0.00057).limit(50)
-    .then(({ data }) => { const k = closedKey(p.name);
-      const hit = (data || []).filter(s => k && (closedKey(s.name) === k || closedKey(s.name + (s.branch || '')) === k)).sort((a, b) => b.closed_at.localeCompare(a.closed_at))[0];
+    .then(({ data }) => { const k = squash(p.name);
+      const hit = (data || []).filter(s => k && (squash(s.name) === k || squash(s.name + (s.branch || '')) === k)).sort((a, b) => b.closed_at.localeCompare(a.closed_at))[0];
       return hit ? hit.closed_at : null; })
     .catch(() => null));
   return closedCache.get(id);
@@ -3452,7 +3463,7 @@ async function placeAt(x, y){
     }
     // 상가정보에 없는 곳(어린이집·병원 등 지도에 이미 뜬 카카오 장소)도 같은 도로명주소면 목록에 함께
     if (key) {
-      const nm = s => s.name.replace(/\s/g, '');
+      const nm = s => squash(s.name);
       const kak = [...state.near.values()].filter(q => !q.shop && !q.building && q.addr && roadKey(q.addr) === key && !shops.some(s => nm(s) === nm(q)));
       shops = [...kak, ...shops];
     }
@@ -3467,7 +3478,7 @@ async function placeAt(x, y){
 function openShop(p){
   // 이미 기록한 가게면 우리 기록을 연다
   // 건물 카드는 가게 목록이 있어서 그대로 연다(건물 기록은 카드 안에 보인다)
-  const rec = !p.building && state.places.find(x => sameSpot(x, p) || (x.name.replace(/\s/g, '') === p.name.replace(/\s/g, '') && distM(x, p) < 60));
+  const rec = !p.building && state.places.find(x => sameSpot(x, p) || (squash(x.name) === squash(p.name) && distM(x, p) < 60));
   if (rec) { select(rec.id); return; }
   if (!state.near.has(p.id) || p.building) { state.near.set(p.id, p); syncNearMarkers(); } // 건물은 누를 때마다 가게 목록을 새로
   select(p.id);
@@ -3990,9 +4001,11 @@ async function saveToServer(row, picked, editing, isPublic){
         placeId = data.id;
       }
       const { error } = await sb.from('records').insert({ place_id: placeId, ...vals });
-      if (error && error.code === '23505') { // 이미 내 기록이 있는 장소면 그 기록을 고친다
+      if (error && error.code === '23505') { // 이미 내 기록이 있는 장소면 그 기록을 고친다. 그 기록에 있던 사진 중 이번에 안 쓰는 것은 지운다
+        const { data: had } = await sb.from('records').select('photo_paths').eq('place_id', placeId).eq('user_id', auth.user.id).maybeSingle();
         const r2 = await sb.from('records').update(vals).eq('place_id', placeId).eq('user_id', auth.user.id);
         if (r2.error) throw r2.error;
+        dropped.push(...((had && had.photo_paths) || []).filter(x => !paths.includes(x)));
       } else if (error) throw error;
     }
     if (dropped.length) sb.storage.from('photos').remove(dropped).catch(() => {});
@@ -4064,7 +4077,7 @@ function offerMove(force){
 }
 async function moveRecords(list, isPublic, progress){
   let moved = 0, skipped = 0; const left = [];
-  const norm = s => String(s || '').replace(/\s/g, '').toLowerCase();
+  const norm = squash;
   for (let i = 0; i < list.length; i++) {
     const np = list[i]; progress(i + 1);
     try {
@@ -4265,9 +4278,10 @@ function aiPhotoBox(list){
     try {
       const images = (await Promise.all(list.slice(0, 3).map(ph => aiImageOf(ph).catch(() => null)))).filter(Boolean);
       if (!images.length) throw new Error('img');
-      const r = await proxyPost('/photo', { images });
+      const r = await aiPost('/photo', { images });
       if (r.status === 503) { aiPhoto.off = true; toast('AI 기능은 아직 준비 중이에요.'); draw(); return; }
-      if (r.status === 429) { aiPhoto.status = 'error'; toast('AI 요청이 너무 많아요. 잠시 뒤 다시 시도해 주세요.'); draw(); return; }
+      if (r.status === 429) { aiPhoto.status = 'error'; toast('오늘 쓸 수 있는 AI 횟수를 다 썼어요. 내일 다시 시도해 주세요.'); draw(); return; }
+      if (r.status === 401) { aiPhoto.status = 'error'; toast('로그인이 풀렸어요. 다시 로그인한 뒤 시도해 주세요.'); draw(); return; }
       const j = await r.json(); if (!r.ok) throw new Error('ai');
       const wv = {}, tv = {};
       for (const [k, v] of Object.entries(j.w || {})) if (ENUMS[k] && ENUMS[k].values.includes(v)) wv[k] = v;
@@ -4547,12 +4561,13 @@ function openLeave(){
   cb.addEventListener('change', () => { go.disabled = !cb.checked; });
   go.addEventListener('click', async () => {
     go.disabled = cb.disabled = true; st.classList.remove('err'); st.textContent = '지우는 중이에요…';
-    // 사진 파일은 계정을 지워도 저장소에 남으므로 먼저 지운다
-    try {
-      const uid = auth.user.id, { data: files } = await sb.storage.from('photos').list(uid, { limit: 1000 });
-      if (files && files.length) await sb.storage.from('photos').remove(files.map(f => `${uid}/${f.name}`));
-    } catch {}
+    // 사진 파일은 계정을 지워도 저장소에 남는다. 목록은 먼저 받아 두고, 탈퇴가 끝난 뒤에 지운다
+    // (먼저 지우면 탈퇴가 실패했을 때 계정은 남고 사진만 사라진다. 로그인 토큰은 탈퇴 뒤에도 잠시 유효해서 지울 수 있다)
+    const uid = auth.user.id;
+    let files = [];
+    try { const { data } = await sb.storage.from('photos').list(uid, { limit: 1000 }); files = (data || []).map(f => `${uid}/${f.name}`); } catch {}
     const { error } = await sb.rpc('delete_my_account');
+    if (!error && files.length) { try { await sb.storage.from('photos').remove(files); } catch {} }
     if (error) {
       st.classList.add('err');
       st.textContent = /delete_my_account|PGRST202|schema cache/.test(error.message + error.code) ? '탈퇴 기능이 아직 준비되지 않았어요. 잠시 뒤 다시 시도해 주세요.' : '탈퇴하지 못했어요. 잠시 뒤 다시 시도해 주세요.';

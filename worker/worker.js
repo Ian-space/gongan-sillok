@@ -1,37 +1,42 @@
 // 공간실록 중계 서버 (Cloudflare Worker)
-// - 외부 서비스 키(TMAP, 카카오)를 사이트 코드 대신 여기 비밀 변수에만 둔다.
-//     TMAP_APP_KEY   : TMAP 대중교통·보행자 경로
-//     KAKAO_REST_KEY : 카카오 로컬 장소 검색 (REST API 키)
-// - 경로 결과 저장: KV 바인딩 ROUTE_CACHE (Settings → Bindings → KV namespace)
-// - 공간실록 사이트에서 온 요청만 받는다.
+// - 외부 서비스 키(TMAP, 카카오, Anthropic)를 사이트 코드 대신 여기 비밀 변수에만 둔다.
+//     TMAP_APP_KEY      : TMAP 대중교통·보행자 경로
+//     KAKAO_REST_KEY    : 카카오 로컬 장소 검색 (REST API 키)
+//     ANTHROPIC_API_KEY : AI 조건 찾기·사진 보고 채우기
+// - 결과 저장: KV 바인딩 ROUTE_CACHE. 횟수 제한: 바인딩 LIMIT_ROUTE·LIMIT_PLACE (wrangler.toml)
+// - 공간실록 사이트에서 온 요청만 받는다. AI는 로그인한 사람만(Supabase 로그인 토큰을 확인한다).
 //
 // 경로
 //   POST /transit  { startX, startY, endX, endY, searchDttm? }  → TMAP 대중교통
 //   POST /walk     { startX, startY, endX, endY }               → TMAP 보행자 경로
-//   POST /search   { query, x?, y? }                            → 카카오 키워드 장소 검색 (x, y가 있으면 그 근처부터)
+//   POST /search   { query, x?, y?, sort?, page? }              → 카카오 키워드 장소 검색 (x, y가 있으면 그 근처부터)
 //   POST /station  { x, y }                                     → 1.5km 안 지하철역 (가까운 순)
 //   POST /addr     { x, y }                                     → 그 자리의 도로명주소·건물명 (카카오 좌표→주소)
-//   POST /nearby   { rect: "왼쪽X,아래Y,오른쪽X,위Y", code? }      → 지도 한 칸 안의 장소 (code: CS2 편의점, CE7 카페, FD6 음식점, PM9 약국, BK9 은행, HP8 병원, CT1 문화시설, AT4 관광명소, PO3 공공기관, MT1 대형마트, LIB 도서관)
-//   POST /intent   { text }                                     → 글로 적은 목적을 기록 항목 조건으로 (Claude, 비밀 변수 ANTHROPIC_API_KEY)
-//   POST /photo    { images: [base64 JPEG, 최대 3장] }          → 사진에서 눈으로 확인되는 기록 항목 제안 (Claude, 같은 비밀 변수)
+//   POST /nearby   { rect: "왼쪽X,아래Y,오른쪽X,위Y", code? }      → 지도 한 칸 안의 장소 (NEARBY의 업종 코드)
+//   POST /intent   { text }                                     → 글로 적은 목적을 기록 항목 조건으로 (로그인 필요)
+//   POST /photo    { images: [base64 JPEG, 최대 3장] }          → 사진에서 눈으로 확인되는 기록 항목 제안 (로그인 필요)
 
 const ALLOWED_ORIGINS = ['https://ian-space.github.io', 'http://localhost:8765'];
-const VERSION = '2026-10-08.4'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
-// 경로 결과 저장 시간(초). KV 바인딩(ROUTE_CACHE)이 없으면 저장하지 않고 그대로 동작한다
+const VERSION = '2026-10-10.1'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
+// 로그인 확인용 Supabase 주소와 공개 키(사이트 코드에도 있는 공개 값)
+const SUPABASE_URL = 'https://qktrghajroxddrbpwtvn.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_j-kp8YKsQTczGcsQX74OxA_mfI7DoZw';
+// AI 하루 한도: 한 사람당 / 전체. 넘으면 429와 함께 Cloudflare 로그에 회원번호·IP를 남긴다(남용 확인용)
+const AI_LIMITS = { intent: { user: 30, day: 1000 }, photo: { user: 20, day: 200 } };
+// 경로 결과 저장 시간(초)
 const CACHE_SECONDS = { transit: 600, walk: 86400 };
-// 주변 장소 종류. 카카오 업종 코드(CE7 카페, FD6 음식점, CT1 문화시설)로 찾고,
-// 업종 분류가 없는 도서관은 검색어로 찾은 뒤 분류에 '도서관'이 있는 곳만 남긴다
+// 주변 장소 종류. 카카오 업종 코드로 찾고, 업종 분류가 없는 도서관은 검색어로 찾은 뒤 분류에 '도서관'이 있는 곳만 남긴다
 const NEARBY = {
-  CS2: { api: 'category', params: { category_group_code: 'CS2' } },
-  CE7: { api: 'category', params: { category_group_code: 'CE7' } },
-  FD6: { api: 'category', params: { category_group_code: 'FD6' } },
-  PM9: { api: 'category', params: { category_group_code: 'PM9' } },
-  BK9: { api: 'category', params: { category_group_code: 'BK9' } },
-  CT1: { api: 'category', params: { category_group_code: 'CT1' } },
-  HP8: { api: 'category', params: { category_group_code: 'HP8' } },
-  AT4: { api: 'category', params: { category_group_code: 'AT4' } },
-  PO3: { api: 'category', params: { category_group_code: 'PO3' } },
-  MT1: { api: 'category', params: { category_group_code: 'MT1' } },
+  CS2: { api: 'category', params: { category_group_code: 'CS2' } }, // 편의점
+  CE7: { api: 'category', params: { category_group_code: 'CE7' } }, // 카페
+  FD6: { api: 'category', params: { category_group_code: 'FD6' } }, // 음식점
+  PM9: { api: 'category', params: { category_group_code: 'PM9' } }, // 약국
+  BK9: { api: 'category', params: { category_group_code: 'BK9' } }, // 은행
+  CT1: { api: 'category', params: { category_group_code: 'CT1' } }, // 문화시설
+  HP8: { api: 'category', params: { category_group_code: 'HP8' } }, // 병원
+  AT4: { api: 'category', params: { category_group_code: 'AT4' } }, // 관광명소
+  PO3: { api: 'category', params: { category_group_code: 'PO3' } }, // 공공기관
+  MT1: { api: 'category', params: { category_group_code: 'MT1' } }, // 대형마트
   PS3: { api: 'category', params: { category_group_code: 'PS3' } }, // 어린이집·유치원
   LIB: { api: 'keyword', params: { query: '도서관' }, keep: d => /도서관/.test(d.category_name || '') },
 };
@@ -76,6 +81,8 @@ const TMAP = {
   transit: 'https://apis.openapi.sk.com/transit/routes',
   walk: 'https://apis.openapi.sk.com/tmap/routes/pedestrian?version=1&format=json',
 };
+const PLACE_KINDS = ['search', 'nearby', 'station', 'addr'];
+const AI_KINDS = ['intent', 'photo'];
 
 export default {
   async fetch(request, env, ctx) {
@@ -84,145 +91,180 @@ export default {
     const cors = {
       'Access-Control-Allow-Origin': allowed ? origin : ALLOWED_ORIGINS[0],
       'Access-Control-Allow-Methods': 'POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
       'Access-Control-Max-Age': '86400',
       'Vary': 'Origin',
       'X-GS-Version': VERSION,
     };
-    const reply = (status, body) => new Response(JSON.stringify(body), { status, headers: { ...cors, 'Content-Type': 'application/json; charset=utf-8' } });
+    const send = (text, status, extra) => new Response(text, { status, headers: { ...cors, 'Content-Type': 'application/json; charset=utf-8', ...extra } });
+    const reply = (status, body) => send(JSON.stringify(body), status);
 
     if (request.method === 'OPTIONS') return new Response(null, { status: allowed ? 204 : 403, headers: cors });
     if (!allowed) return reply(403, { error: 'forbidden origin' });
     if (request.method !== 'POST') return reply(405, { error: 'POST only' });
 
     const kind = new URL(request.url).pathname.replace(/^\/+/, '');
-    if (!TMAP[kind] && !['search', 'nearby', 'station', 'intent', 'photo', 'addr'].includes(kind)) return reply(404, { error: 'unknown path' });
+    if (!TMAP[kind] && !PLACE_KINDS.includes(kind) && !AI_KINDS.includes(kind)) return reply(404, { error: 'unknown path' });
 
     let input;
     try { input = await request.json(); } catch { return reply(400, { error: 'invalid json' }); }
-    const num = v => (typeof v === 'string' || typeof v === 'number') && /^-?\d+(\.\d+)?$/.test(String(v)) ? Number(v) : NaN;
-    const inKorea = (x, y) => x >= 124 && x <= 132 && y >= 33 && y <= 39;
-
-    /* 카카오 장소 검색 */
-    if (kind === 'search') {
-      if (!env.KAKAO_REST_KEY) return reply(500, { error: 'KAKAO_REST_KEY is not set' });
-      const query = String(input.query || '').replace(/[\u0000-\u001F\u007F]/g, '').trim().slice(0, 40);
-      if (!query) return reply(400, { error: 'empty query' });
-      const params = new URLSearchParams({ query, size: '15' });
-      const x = num(input.x), y = num(input.y);
-      if (inKorea(x, y)) { params.set('x', String(x)); params.set('y', String(y)); if (input.sort === 'distance') params.set('sort', 'distance'); } // 지도 중심 근처 결과부터(distance면 가까운 순)
-      if (/^[1-3]$/.test(String(input.page || ''))) params.set('page', String(input.page));
-      const up = await fetch('https://dapi.kakao.com/v2/local/search/keyword.json?' + params, { headers: { Authorization: 'KakaoAK ' + env.KAKAO_REST_KEY } });
-      const j = await up.json().catch(() => null);
-      if (!up.ok || !j) return reply(up.status === 200 ? 502 : up.status, { error: (j && (j.message || j.msg)) || 'kakao error' });
-      // 사이트에 필요한 칸만 넘긴다
-      return reply(200, { places: (j.documents || []).map(d => ({
-        name: d.place_name, category: d.category_name, address: d.road_address_name || d.address_name,
-        phone: d.phone, x: d.x, y: d.y, url: d.place_url, distance: d.distance,
-      })) });
+    try {
+      return await handle(kind, input, { request, env, ctx, send, reply });
+    } catch (e) {
+      if (e instanceof Response) return e; // 도우미들이 실패 응답을 던진다
+      return reply(502, { error: 'upstream error' });
     }
+  },
+};
 
+const num = v => (typeof v === 'string' || typeof v === 'number') && /^-?\d+(\.\d+)?$/.test(String(v)) ? Number(v) : NaN;
+const inKorea = (x, y) => x >= 124 && x <= 132 && y >= 33 && y <= 39;
 
-    /* 좌표 → 주소(카카오): 지도에서 누른 자리의 건물(도로명주소·건물명). 주소는 잘 바뀌지 않아 약 1m 단위로 30일 저장 */
-    if (kind === 'addr') {
-      if (!env.KAKAO_REST_KEY) return reply(500, { error: 'KAKAO_REST_KEY is not set' });
-      const x = num(input.x), y = num(input.y);
-      if (!inKorea(x, y)) return reply(400, { error: 'coordinates out of range' });
-      const cacheKey = `addr2:${x.toFixed(5)},${y.toFixed(5)}`;
-      const kv = env.ROUTE_CACHE;
-      if (kv) { const hit = await kv.get(cacheKey).catch(() => null); if (hit) return new Response(hit, { status: 200, headers: { ...cors, 'Content-Type': 'application/json; charset=utf-8', 'X-Cache': 'HIT' } }); }
-      const params = new URLSearchParams({ x: x.toFixed(6), y: y.toFixed(6) });
-      const up = await fetch('https://dapi.kakao.com/v2/local/geo/coord2address.json?' + params, { headers: { Authorization: 'KakaoAK ' + env.KAKAO_REST_KEY } });
-      const j = await up.json().catch(() => null);
-      if (!up.ok || !j) return reply(up.status === 200 ? 502 : up.status, { error: (j && (j.message || j.msg)) || 'kakao error' });
+async function handle(kind, input, { request, env, ctx, send, reply }) {
+  const kv = env.ROUTE_CACHE;
+  const ip = request.headers.get('CF-Connecting-IP') || 'x';
+
+  // 외부 서비스를 부르기 전 횟수 제한(접속 IP별 1분 단위). 저장해 둔 결과를 줄 때는 세지 않는다
+  const limiter = TMAP[kind] ? env.LIMIT_ROUTE : env.LIMIT_PLACE;
+  const allow = async () => {
+    if (!limiter) return;
+    const { success } = await limiter.limit({ key: ip }).catch(() => ({ success: true }));
+    if (!success) { console.log(JSON.stringify({ blocked: kind, ip })); throw reply(429, { error: 'too many' }); }
+  };
+  // 같은 요청은 저장해 둔 결과를 주고, 없으면 make()로 만들어 ttl초 저장한다
+  const cached = async (key, ttl, make) => {
+    if (kv) { const hit = await kv.get(key).catch(() => null); if (hit) return send(hit, 200, { 'X-Cache': 'HIT' }); }
+    await allow();
+    const text = await make();
+    if (kv) ctx.waitUntil(kv.put(key, text, { expirationTtl: ttl }).catch(() => {}));
+    return send(text, 200, { 'X-Cache': kv ? 'MISS' : 'OFF' });
+  };
+  const kakao = async (path, params) => {
+    if (!env.KAKAO_REST_KEY) throw reply(500, { error: 'KAKAO_REST_KEY is not set' });
+    const up = await fetch(`https://dapi.kakao.com/v2/local/${path}.json?` + new URLSearchParams(params), { headers: { Authorization: 'KakaoAK ' + env.KAKAO_REST_KEY } });
+    const j = await up.json().catch(() => null);
+    if (!up.ok || !j) throw reply(up.status === 200 ? 502 : up.status, { error: (j && (j.message || j.msg)) || 'kakao error' });
+    return j;
+  };
+  const xy = () => { const x = num(input.x), y = num(input.y); if (!inKorea(x, y)) throw reply(400, { error: 'coordinates out of range' }); return [x, y]; };
+
+  /* 카카오 장소 검색 */
+  if (kind === 'search') {
+    const query = String(input.query || '').replace(/[\u0000-\u001F\u007F]/g, '').trim().slice(0, 40);
+    if (!query) return reply(400, { error: 'empty query' });
+    const params = { query, size: '15' };
+    const x = num(input.x), y = num(input.y);
+    if (inKorea(x, y)) { Object.assign(params, { x: String(x), y: String(y) }); if (input.sort === 'distance') params.sort = 'distance'; } // 지도 중심 근처 결과부터(distance면 가까운 순)
+    if (/^[1-3]$/.test(String(input.page || ''))) params.page = String(input.page);
+    await allow();
+    const j = await kakao('search/keyword', params);
+    // 사이트에 필요한 칸만 넘긴다
+    return reply(200, { places: (j.documents || []).map(d => ({
+      name: d.place_name, category: d.category_name, address: d.road_address_name || d.address_name,
+      phone: d.phone, x: d.x, y: d.y, url: d.place_url, distance: d.distance,
+    })) });
+  }
+
+  /* 좌표 → 주소(카카오): 지도에서 누른 자리의 건물(도로명주소·건물명). 주소는 잘 바뀌지 않아 약 1m 단위로 30일 저장 */
+  if (kind === 'addr') {
+    const [x, y] = xy();
+    return cached(`addr3:${x.toFixed(5)},${y.toFixed(5)}`, 30 * 86400, async () => {
+      const j = await kakao('geo/coord2address', { x: x.toFixed(6), y: y.toFixed(6) });
       const d = (j.documents || [])[0] || {}, ra = d.road_address || null, ad = d.address || null;
       let building = ra ? ra.building_name || '' : '';
-      // 아파트 단지는 건물명이 '112동'처럼 동 번호만 온다 → 같은 도로명주소를 키워드로 찾아 단지 이름을 붙인다
+      // 아파트 단지는 건물명이 '112동'처럼 동 번호만 온다 → 같은 도로명주소의 아파트·주거시설을 찾아 단지 이름을 붙인다.
+      // 주소가 같은 곳만 쓴다(근처 다른 단지 이름이 빌라에 붙지 않게). 주소 앞의 '서울'/'서울특별시' 표기는 달라서 빼고 비교한다
       if (ra && ra.address_name && (!building || /^[\dA-Za-z가-힣]{0,4}\d+동$/.test(building))) {
-        const kp = new URLSearchParams({ query: ra.address_name, x: x.toFixed(6), y: y.toFixed(6), radius: '500', sort: 'distance', size: '5' });
-        const kr = await fetch('https://dapi.kakao.com/v2/local/search/keyword.json?' + kp, { headers: { Authorization: 'KakaoAK ' + env.KAKAO_REST_KEY } }).catch(() => null);
-        const kj = kr && kr.ok ? await kr.json().catch(() => null) : null;
-        const apt = ((kj && kj.documents) || []).find(p => /아파트|주거시설|오피스텔/.test(p.category_name || '') && !/동$/.test(p.place_name));
+        const tail = s => String(s || '').trim().split(/\s+/).slice(1).join(' ');
+        const kj = await kakao('search/keyword', { query: ra.address_name, x: x.toFixed(6), y: y.toFixed(6), radius: '500', sort: 'distance', size: '5' }).catch(() => null);
+        const apt = ((kj && kj.documents) || []).find(p => /아파트|주거시설|오피스텔/.test(p.category_name || '') && !/동$/.test(p.place_name) && tail(p.road_address_name) === tail(ra.address_name));
         if (apt && !building.includes(apt.place_name)) building = (apt.place_name + ' ' + building).trim();
       }
-      const text = JSON.stringify({ road: ra ? ra.address_name : '', building, jibun: ad ? ad.address_name : '',
+      return JSON.stringify({ road: ra ? ra.address_name : '', building, jibun: ad ? ad.address_name : '',
         roadName: ra ? ra.road_name : '', mainNo: ra ? ra.main_building_no : '', subNo: ra ? ra.sub_building_no : '' });
-      if (kv) ctx.waitUntil(kv.put(cacheKey, text, { expirationTtl: 30 * 86400 }).catch(() => {}));
-      return new Response(text, { status: 200, headers: { ...cors, 'Content-Type': 'application/json; charset=utf-8', 'X-Cache': kv ? 'MISS' : 'OFF' } });
-    }
+    });
+  }
 
-    /* 가까운 지하철역: 카카오 업종 검색(SW8)으로 1.5km 안의 역을 가까운 순으로. 역은 잘 바뀌지 않아 약 100m 단위로 30일 저장 */
-    if (kind === 'station') {
-      if (!env.KAKAO_REST_KEY) return reply(500, { error: 'KAKAO_REST_KEY is not set' });
-      const x = num(input.x), y = num(input.y);
-      if (!inKorea(x, y)) return reply(400, { error: 'coordinates out of range' });
-      const cacheKey = `station:${x.toFixed(3)},${y.toFixed(3)}`;
-      const kv = env.ROUTE_CACHE;
-      if (kv) { const hit = await kv.get(cacheKey).catch(() => null); if (hit) return new Response(hit, { status: 200, headers: { ...cors, 'Content-Type': 'application/json; charset=utf-8', 'X-Cache': 'HIT' } }); }
-      const params = new URLSearchParams({ category_group_code: 'SW8', x: x.toFixed(4), y: y.toFixed(4), radius: '1500', sort: 'distance', size: '5' });
-      const up = await fetch('https://dapi.kakao.com/v2/local/search/category.json?' + params, { headers: { Authorization: 'KakaoAK ' + env.KAKAO_REST_KEY } });
-      const j = await up.json().catch(() => null);
-      if (!up.ok || !j) return reply(up.status === 200 ? 502 : up.status, { error: (j && (j.message || j.msg)) || 'kakao error' });
-      const text = JSON.stringify({ stations: (j.documents || []).map(d => ({ name: d.place_name, line: String(d.category_name || '').split('>').pop().trim(), x: d.x, y: d.y })) });
-      if (kv) ctx.waitUntil(kv.put(cacheKey, text, { expirationTtl: 30 * 86400 }).catch(() => {}));
-      return new Response(text, { status: 200, headers: { ...cors, 'Content-Type': 'application/json; charset=utf-8', 'X-Cache': kv ? 'MISS' : 'OFF' } });
-    }
+  /* 가까운 지하철역: 카카오 업종 검색(SW8)으로 1.5km 안의 역을 가까운 순으로. 역은 잘 바뀌지 않아 약 100m 단위로 30일 저장 */
+  if (kind === 'station') {
+    const [x, y] = xy();
+    return cached(`station:${x.toFixed(3)},${y.toFixed(3)}`, 30 * 86400, async () => {
+      const j = await kakao('search/category', { category_group_code: 'SW8', x: x.toFixed(4), y: y.toFixed(4), radius: '1500', sort: 'distance', size: '5' });
+      return JSON.stringify({ stations: (j.documents || []).map(d => ({ name: d.place_name, line: String(d.category_name || '').split('>').pop().trim(), x: d.x, y: d.y })) });
+    });
+  }
 
-    /* 카카오 업종 검색: 지도 한 칸(사각형) 안의 장소. 카카오는 한 번에 최대 45곳(15곳씩 3쪽)만 준다.
-       그보다 많고 칸이 아직 크면 { split: true }만 돌려줘서, 사이트가 칸을 4등분해 다시 묻게 한다.
-       가게 정보라 하루 동안 저장해 다시 쓴다 */
-    if (kind === 'nearby') {
-      if (!env.KAKAO_REST_KEY) return reply(500, { error: 'KAKAO_REST_KEY is not set' });
-      const r = String(input.rect || '').split(',').map(num);
-      if (r.length !== 4 || !inKorea(r[0], r[1]) || !inKorea(r[2], r[3]) || r[2] <= r[0] || r[3] <= r[1] || r[2] - r[0] > 0.03 || r[3] - r[1] > 0.03)
-        return reply(400, { error: 'bad rect' });
-      const code = NEARBY[input.code] ? input.code : 'CE7';
-      const how = NEARBY[code];
-      const rect = r.map(v => v.toFixed(4)).join(',');
-      const canSplit = r[2] - r[0] > 0.0016;
-      const cacheKey = `nearby2:${code}:${rect}`;
-      const kv = env.ROUTE_CACHE;
-      if (kv) { const hit = await kv.get(cacheKey).catch(() => null); if (hit) return new Response(hit, { status: 200, headers: { ...cors, 'Content-Type': 'application/json; charset=utf-8', 'X-Cache': 'HIT' } }); }
+  /* 카카오 업종 검색: 지도 한 칸(사각형) 안의 장소. 카카오는 한 번에 최대 45곳(15곳씩 3쪽)만 준다.
+     그보다 많고 칸이 아직 크면 { split: true }만 돌려줘서, 사이트가 칸을 4등분해 다시 묻게 한다. 하루 동안 저장 */
+  if (kind === 'nearby') {
+    const r = String(input.rect || '').split(',').map(num);
+    if (r.length !== 4 || !inKorea(r[0], r[1]) || !inKorea(r[2], r[3]) || r[2] <= r[0] || r[3] <= r[1] || r[2] - r[0] > 0.03 || r[3] - r[1] > 0.03)
+      return reply(400, { error: 'bad rect' });
+    const code = NEARBY[input.code] ? input.code : 'CE7';
+    const how = NEARBY[code];
+    const rect = r.map(v => v.toFixed(4)).join(',');
+    const canSplit = r[2] - r[0] > 0.0016;
+    return cached(`nearby2:${code}:${rect}`, 86400, async () => {
       const places = [];
-      let split = false;
       for (let page = 1; page <= 3; page++) {
-        const params = new URLSearchParams({ rect, page: String(page), size: '15', ...how.params });
-        const up = await fetch(`https://dapi.kakao.com/v2/local/search/${how.api}.json?` + params, { headers: { Authorization: 'KakaoAK ' + env.KAKAO_REST_KEY } });
-        const j = await up.json().catch(() => null);
-        if (!up.ok || !j) return reply(up.status === 200 ? 502 : up.status, { error: (j && (j.message || j.msg)) || 'kakao error' });
-        if (page === 1 && canSplit && j.meta && j.meta.total_count > 45) { split = true; break; }
+        const j = await kakao(`search/${how.api}`, { rect, page: String(page), size: '15', ...how.params });
+        if (page === 1 && canSplit && j.meta && j.meta.total_count > 45) return JSON.stringify({ places: [], split: true });
         for (const d of j.documents || []) {
           if (how.keep && !how.keep(d)) continue;
           places.push({ name: d.place_name, category: d.category_name, address: d.road_address_name || d.address_name, phone: d.phone, x: d.x, y: d.y, url: d.place_url });
         }
         if (!j.meta || j.meta.is_end) break;
       }
-      const text = JSON.stringify(split ? { places: [], split: true } : { places });
-      if (kv) ctx.waitUntil(kv.put(cacheKey, text, { expirationTtl: 86400 }).catch(() => {}));
-      return new Response(text, { status: 200, headers: { ...cors, 'Content-Type': 'application/json; charset=utf-8', 'X-Cache': kv ? 'MISS' : 'OFF' } });
-    }
+      return JSON.stringify({ places });
+    });
+  }
 
+  /* AI (Anthropic Claude): 로그인한 사람만, 한 사람당·전체 하루 한도 안에서. 누가 물었는지는 Anthropic에 보내지 않는다 */
+  if (AI_KINDS.includes(kind)) {
+    if (!env.ANTHROPIC_API_KEY) return reply(503, { error: 'ai off' });
+    const uid = await userOf(request);
+    if (!uid) return reply(401, { error: 'login required' });
+    // 하루 한도 확인(저장해 둔 결과를 줄 때는 세지 않는다)
+    const count = async () => {
+      if (!kv) return;
+      const day = new Date().toISOString().slice(0, 10), lim = AI_LIMITS[kind];
+      const kU = `rl:${kind}:u:${uid}:${day}`, kD = `rl:${kind}:day:${day}`;
+      const [nU, nD] = await Promise.all([kU, kD].map(k => kv.get(k).then(v => Number(v) || 0).catch(() => 0)));
+      if (nU >= lim.user || nD >= lim.day) { console.log(JSON.stringify({ blocked: kind, user: uid, ip, nU, nD })); throw reply(429, { error: 'too many' }); }
+      ctx.waitUntil(Promise.all([kv.put(kU, String(nU + 1), { expirationTtl: 86400 }), kv.put(kD, String(nD + 1), { expirationTtl: 86400 })]).catch(() => {}));
+    };
+    const askClaude = async (system, content) => {
+      const up = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'x-api-key': env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+        body: JSON.stringify({ model: AI_MODEL, max_tokens: 500, temperature: 0, system, messages: [{ role: 'user', content }] }),
+      });
+      const j = await up.json().catch(() => null);
+      if (!up.ok || !j) throw reply(502, { error: 'ai error' });
+      const out = String((j.content || []).map(c => c.text || '').join(''));
+      let parsed = null;
+      try { parsed = JSON.parse(out.slice(out.indexOf('{'), out.lastIndexOf('}') + 1)); } catch {}
+      if (!parsed || typeof parsed !== 'object') throw reply(502, { error: 'ai parse', stop: j.stop_reason, raw: out.slice(0, 300) }); // 원인 확인용(AI 답의 앞부분만, 키·사진은 없음)
+      return parsed;
+    };
+    // 기록 항목 안의 값만 남긴다: w는 한 값 항목, t는 여러 값 항목
+    const keepFields = (conds, fields) => {
+      const w = {}, t = {};
+      for (const [k, vals] of Object.entries(conds || {})) {
+        const f = fields[k]; if (!f || !Array.isArray(vals)) continue;
+        const ok = [...new Set(vals.map(String).filter(v => f.values.includes(v)))];
+        if (ok.length) (f.tag ? t : w)[k] = ok;
+      }
+      return { w, t };
+    };
 
-
-    /* 글로 적은 목적 → 기록 항목 조건 (Anthropic Claude). 사이트에서 이용자가 'AI로 조건 찾기'를 눌렀을 때만 온다.
-       기록 항목 안의 값만 돌려주고, 같은 문장은 30일 저장해 다시 쓴다. 누가 물었는지는 저장하지 않는다 */
+    /* 글로 적은 목적 → 기록 항목 조건. 같은 문장은 30일 저장해 다시 쓴다 */
     if (kind === 'intent') {
-      if (!env.ANTHROPIC_API_KEY) return reply(503, { error: 'ai off' });
       const text = String(input.text || '').replace(/[\u0000-\u001F\u007F]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60);
       if (text.length < 2) return reply(400, { error: 'empty text' });
-      const kv = env.ROUTE_CACHE;
       const cacheKey = 'intent4:' + text; // 지시문을 바꾸면 번호를 올려 예전 저장 결과를 쓰지 않게 한다
-      if (kv) {
-        const hit = await kv.get(cacheKey).catch(() => null);
-        if (hit) return new Response(hit, { status: 200, headers: { ...cors, 'Content-Type': 'application/json; charset=utf-8', 'X-Cache': 'HIT' } });
-        // 비용 보호: 한 접속 주소당 시간마다 20번, 전체 하루 2000번까지
-        const ip = request.headers.get('CF-Connecting-IP') || 'x';
-        const now = new Date().toISOString();
-        const kIp = `rl:ai:${ip}:${now.slice(0, 13)}`, kDay = `rl:ai:day:${now.slice(0, 10)}`;
-        const [nIp, nDay] = await Promise.all([kv.get(kIp), kv.get(kDay)].map(p => p.then(v => Number(v) || 0).catch(() => 0)));
-        if (nIp >= 20 || nDay >= 2000) return reply(429, { error: 'too many' });
-        ctx.waitUntil(Promise.all([kv.put(kIp, String(nIp + 1), { expirationTtl: 3600 }), kv.put(kDay, String(nDay + 1), { expirationTtl: 86400 })]).catch(() => {}));
-      }
+      if (kv) { const hit = await kv.get(cacheKey).catch(() => null); if (hit) return send(hit, 200, { 'X-Cache': 'HIT' }); }
+      await count();
       const list = Object.entries(AI_FIELDS).map(([k, f]) => `${k} (${f.label}): ${f.values.join(' | ')}`).join('\n');
       const system = `너는 공간 기록 지도의 검색 도우미다. 이용자가 적은 목적 문장을 아래 기록 항목의 값으로만 바꾼다.
 - 목록에 없는 항목이나 값은 절대 만들지 않는다. 값은 글자 그대로 쓴다.
@@ -234,49 +276,22 @@ export default {
 항목:
 ${list}
 출력은 JSON 하나만, 설명 없이: {"conds":{"항목키":["값"]},"missing":["낱말"]}`;
-      const up = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: { 'x-api-key': env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-        body: JSON.stringify({ model: AI_MODEL, max_tokens: 500, temperature: 0, system, messages: [{ role: 'user', content: text }] }),
-      });
-      const j = await up.json().catch(() => null);
-      if (!up.ok || !j) return reply(502, { error: 'ai error' });
-      const out = String((j.content || []).map(c => c.text || '').join(''));
-      let parsed = null;
-      try { parsed = JSON.parse(out.slice(out.indexOf('{'), out.lastIndexOf('}') + 1)); } catch {}
-      if (!parsed || typeof parsed !== 'object') return reply(502, { error: 'ai parse', stop: j.stop_reason, raw: out.slice(0, 300) }); // 원인 확인용(AI 답의 앞부분만, 키·사진은 없음)
-      // 기록 항목 안의 값만 남긴다
-      const w = {}, t = {};
-      for (const [k, vals] of Object.entries(parsed.conds || {})) {
-        const f = AI_FIELDS[k]; if (!f || !Array.isArray(vals)) continue;
-        const ok = [...new Set(vals.map(String).filter(v => f.values.includes(v)))];
-        if (ok.length) (f.tag ? t : w)[k] = ok;
-      }
+      const parsed = await askClaude(system, text);
+      const { w, t } = keepFields(parsed.conds, AI_FIELDS);
       const missing = (Array.isArray(parsed.missing) ? parsed.missing : []).map(s => String(s).slice(0, 12)).slice(0, 3);
       const body = JSON.stringify({ w, t, missing });
       if (kv) ctx.waitUntil(kv.put(cacheKey, body, { expirationTtl: 30 * 86400 }).catch(() => {}));
-      return new Response(body, { status: 200, headers: { ...cors, 'Content-Type': 'application/json; charset=utf-8', 'X-Cache': kv ? 'MISS' : 'OFF' } });
+      return send(body, 200, { 'X-Cache': kv ? 'MISS' : 'OFF' });
     }
 
-
-    /* 사진으로 항목 채우기 (Anthropic Claude, 이미지). 기록 창에서 이용자가 'AI로 사진 보고 채우기'를 눌렀을 때만 온다.
-       사진은 저장하지 않고 바로 넘기며, 눈으로 확인할 수 있는 항목만 고르게 한다. 잰 숫자(단차 cm, 소음 dB)는 고르지 않는다 */
-    if (kind === 'photo') {
-      if (!env.ANTHROPIC_API_KEY) return reply(503, { error: 'ai off' });
-      const imgs = (Array.isArray(input.images) ? input.images : []).slice(0, 3).map(String)
-        .filter(s => s.length > 100 && s.length < 1500000 && /^[A-Za-z0-9+/=]+$/.test(s));
-      if (!imgs.length) return reply(400, { error: 'no image' });
-      const kv = env.ROUTE_CACHE;
-      if (kv) { // 비용 보호: 한 접속 주소당 시간마다 10번, 전체 하루 500번까지
-        const ip = request.headers.get('CF-Connecting-IP') || 'x';
-        const now = new Date().toISOString();
-        const kIp = `rl:ph:${ip}:${now.slice(0, 13)}`, kDay = `rl:ph:day:${now.slice(0, 10)}`;
-        const [nIp, nDay] = await Promise.all([kv.get(kIp), kv.get(kDay)].map(p => p.then(v => Number(v) || 0).catch(() => 0)));
-        if (nIp >= 10 || nDay >= 500) return reply(429, { error: 'too many' });
-        ctx.waitUntil(Promise.all([kv.put(kIp, String(nIp + 1), { expirationTtl: 3600 }), kv.put(kDay, String(nDay + 1), { expirationTtl: 86400 })]).catch(() => {}));
-      }
-      const list = Object.entries(PHOTO_FIELDS).map(([k, f]) => `${k} (${f.label}${f.tag ? ', 여러 개 가능' : ', 하나만'}): ${f.values.join(' | ')}${f.hint ? ` — ${f.hint}` : ''}`).join('\n');
-      const system = `너는 공간 기록 지도의 기록 도우미다. 이용자가 매장에서 찍은 사진을 보고, 아래 기록 항목 중 사진에서 눈으로 분명히 확인되는 것만 고른다.
+    /* 사진으로 항목 채우기. 사진은 저장하지 않고 바로 넘기며, 눈으로 확인할 수 있는 항목만 고르게 한다.
+       잰 숫자(단차 cm, 소음 dB)는 고르지 않는다 */
+    const imgs = (Array.isArray(input.images) ? input.images : []).slice(0, 3).map(String)
+      .filter(s => s.length > 100 && s.length < 1500000 && /^[A-Za-z0-9+/=]+$/.test(s));
+    if (!imgs.length) return reply(400, { error: 'no image' });
+    await count();
+    const list = Object.entries(PHOTO_FIELDS).map(([k, f]) => `${k} (${f.label}${f.tag ? ', 여러 개 가능' : ', 하나만'}): ${f.values.join(' | ')}${f.hint ? ` — ${f.hint}` : ''}`).join('\n');
+    const system = `너는 공간 기록 지도의 기록 도우미다. 이용자가 매장에서 찍은 사진을 보고, 아래 기록 항목 중 사진에서 눈으로 분명히 확인되는 것만 고른다.
 - 목록에 없는 항목이나 값은 만들지 않는다. 값은 글자 그대로 쓴다.
 - 사진에 보이지 않거나 애매하면 그 항목은 고르지 않는다. 추측하지 않는다. 적게 고르는 편이 낫다.
 - '하나만' 항목은 값 하나, '여러 개 가능' 항목은 분명히 보이는 것을 모두.
@@ -286,57 +301,41 @@ ${list}
 항목:
 ${list}
 출력은 JSON 하나만, 설명 없이: {"conds":{"항목키":["값"]}}`;
-      const content = [...imgs.map(data => ({ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data } })), { type: 'text', text: '이 사진들에서 확인되는 항목을 골라 줘.' }];
-      const up = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: { 'x-api-key': env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-        body: JSON.stringify({ model: AI_MODEL, max_tokens: 500, temperature: 0, system, messages: [{ role: 'user', content }] }),
-      });
-      const j = await up.json().catch(() => null);
-      if (!up.ok || !j) return reply(502, { error: 'ai error' });
-      const out = String((j.content || []).map(c => c.text || '').join(''));
-      let parsed = null;
-      try { parsed = JSON.parse(out.slice(out.indexOf('{'), out.lastIndexOf('}') + 1)); } catch {}
-      if (!parsed || typeof parsed !== 'object') return reply(502, { error: 'ai parse', stop: j.stop_reason, raw: out.slice(0, 300) }); // 원인 확인용(AI 답의 앞부분만, 키·사진은 없음)
-      const w = {}, t = {};
-      for (const [k, vals] of Object.entries(parsed.conds || {})) {
-        const f = PHOTO_FIELDS[k]; if (!f || !Array.isArray(vals)) continue;
-        const ok = [...new Set(vals.map(String).filter(v => f.values.includes(v)))];
-        if (!ok.length) continue;
-        if (f.tag) t[k] = ok; else w[k] = ok[0];
-      }
-      return reply(200, { w, t });
-    }
+    const content = [...imgs.map(data => ({ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data } })), { type: 'text', text: '이 사진들에서 확인되는 항목을 골라 줘.' }];
+    const { w, t } = keepFields((await askClaude(system, content)).conds, PHOTO_FIELDS);
+    for (const k of Object.keys(w)) w[k] = w[k][0]; // 사진은 한 값 항목마다 값 하나
+    return reply(200, { w, t });
+  }
 
-    /* TMAP 경로: 국내 좌표만, 정해진 칸만 넘긴다 */
-    if (!env.TMAP_APP_KEY) return reply(500, { error: 'TMAP_APP_KEY is not set' });
-    const sx = num(input.startX), sy = num(input.startY), ex = num(input.endX), ey = num(input.endY);
-    if (!inKorea(sx, sy) || !inKorea(ex, ey)) return reply(400, { error: 'coordinates out of range' });
-    const stamp = /^\d{12}$/.test(String(input.searchDttm || '')) ? String(input.searchDttm) : '';
-
-    const body = kind === 'transit'
-      ? { startX: String(sx), startY: String(sy), endX: String(ex), endY: String(ey), lang: 0, format: 'json', count: 10, ...(stamp && { searchDttm: stamp }) }
-      : { startX: String(sx), startY: String(sy), endX: String(ex), endY: String(ey), startName: encodeURIComponent('출발'), endName: encodeURIComponent('도착') };
-
-    // 같은 구간(약 10m 단위) 요청은 저장해 둔 결과를 준다 (Cloudflare KV, 바인딩 이름 ROUTE_CACHE)
-    // 대중교통은 시각에 따라 달라서 같은 10분대만, 도보는 하루 동안 다시 쓴다. 누가 요청했는지는 저장하지 않는다
-    const r4 = v => v.toFixed(4);
-    const cacheKey = `${kind}:${r4(sx)},${r4(sy)},${r4(ex)},${r4(ey)}` + (kind === 'transit' ? `:${stamp.slice(0, 11)}` : '');
-    const kv = env.ROUTE_CACHE;
-    const json = (text, state) => new Response(text, { status: 200, headers: { ...cors, 'Content-Type': 'application/json; charset=utf-8', 'X-Cache': state } });
-    if (kv) {
-      const hit = await kv.get(cacheKey).catch(() => null);
-      if (hit) return json(hit, 'HIT');
-    }
-
+  /* TMAP 경로: 국내 좌표만, 정해진 칸만 넘긴다 */
+  if (!env.TMAP_APP_KEY) return reply(500, { error: 'TMAP_APP_KEY is not set' });
+  const sx = num(input.startX), sy = num(input.startY), ex = num(input.endX), ey = num(input.endY);
+  if (!inKorea(sx, sy) || !inKorea(ex, ey)) return reply(400, { error: 'coordinates out of range' });
+  const stamp = /^\d{12}$/.test(String(input.searchDttm || '')) ? String(input.searchDttm) : '';
+  const body = kind === 'transit'
+    ? { startX: String(sx), startY: String(sy), endX: String(ex), endY: String(ey), lang: 0, format: 'json', count: 10, ...(stamp && { searchDttm: stamp }) }
+    : { startX: String(sx), startY: String(sy), endX: String(ex), endY: String(ey), startName: encodeURIComponent('출발'), endName: encodeURIComponent('도착') };
+  // 같은 구간(약 10m 단위) 요청은 저장해 둔 결과를 준다. 대중교통은 같은 10분대만, 도보는 하루 동안. 누가 요청했는지는 저장하지 않는다
+  const r4 = v => v.toFixed(4);
+  const cacheKey = `${kind}:${r4(sx)},${r4(sy)},${r4(ex)},${r4(ey)}` + (kind === 'transit' ? `:${stamp.slice(0, 11)}` : '');
+  return cached(cacheKey, CACHE_SECONDS[kind], async () => {
     const upstream = await fetch(TMAP[kind], {
       method: 'POST',
       headers: { appKey: env.TMAP_APP_KEY, 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify(body),
     });
     const text = await upstream.text();
-    if (!upstream.ok) return new Response(text, { status: upstream.status, headers: { ...cors, 'Content-Type': 'application/json; charset=utf-8', 'X-Cache': 'MISS' } });
-    if (kv) ctx.waitUntil(kv.put(cacheKey, text, { expirationTtl: CACHE_SECONDS[kind] }).catch(() => {}));
-    return json(text, kv ? 'MISS' : 'OFF');
-  },
-};
+    if (!upstream.ok) throw send(text, upstream.status, { 'X-Cache': 'MISS' });
+    return text;
+  });
+}
+
+// Supabase 로그인 토큰 → 회원번호. 토큰이 없거나 틀리면 null
+async function userOf(request) {
+  const m = /^Bearer ([A-Za-z0-9._-]{20,4096})$/.exec(request.headers.get('Authorization') || '');
+  if (!m) return null;
+  const r = await fetch(SUPABASE_URL + '/auth/v1/user', { headers: { apikey: SUPABASE_KEY, Authorization: 'Bearer ' + m[1] } }).catch(() => null);
+  if (!r || !r.ok) return null;
+  const u = await r.json().catch(() => null);
+  return u && typeof u.id === 'string' ? u.id : null;
+}
