@@ -3269,15 +3269,16 @@ async function runExtSearch(query){
   const hits = [...state.near.values()].filter(p => fuzzyHas(p.name, query)).slice(0, 10);
   // 상가 DB에서 찾은 곳: 카카오 결과에 같은 가게(가깝고 이름 앞 두 글자 같음)가 없을 때만 더한다
   const sameShop = (a, b) => Math.abs(a.lat - b.lat) < 0.0005 && Math.abs(a.lng - b.lng) < 0.0006 && nameKey(a.name) === nameKey(b.name);
-  const shops = (await shopP).map(s => ({ id: 's' + s.id, ext: true, shop: true, name: cleanText([s.name, s.branch].filter(Boolean).join(' '), 40),
+  // 카카오가 적은 말을 이름에 담은 곳을 찾았는지('계돈이네'에 '우면산계돈불백'만 왔으면 못 찾은 것)
+  const kakaoHit = results.some(r => normQ(r.name).includes(normQ(query.split(/\s+/)[0])));
+  const shops =(await shopP).map(s => ({ id: 's' + s.id, ext: true, shop: true, name: cleanText([s.name, s.branch].filter(Boolean).join(' '), 40),
     category: cleanText([s.cat1, s.cat2, s.cat3].filter(Boolean).join(' > '), 60), type: cleanText(s.cat3 || s.cat2 || '', 20), addr: cleanText(s.addr, 60),
     phone: '', url: '', floor: cleanText(s.floor, 4), lat: +s.lat, lng: +s.lng }))
-    // 지도에서 먼(15km 넘는) DB 가게는 카카오가 아무것도 못 찾았을 때만 보여 준다(동탄에서 찾을 때 서울 가게가 앞에 끼지 않게,
-    // 그래도 서울 화면에서 '계돈이네'처럼 카카오에 없는 동탄 가게를 찾으면 나오게)
-    .filter(s => s.lat >= 33 && s.lat <= 39 && (!near || !results.length || distM(near, s) < 15000) && !results.some(r => sameShop(r, s)) && !hits.some(h => sameShop(h, s)));
+    // 지도에서 먼(15km 넘는) DB 가게는 카카오도 지도 위 점도 이름이 맞는 곳을 못 찾았을 때만 보여 준다
+    // (동탄에서 찾을 때 서울 가게가 앞에 끼지 않게, 그래도 서울 화면에서 카카오에 없는 동탄 '계돈이네'를 찾으면 나오게)
+    .filter(s => s.lat >= 33 && s.lat <= 39 && (!near || (!kakaoHit && !hits.length) || distM(near, s) < 15000) && !results.some(r => sameShop(r, s)) && !hits.some(h => sameShop(h, s)));
   if (state.ext.query !== query) return;
   // 카카오가 적은 말을 이름에 담은 곳을 못 찾았으면 상가 DB 결과를 앞에, 아니면 뒤에
-  const kakaoHit = results.some(r => normQ(r.name).includes(normQ(query.split(/\s+/)[0])));
   const merged = kakaoHit ? [...results, ...shops.slice(0, 8)] : [...shops.slice(0, 10), ...results];
   extCache.set(key, { results: merged, fixed });
   const fresh = [...hits, ...merged.filter(r => !hits.some(h => h.id === r.id))].filter(r => !isRecorded(r));
