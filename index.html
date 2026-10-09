@@ -232,6 +232,11 @@ button.stat[aria-pressed="true"] span{color:#FFFFFF}
 .intent-go:disabled{opacity:.5;cursor:default}
 .intent-ai{display:block;margin-top:10px}
 .bld-list{margin:6px 0 10px;max-height:320px;overflow-y:auto}
+.bld-find{width:100%;margin:6px 0 4px;padding:8px 11px;border:1px solid var(--line);border-radius:10px;background:var(--panel);color:inherit;font:inherit;font-size:14px}
+.bld-floors{margin:4px 0 2px;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}
+.bld-floors .chip{flex:none}
+.bld-list .bld-floor{position:sticky;top:0;z-index:1;padding:6px 2px 4px;background:var(--panel);color:var(--muted);font-size:12px;font-weight:700}
+.bld-others{margin:6px 0 10px}
 /* 가게 화면에 함께 보이는 건물 기록(입구·엘리베이터) */
 .bld-note{display:flex;align-items:center;gap:10px;margin:10px 0;padding:10px 12px;border-radius:10px;background:var(--paper);font-size:13px}
 .bld-note div{flex:1;display:grid;gap:2px}
@@ -1790,17 +1795,96 @@ function renderDetail(){
     if (p.jibun && p.jibun !== p.addr) box.appendChild(el('p','ext-phone', `지번 ${p.jibun}`));
     if (p.shops.length) {
       box.appendChild(el('h3','sec-title', `이 건물 가게 ${p.shops.length >= 300 ? '300곳 넘게' : p.shops.length + '곳'}`));
+      // 층별로 묶어 보여 준다(지하 → 1층 → 2층 … → 층 정보 없음). 가게가 많으면 이름으로 거르는 칸과 층 고르기를 단다
+      const flOf = s => !s.floor ? '' : /^\d+$/.test(s.floor) ? s.floor + '층' : s.floor === '지' ? '지하' : s.floor;
+      const rank = f => !f ? 999 : /^(지하|B)/i.test(f) ? -1 : parseInt(f, 10) || 500;
+      const floors = [...new Set(p.shops.map(flOf))].sort((x, y) => rank(x) - rank(y));
+      // 찾는 말·고른 층은 카드(p)에 둔다: 상세 패널은 내 위치가 바뀔 때 등 자주 다시 그려져서, 지역 변수면 적던 글이 사라진다
       const ul = el('ul','list bld-list');
-      for (const s of p.shops.slice(0, 30)) {
-        const li = el('li'), b = el('button','item'); b.type = 'button';
-        const fl = s.floor ? (/^\d+$/.test(s.floor) ? s.floor + '층' : s.floor === '지' ? '지하' : s.floor) : '';
-        b.append(el('div','item-name', s.name), el('div','item-sub', [s.type, fl].filter(Boolean).join(' · ')));
-        b.addEventListener('click', () => openShop(s));
-        li.appendChild(b); ul.appendChild(li);
+      const draw = () => {
+        ul.replaceChildren();
+        const q = p.bq || '', only = p.bfl === undefined ? null : p.bfl;
+        const hit = p.shops.filter(s => (!q || fuzzyHas(s.name, q)) && (only === null || flOf(s) === only));
+        for (const f of floors) {
+          const group = hit.filter(s => flOf(s) === f); if (!group.length) continue;
+          if (floors.length > 1) ul.appendChild(el('li','bld-floor', f || '층 정보 없음'));
+          for (const s of group) {
+            const li = el('li'), b = el('button','item'); b.type = 'button';
+            b.append(el('div','item-name', s.name), el('div','item-sub', s.type || ''));
+            b.addEventListener('click', () => openShop(s));
+            li.appendChild(b); ul.appendChild(li);
+          }
+        }
+        if (!hit.length) {
+          ul.appendChild(el('li','bld-floor', q.length >= 2 ? '상가정보에는 없어요. 카카오에서 이 건물의 같은 이름을 찾는 중…' : '맞는 가게가 없어요'));
+          if (q.length >= 2) kakaoInBuilding(q).then(found => {
+            if ((p.bq || '') !== q || !ul.isConnected) return; // 그사이 다른 말을 적었다
+            ul.replaceChildren();
+            if (!found.length) { ul.appendChild(el('li','bld-floor','이 건물에서 맞는 가게를 찾지 못했어요')); return; }
+            ul.appendChild(el('li','bld-floor','카카오에서 찾은 이 건물 가게'));
+            for (const s of found) {
+              const li = el('li'), b = el('button','item'); b.type = 'button';
+              b.append(el('div','item-name', s.name), el('div','item-sub', s.type || ''));
+              b.addEventListener('click', () => openShop(s));
+              li.appendChild(b); ul.appendChild(li);
+            }
+          });
+        }
+      };
+      // 상가정보에 없는 가게(백화점 매장 등)는 카카오에 이름으로 묻고, 이 건물 주소인 곳만 남긴다
+      const bkeys = new Set([p.addr, ...p.shops.map(s => s.addr)].map(roadKey).filter(Boolean));
+      // 글자마다·다시 그릴 때마다 묻지 않게: 같은 말은 카드에 저장해 두고, 적는 동안은 0.5초 기다린다
+      const kakaoInBuilding = text => {
+        p.bkc = p.bkc || new Map();
+        if (!p.bkc.has(text)) p.bkc.set(text, new Promise(res => setTimeout(res, 500)).then(() => (p.bq || '') === text ? askKakao(text) : (p.bkc.delete(text), [])));
+        return p.bkc.get(text);
+      };
+      const askKakao = async text => {
+        try {
+          const r = await proxyPost('/search', { query: text, x: String(p.lng), y: String(p.lat), sort: 'distance' });
+          const j = r.ok ? await r.json() : {};
+          return (j.places || []).filter(x => bkeys.has(roadKey(x.address))).slice(0, 10).map(x => {
+            const m = KAKAO_PLACE.exec(String(x.url || '')), lat = toNum(x.y), lng = toNum(x.x);
+            return { id: 'k' + (m ? m[1] : `${lat}-${lng}`), ext: true, name: cleanText(x.name, 40), category: cleanText(x.category, 60),
+              type: cleanText(String(x.category || '').split('>').pop(), 20), addr: cleanText(x.address, 60), phone: cleanText(x.phone, 20),
+              url: m ? `https://place.map.kakao.com/${m[1]}` : '', lat, lng };
+          });
+        } catch { return []; }
+      };
+      if (p.shops.length > 12) {
+        const find = el('input','bld-find'); find.type = 'search'; find.placeholder = '이 건물 안에서 가게 이름 찾기'; find.setAttribute('aria-label','이 건물 안에서 가게 이름 찾기');
+        find.value = p.bq || '';
+        find.addEventListener('input', () => { p.bq = find.value.trim(); draw(); });
+        find.addEventListener('focus', () => { p.bfocus = true; });
+        find.addEventListener('blur', () => { if (find.isConnected) p.bfocus = false; }); // 다시 그려져 빠질 때는 계속 적는 중으로 본다
+        box.appendChild(find);
+        if (p.bfocus) requestAnimationFrame(() => { if (find.isConnected) { find.focus(); find.setSelectionRange(find.value.length, find.value.length); } });
+        if (floors.filter(Boolean).length > 1) {
+          const chips = el('div','chips bld-floors'), opts = [null, ...floors];
+          for (const f of opts) {
+            const c = el('button','chip', f === null ? '전체' : f || '층 정보 없음'); c.type = 'button';
+            c.setAttribute('aria-pressed', String((p.bfl === undefined ? null : p.bfl) === f));
+            c.addEventListener('click', () => { p.bfl = f; chips.querySelectorAll('.chip').forEach((x, i) => x.setAttribute('aria-pressed', String(opts[i] === f))); draw(); });
+            chips.appendChild(c);
+          }
+          box.appendChild(chips);
+        }
       }
+      draw();
       box.appendChild(ul);
-      if (p.shops.length > 30) box.appendChild(el('p','add-hint', `가까운 30곳만 보여요. 가게 이름으로 검색하면 나머지도 찾을 수 있어요.`));
     } else box.appendChild(el('p','ext-none','상가정보에 등록된 가게가 없는 건물이에요. 주택·빌라이거나 아직 정보가 없는 곳이에요.'));
+    // 가장자리를 눌러 옆 건물이 잡혔을 수 있다: 바로 옆 다른 건물들을 고를 수 있게
+    if (p.others && p.others.length) {
+      box.appendChild(el('h3','sec-title','이 근처 다른 건물'));
+      const ol = el('ul','list bld-others');
+      for (const o of p.others) {
+        const li = el('li'), b = el('button','item'); b.type = 'button';
+        b.append(el('div','item-name', o.addr.split(/\s+/).slice(-2).join(' ')), el('div','item-sub', `가게 ${o.n}곳 · ${o.names.join(', ')}${o.n > o.names.length ? ' 등' : ''}`));
+        b.addEventListener('click', () => openOtherBuilding(o));
+        li.appendChild(b); ol.appendChild(li);
+      }
+      box.appendChild(ol);
+    }
     const acts = el('div','ext-acts'), br = buildingRecFor(p);
     if (br) { // 이미 기록한 건물이면 그 기록을 보여 주고 연다
       box.insertBefore(buildingNote(br), box.firstChild);
@@ -3452,30 +3536,58 @@ async function placeAt(x, y){
     const at = map.getProjection().fromOffsetToCoord(new naver.maps.Point(x, y));
     const r = await proxyPost('/addr', { x: String(at.lng()), y: String(at.lat()) });
     if (!r.ok) return null;
-    const a = await r.json(), key = roadKey(a.road);
-    let shops = [];
-    if (sb && key) {
-      // 같은 도로명주소의 가게(supabase/18_shops_at_addr.sql, 누른 자리에서 가까운 순). 함수가 아직 없으면 근처 칸에서 주소로 거른다
-      let { data, error } = await sb.rpc('shops_at_addr', { p_addr: a.road, at_lat: at.lat(), at_lng: at.lng() });
-      if (error) {
-        ({ data } = await sb.rpc('shops_in_box', { min_lng: at.lng() - 0.0012, min_lat: at.lat() - 0.0009, max_lng: at.lng() + 0.0012, max_lat: at.lat() + 0.0009, lim: 400 }));
-        data = (data || []).filter(s => roadKey(s.addr) === key);
-      }
-      shops = (data || []).map(shopPlace);
-    }
-    // 상가정보에 없는 곳(어린이집·병원 등 지도에 이미 뜬 카카오 장소)도 같은 도로명주소면 목록에 함께
-    if (key) {
-      const nm = s => squash(s.name);
-      const kak = [...state.near.values()].filter(q => !q.shop && !q.building && q.addr && roadKey(q.addr) === key && !shops.some(s => nm(s) === nm(q)));
-      shops = [...kak, ...shops];
-    }
-    if (shops.length === 1) return shops[0];
-    if (!a.road && !shops.length) return null; // 길·공원 등: 건물이 아니다
-    const short = a.road ? a.road.split(/\s+/).slice(-2).join(' ') : a.jibun;
-    return { id: 'b' + (key || a.jibun).replace(/\s+/g, '_'), ext: true, building: true, kind: 'BLD', name: cleanText(a.building || short, 40),
-      category: '건물', type: a.building ? '건물' : '', addr: cleanText(a.road || a.jibun, 60), jibun: cleanText(a.jibun, 60),
-      phone: '', url: '', lat: at.lat(), lng: at.lng(), shops };
+    return await buildingAt(await r.json(), at.lat(), at.lng(), true);
   } catch { return null; }
+}
+// 주소(/addr 결과) → 건물 카드. 같은 건물의 가게 = 도로명주소가 같거나, 같은 필지(지번)에 딸린 다른 도로명주소의 가게
+// (supabase/22_shop_lots.sql: 분당 AK플라자처럼 한 필지에 주소가 둘인 단지). single이면 가게가 하나뿐일 때 그 가게를 바로 연다
+const lotOf = j => String(j || '').trim().split(/\s+/).slice(1).join(' '); // '서울 강동구 암사동 509' → '강동구 암사동 509'
+async function buildingAt(a, lat, lng, single){
+  const key = roadKey(a.road), lot = lotOf(a.jibun);
+  let shops = [], addrs = new Set(a.road ? [a.road] : []);
+  if (sb && (key || lot)) {
+    let { data, error } = await sb.rpc('shops_at_place', { p_addr: a.road || '', p_lot: lot, at_lat: lat, at_lng: lng });
+    if (error && key) ({ data } = await sb.rpc('shops_at_addr', { p_addr: a.road, at_lat: lat, at_lng: lng })); // 22번 SQL 전
+    for (const s of data || []) addrs.add(s.addr);
+    shops = (data || []).map(shopPlace);
+  }
+  // 상가정보에 없는 곳(어린이집·병원 등 지도에 이미 뜬 카카오 장소)도 같은 건물 주소면 목록에 함께
+  const keys = new Set([...addrs].map(roadKey).filter(Boolean));
+  if (keys.size) {
+    const kak = [...state.near.values()].filter(q => !q.shop && !q.building && q.addr && keys.has(roadKey(q.addr)) && !shops.some(s => squash(s.name) === squash(q.name)));
+    shops = [...kak, ...shops];
+  }
+  if (single && shops.length === 1) return shops[0];
+  if (!a.road && !shops.length) return null; // 길·공원 등: 건물이 아니다
+  const short = a.road ? a.road.split(/\s+/).slice(-2).join(' ') : a.jibun;
+  return { id: 'b' + (key || a.jibun).replace(/\s+/g, '_'), ext: true, building: true, kind: 'BLD', name: cleanText(a.building || short, 40),
+    category: '건물', type: a.building ? '건물' : '', addr: cleanText(a.road || a.jibun, 60), jibun: cleanText(a.jibun, 60),
+    phone: '', url: '', lat, lng, shops, others: await otherBuildings(lat, lng, keys) };
+}
+// 이 근처 다른 건물: 누른 자리 약 30m 안의 가게 중 다른 주소인 곳을 건물별로 묶는다(가장자리를 눌러 옆 건물이 잡혔을 때 고를 수 있게)
+async function otherBuildings(lat, lng, keys){
+  if (!sb) return [];
+  try {
+    const { data } = await sb.rpc('shops_in_box', { min_lng: lng - 0.00035, min_lat: lat - 0.00027, max_lng: lng + 0.00035, max_lat: lat + 0.00027, lim: 200 });
+    const by = new Map();
+    for (const s of data || []) {
+      const k = roadKey(s.addr); if (!k || keys.has(k)) continue;
+      const g = by.get(k) || { addr: s.addr, lat: +s.lat, lng: +s.lng, n: 0, names: [] };
+      g.n++; if (g.names.length < 2) g.names.push(s.name);
+      if (distM(s, { lat, lng }) < distM(g, { lat, lng })) Object.assign(g, { lat: +s.lat, lng: +s.lng });
+      by.set(k, g);
+    }
+    return [...by.values()].sort((x, y) => distM(x, { lat, lng }) - distM(y, { lat, lng })).slice(0, 4);
+  } catch { return []; }
+}
+// 근처 다른 건물 하나를 연다: 그 자리의 건물 이름·지번을 다시 받아 같은 방식으로 카드를 만든다
+async function openOtherBuilding(o){
+  try {
+    const r = await proxyPost('/addr', { x: String(o.lng), y: String(o.lat) });
+    const a = r.ok ? await r.json() : null;
+    const card = await buildingAt(a && a.road ? a : { road: o.addr, jibun: '', building: '' }, o.lat, o.lng, false);
+    if (card) openShop(card);
+  } catch {}
 }
 function openShop(p){
   // 이미 기록한 가게면 우리 기록을 연다
