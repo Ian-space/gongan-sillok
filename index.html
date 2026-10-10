@@ -3751,10 +3751,10 @@ function fetchRing(lat, lng){
     const out = { ring, floors: num(pr.grnd_flr || pr.gro_flo_co), under: num(pr.ugrnd_flr), use: BLD_USE[pr.usability] || '', year: yearOf(pr), name };
     // 아파트 단지(공동주택, '509동' 같은 동이 있는 곳): 그 동이 선 필지와 같은 단지 이름의 동을 모두 받아 단지 하나로 묶는다.
     // 필지는 누른 자리 대신 그 동의 가운데로 찾는다(단지 안 공원·도로 필지를 누른 경우를 피하려고)
-    if (pr.usability === '02000' && /\d+동$/.test(pr.dong_nm || '')) {
+    if ((pr.usability === '02000' || !pr.usability) && DONG_RE.test(pr.dong_nm || '')) {
       const cx0 = ring.reduce((s, p) => s + p[0], 0) / ring.length, cy0 = ring.reduce((s, p) => s + p[1], 0) / ring.length;
-      const cx = await fetchComplex((pr.bld_nm || '').replace(/\s*\d+동$/, '').trim(), cy0, cx0);
-      if (cx) out.complex = Object.assign(cx, { tapped: cleanText(pr.dong_nm, 10) });
+      const cx = await fetchComplex(complexBase(pr.bld_nm), cy0, cx0);
+      if (cx) out.complex = Object.assign(cx, { tapped: dongLabel(pr.dong_nm) });
     }
     return out;
   })().catch(() => null));
@@ -3764,11 +3764,16 @@ function fetchRing(lat, lng){
 // → { name, count, rings, floors, year }. 잠실주공처럼 동마다 이름이 다른('주공아파트 509동', '잠실아파트 517동') 단지는 필지로,
 // 한 동이 옆 필지에 있는 단지는 이름으로 잡힌다
 const complexCache = new Map();
+// 동 이름 표기가 단지마다 다르다: '509동', '9'(은마), 건물 이름도 '은마아파트(9동)', '은마아파트 7동', '은마아파트3동'
+const DONG_RE = /^\d+$|\d+동$/;
+const dongLabel = d => cleanText(/^\d+$/.test(d || '') ? d + '동' : d, 10);
+const complexBase = n => String(n || '').replace(/\s*\(?\s*(제\s*)?\d+\s*동\s*\)?\s*$/, '').trim();
 const vwOuter = f => { const g = f.geometry || {}; return (g.type === 'MultiPolygon' ? (g.coordinates[0] || [])[0] : (g.coordinates || [])[0]) || []; };
 function fetchComplex(name, lat, lng){
   const k = `${name}|${lat.toFixed(4)},${lng.toFixed(4)}`;
   if (!complexCache.has(k)) complexCache.set(k, (async () => {
-    const isDong = f => /\d+동$/.test((f.properties || {}).dong_nm || '');
+    // 아파트 동: '○○동'이 있고 용도가 공동주택이거나 비어 있는 것(래미안대치팰리스처럼 용도가 빈 단지도 있다)
+    const isDong = f => { const p = f.properties || {}; return DONG_RE.test(p.dong_nm || '') && (p.usability === '02000' || !p.usability); };
     const cen = r => [r.reduce((s, p) => s + p[0], 0) / r.length, r.reduce((s, p) => s + p[1], 0) / r.length];
     const got = new Map(); // 동 이름+위치 → 동
     const add = f => { const r = vwOuter(f); if (r.length < 3 || !isDong(f)) return; const [cx, cy] = cen(r); got.set(`${f.properties.dong_nm}|${cx.toFixed(4)},${cy.toFixed(4)}`, f); };
@@ -3776,16 +3781,28 @@ function fetchComplex(name, lat, lng){
     const pr = parcel ? vwOuter(parcel) : [];
     if (pr.length >= 3) {
       const xs = pr.map(p => p[0]), ys = pr.map(p => p[1]);
-      const fs = await vworldBldg(`BOX(${Math.min(...xs)},${Math.min(...ys)},${Math.max(...xs)},${Math.max(...ys)})`, 1000, 'LT_C_BLDGINFO', { attrFilter: 'usability:=:02000' });
+      const fs = await vworldBldg(`BOX(${Math.min(...xs)},${Math.min(...ys)},${Math.max(...xs)},${Math.max(...ys)})`, 1000, 'LT_C_BLDGINFO');
       for (const f of fs) { const r = vwOuter(f); if (r.length >= 3 && inRing(...cen(r), pr)) add(f); }
     }
-    if (name) for (const f of await vworldBldg(`BOX(${lng - 0.004},${lat - 0.003},${lng + 0.004},${lat + 0.003})`, 100, 'LT_C_BLDGINFO', { attrFilter: `bld_nm:=:${name}` })) add(f);
+    // 이름으로 더하기: '현대아파트 11동', '은마아파트(9동)'처럼 동 번호가 붙은 이름도 같은 단지로 본다(동 번호를 뗀 이름이 같으면).
+    // 필지로 이미 2개 동 넘게 잡혔으면, '주공아파트'처럼 흔한 이름은 옆 단지까지 합쳐지므로 더하지 않고, 흔하지 않은 이름도 그 단지 150m 안만.
+    // 필지로 못 잡았으면(동마다 필지가 따로인 단지) 이름으로 약 200m 안을 찾는다
+    const generic = /^(주공|현대|삼성|한양|대우|우성|극동|럭키|미성|한신|동아|벽산|두산|대림|쌍용|롯데|금호|신동아|청구|건영|라이프|한진|임광|삼익|진로|코오롱)\d*차?아파트$|주공\d*(단지)?아파트$/.test(name || '');
+    const base = [...got.values()];
+    if (name && !(base.length >= 2 && generic)) {
+      const r = base.length >= 2 ? 0.0025 : 0.0022;
+      for (const f of await vworldBldg(`BOX(${lng - r},${lat - r * 0.8},${lng + r},${lat + r * 0.8})`, 200, 'LT_C_BLDGINFO', { attrFilter: `bld_nm:like:${name}` })) {
+        if (complexBase(f.properties.bld_nm) !== name) continue;
+        if (base.length >= 2) { const [fx, fy] = cen(vwOuter(f)); if (!base.some(b => { const [bx, by] = cen(vwOuter(b)); return Math.hypot((fx - bx) * 0.79, fy - by) < 0.00135; })) continue; } // 약 150m
+        add(f);
+      }
+    }
     const all = [...got.values()];
     if (all.length < 2) return null;
     const rings = all.map(f => vwOuter(f).slice(0, 300).map(([x, y]) => [+x, +y]));
     const yrs = all.map(g => (g.properties.useapr_day || '')).filter(d => /^\d{8}$/.test(d)).map(d => d.slice(0, 4)).sort();
     // 이름: 주어진 단지 이름, 없으면 동 이름에서 '509동'을 뺀 것 중 가장 많은 것
-    const counts = {}; for (const f of all) { const n = (f.properties.bld_nm || '').replace(/\s*\d+동$/, '').trim(); if (n) counts[n] = (counts[n] || 0) + 1; }
+    const counts = {}; for (const f of all) { const n = complexBase(f.properties.bld_nm); if (n) counts[n] = (counts[n] || 0) + 1; }
     const top = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
     return { name: cleanText(name || (top && top[0]) || '아파트 단지', 40), count: rings.length, rings,
       floors: Math.max(0, ...all.map(g => parseInt(g.properties.grnd_flr, 10) || 0)), year: yrs[0] || '' };
