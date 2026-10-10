@@ -1807,8 +1807,9 @@ function renderDetail(){
   if (p.building) { // 지도에서 누른 건물: 주소와 이 건물 안 가게(상가정보)
     const box = el('div','ext-info');
     if (p.jibun && p.jibun !== p.addr) box.appendChild(el('p','ext-phone', `지번 ${p.jibun}`));
-    if (p.floorsAbove) box.appendChild(el('p','ext-phone', `지상 ${p.floorsAbove}층 건물 (브이월드)`));
-    if (p.shops.length) {
+    // 건물통합정보(브이월드): 층수·용도·사용승인 연도. 엘리베이터가 필요한지 가늠하는 데 쓰는 공공 사실
+    const bf = [p.floorsAbove && `지상 ${p.floorsAbove}층`, p.floorsUnder && `지하 ${p.floorsUnder}층`, p.bldUse, p.bldYear && `${p.bldYear}년 사용승인`].filter(Boolean);
+    if (bf.length) box.appendChild(el('p','ext-phone', `${bf.join(' · ')} (건물통합정보)`));    if (p.shops.length) {
       box.appendChild(el('h3','sec-title', `이 건물 가게 ${p.shops.length >= 300 ? '300곳 넘게' : p.shops.length + '곳'}`));
       // 층별로 묶어 보여 준다(지하 → 1층 → 2층 … → 층 정보 없음). 가게가 많으면 이름으로 거르는 칸과 층 고르기를 단다
       const flOf = s => !s.floor ? '' : /^\d+$/.test(s.floor) ? s.floor + '층' : s.floor === '지' ? '지하' : s.floor;
@@ -3635,34 +3636,55 @@ const roadKey = a => { const t = String(a || '').trim().split(/\s+/); return t.l
 async function placeAt(at){ // at: 누른 자리(네이버 좌표)
   if (!map || !at || map.getZoom() < 17 || !ROUTE_PROXY) return null;
   try {
-    const ringP = fetchRing(at.lat(), at.lng()); // 건물 외곽선은 주소와 함께 받기 시작하고, 늦게 오면 그때 칠한다
-    const r = await proxyPost('/addr', { x: String(at.lng()), y: String(at.lat()) });
+    const lat = at.lat(), lng = at.lng();
+    const ringP = fetchRing(lat, lng); // 건물 외곽선(브이월드)은 주소와 함께 받기 시작한다
+    const r = await proxyPost('/addr', { x: String(lng), y: String(lat) });
     if (!r.ok) return null;
-    return withRing(await buildingAt(await r.json(), at.lat(), at.lng(), true), ringP);
+    const a = await r.json();
+    // 외곽선이 곧 오면(2.5초 안) 그 안의 가게도 함께 모은다. 늦으면 주소로만 모으고 외곽선은 오는 대로 칠한다
+    const b = await Promise.race([ringP, new Promise(res => setTimeout(() => res(null), 2500))]);
+    return withRing(await buildingAt(a, lat, lng, true, b && b.ring), ringP);
   } catch { return null; }
 }
+// 점이 다각형(건물 외곽선) 안에 있는지
+function inRing(x, y, ring){
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [xi, yi] = ring[i], [xj, yj] = ring[j];
+    if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
 // 주소(/addr 결과) → 건물 카드. 같은 건물의 가게 = 도로명주소가 같거나, 같은 필지(지번)에 딸린 다른 도로명주소의 가게
-// (supabase/22_shop_lots.sql: 분당 AK플라자처럼 한 필지에 주소가 둘인 단지). single이면 가게가 하나뿐일 때 그 가게를 바로 연다
+// (supabase/22_shop_lots.sql: 분당 AK플라자처럼 한 필지에 주소가 둘인 단지), 그리고 건물 외곽선(ring) 안에 좌표가 있는 가게.
+// 주소 표기가 다르거나 카카오가 도로명주소를 못 준 자리(지번만)도 외곽선으로 잡는다. single이면 가게가 하나뿐일 때 그 가게를 바로 연다
 const lotOf = j => String(j || '').trim().split(/\s+/).slice(1).join(' '); // '서울 강동구 암사동 509' → '강동구 암사동 509'
-async function buildingAt(a, lat, lng, single){
+async function buildingAt(a, lat, lng, single, ring){
   const key = roadKey(a.road), lot = lotOf(a.jibun);
-  let shops = [], addrs = new Set(a.road ? [a.road] : []);
+  let rows = [];
   if (sb && (key || lot)) {
     let { data, error } = await sb.rpc('shops_at_place', { p_addr: a.road || '', p_lot: lot, at_lat: lat, at_lng: lng });
     if (error && key) ({ data } = await sb.rpc('shops_at_addr', { p_addr: a.road, at_lat: lat, at_lng: lng })); // 22번 SQL 전
-    for (const s of data || []) addrs.add(s.addr);
-    shops = (data || []).map(shopPlace);
+    rows = data || [];
   }
-  // 상가정보에 없는 곳(어린이집·병원 등 지도에 이미 뜬 카카오 장소)도 같은 건물 주소면 목록에 함께
+  if (sb && ring && ring.length >= 3) {
+    const xs = ring.map(p => p[0]), ys = ring.map(p => p[1]);
+    const { data } = await sb.rpc('shops_in_box', { min_lng: Math.min(...xs), min_lat: Math.min(...ys), max_lng: Math.max(...xs), max_lat: Math.max(...ys), lim: 400 });
+    for (const s of data || []) if (inRing(+s.lng, +s.lat, ring) && !rows.some(r => r.id === s.id)) rows.push(s);
+  }
+  const addrs = new Set([a.road, ...rows.map(s => s.addr)].filter(Boolean));
+  let shops = rows.map(shopPlace);
+  // 상가정보에 없는 곳(어린이집·병원 등 지도에 이미 뜬 카카오 장소)도 같은 건물 주소이거나 외곽선 안이면 목록에 함께
   const keys = new Set([...addrs].map(roadKey).filter(Boolean));
-  if (keys.size) {
-    const kak = [...state.near.values()].filter(q => !q.shop && !q.building && q.addr && keys.has(roadKey(q.addr)) && !shops.some(s => squash(s.name) === squash(q.name)));
-    shops = [...kak, ...shops];
-  }
+  const kak = [...state.near.values()].filter(q => !q.shop && !q.building && ((q.addr && keys.has(roadKey(q.addr))) || (ring && inRing(q.lng, q.lat, ring)))
+    && !shops.some(s => squash(s.name) === squash(q.name)));
+  shops = [...kak, ...shops];
   if (single && shops.length === 1) return shops[0];
-  if (!a.road && !shops.length) return null; // 길·공원 등: 건물이 아니다
+  if (!a.road && !shops.length && !ring) return null; // 길·공원 등: 건물이 아니다
   const short = a.road ? a.road.split(/\s+/).slice(-2).join(' ') : a.jibun;
-  return { id: 'b' + (key || a.jibun).replace(/\s+/g, '_'), ext: true, building: true, kind: 'BLD', name: cleanText(a.building || short, 40),
+  // 제목: 카카오 건물 이름 → (늦게 오는) 건물통합정보 이름 → 안의 가게 이름('애니네일 외 3곳') → 주소
+  const title = a.building || (shops.length >= 2 ? `${shops[0].name} 외 ${shops.length - 1}곳` : short);
+  return { id: 'b' + (key || a.jibun || `${lat.toFixed(5)}_${lng.toFixed(5)}`).replace(/\s+/g, '_'), ext: true, building: true, kind: 'BLD', name: cleanText(title, 40), autoName: !a.building,
     category: '건물', type: a.building ? '건물' : '', addr: cleanText(a.road || a.jibun, 60), jibun: cleanText(a.jibun, 60),
     phone: '', url: '', lat, lng, shops, others: await otherBuildings(lat, lng, keys) };
 }
@@ -3689,38 +3711,49 @@ async function otherBuildings(lat, lng, keys){
 const VWORLD_KEY = 'CF009812-95C2-4FAD-9434-72DB7158FDBC';
 var bldPoly = null, bldPolyFor = null; // var: 상세 패널이 스크립트를 다 읽기 전에 그려져도 오류가 나지 않게
 const ringCache = new Map();
-function vworldBldg(geom, size){
+// 건축물 주용도 코드(건물통합정보 usability) → 이름
+const BLD_USE = { '01000':'단독주택','02000':'공동주택','03000':'제1종근린생활시설','04000':'제2종근린생활시설','05000':'문화 및 집회시설','06000':'종교시설','07000':'판매시설','08000':'운수시설','09000':'의료시설','10000':'교육연구시설','11000':'노유자시설','12000':'수련시설','13000':'운동시설','14000':'업무시설','15000':'숙박시설','16000':'위락시설','17000':'공장','18000':'창고시설','20000':'자동차 관련 시설','28000':'관광 휴게시설' };
+function vworldBldg(geom, size, data){
   return new Promise(res => {
     const cb = 'vw' + Math.random().toString(36).slice(2), s = document.createElement('script');
     const done = d => { delete window[cb]; s.remove(); res(d); };
     window[cb] = done; s.onerror = () => done(null); setTimeout(() => window[cb] && done(null), 6000);
     s.src = 'https://api.vworld.kr/req/data?' + new URLSearchParams({ service: 'data', version: '2.0', request: 'GetFeature', format: 'json', errorformat: 'json',
-      size: String(size), page: '1', data: 'LT_C_SPBD', geomfilter: geom, geometry: 'true', attribute: 'true', crs: 'EPSG:4326',
+      size: String(size), page: '1', data, geomfilter: geom, geometry: 'true', attribute: 'true', crs: 'EPSG:4326',
       key: VWORLD_KEY, domain: 'https://ian-space.github.io/gongan-sillok/', callback: cb });
     document.head.appendChild(s);
   }).then(d => (((((d || {}).response || {}).result || {}).featureCollection || {}).features || []));
 }
-// 그 자리 건물 → { ring: [[경도, 위도]…], floors: 지상 층수 }. 누른 자리에 건물이 없으면(가장자리·틈) 약 10m 안에서 가장 가까운 건물
+// 그 자리 건물 → { ring: [[경도, 위도]…], floors, under, use, year, name }.
+// 먼저 GIS건물통합정보(LT_C_BLDGINFO: 건축물대장 바탕, 지도 그림과 더 잘 맞고 이름·용도·층수·사용승인일이 있다),
+// 없으면 도로명주소 건물(LT_C_SPBD). 누른 자리에 건물이 없으면(가장자리·틈) 약 10m 안에서 가장 가까운 건물
 function fetchRing(lat, lng){
   const k = lat.toFixed(5) + ',' + lng.toFixed(5);
   if (!ringCache.has(k)) ringCache.set(k, (async () => {
-    let fs = await vworldBldg(`POINT(${lng.toFixed(7)} ${lat.toFixed(7)})`, 1);
-    if (!fs.length) fs = await vworldBldg(`BOX(${lng - 0.00012},${lat - 0.0001},${lng + 0.00012},${lat + 0.0001})`, 10);
+    const pt = `POINT(${lng.toFixed(7)} ${lat.toFixed(7)})`, box = `BOX(${lng - 0.00012},${lat - 0.0001},${lng + 0.00012},${lat + 0.0001})`;
+    let fs = await vworldBldg(pt, 1, 'LT_C_BLDGINFO');
+    if (!fs.length) fs = await vworldBldg(box, 10, 'LT_C_BLDGINFO');
+    if (!fs.length) fs = await vworldBldg(pt, 1, 'LT_C_SPBD');
+    if (!fs.length) fs = await vworldBldg(box, 10, 'LT_C_SPBD');
     const outer = f => { const g = f.geometry || {}; return (g.type === 'MultiPolygon' ? (g.coordinates[0] || [])[0] : (g.coordinates || [])[0]) || []; };
     const near = f => Math.min(...outer(f).map(([x, y]) => Math.hypot((x - lng) * 0.79, y - lat)));
     const f = fs.sort((a, b) => near(a) - near(b))[0];
     if (!f) return null;
     const ring = outer(f).slice(0, 300).map(([x, y]) => [+x, +y]).filter(([x, y]) => x > 124 && x < 132 && y > 33 && y < 39);
-    const fl = parseInt((f.properties || {}).gro_flo_co, 10);
-    return ring.length >= 3 ? { ring, floors: fl > 0 ? fl : 0 } : null;
+    const pr = f.properties || {}, num = v => { const n = parseInt(v, 10); return n > 0 ? n : 0; };
+    const name = cleanText([pr.bld_nm || pr.buld_nm || '', pr.dong_nm || ''].filter(Boolean).join(' '), 40);
+    const year = /^\d{8}$/.test(pr.useapr_day || '') ? pr.useapr_day.slice(0, 4) : '';
+    return ring.length >= 3 ? { ring, floors: num(pr.grnd_flr || pr.gro_flo_co), under: num(pr.ugrnd_flr), use: BLD_USE[pr.usability] || '', year, name } : null;
   })().catch(() => null));
   return ringCache.get(k);
 }
 function withRing(card, ringP){
   if (card) ringP.then(b => {
     if (!b) return;
-    Object.assign(card, { ring: b.ring, floorsAbove: b.floors });
-    if (findPlace(state.sel) === card) { syncBldPoly(card); if (card.building && b.floors) renderDetail(); }
+    Object.assign(card, { ring: b.ring, floorsAbove: b.floors, floorsUnder: b.under, bldUse: b.use, bldYear: b.year });
+    // 카카오가 건물 이름을 안 줬으면(주소·가게 이름으로 지은 제목) 건물통합정보의 이름으로 바꾼다
+    if (card.building && card.autoName && b.name) { card.name = b.name; card.autoName = false; }
+    if (findPlace(state.sel) === card) { syncBldPoly(card); if (card.building) renderDetail(); }
   });
   return card;
 }
@@ -3736,9 +3769,11 @@ function syncBldPoly(p){
 // 근처 다른 건물 하나를 연다:그 자리의 건물 이름·지번을 다시 받아 같은 방식으로 카드를 만든다
 async function openOtherBuilding(o){
   try {
+    const ringP = fetchRing(o.lat, o.lng);
     const r = await proxyPost('/addr', { x: String(o.lng), y: String(o.lat) });
     const a = r.ok ? await r.json() : null;
-    const card = withRing(await buildingAt(a && a.road ? a : { road: o.addr, jibun: '', building: '' }, o.lat, o.lng, false), fetchRing(o.lat, o.lng));
+    const b = await Promise.race([ringP, new Promise(res => setTimeout(() => res(null), 2500))]);
+    const card = withRing(await buildingAt(a && a.road ? a : { road: o.addr, jibun: '', building: '' }, o.lat, o.lng, false, b && b.ring), ringP);
     if (card) openShop(card);
   } catch {}
 }
