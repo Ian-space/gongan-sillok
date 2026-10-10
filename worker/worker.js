@@ -18,7 +18,7 @@
 //   POST /photo    { images: [base64 JPEG, 최대 3장] }          → 사진에서 눈으로 확인되는 기록 항목 제안 (로그인 필요)
 
 const ALLOWED_ORIGINS = ['https://ian-space.github.io', 'http://localhost:8765'];
-const VERSION = '2026-10-10.2'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
+const VERSION = '2026-10-10.3'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
 // 로그인 확인용 Supabase 주소와 공개 키(사이트 코드에도 있는 공개 값)
 const SUPABASE_URL = 'https://qktrghajroxddrbpwtvn.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_j-kp8YKsQTczGcsQX74OxA_mfI7DoZw';
@@ -196,9 +196,11 @@ async function handle(kind, input, { request, env, ctx, send, reply }) {
         data: 'LT_C_SPBD', geomfilter: `POINT(${x.toFixed(7)} ${y.toFixed(7)})`, geometry: 'true', attribute: 'true', crs: 'EPSG:4326',
         key: env.VWORLD_KEY, domain: 'https://ian-space.github.io/gongan-sillok/' });
       const up = await fetch('https://api.vworld.kr/req/data?' + params);
-      const j = await up.json().catch(() => null);
+      const raw = await up.text();
+      let j = null; try { j = JSON.parse(raw); } catch {}
       const res = j && j.response;
-      if (!up.ok || !res) throw reply(502, { error: 'vworld error' });
+      // 원인 확인용: 응답 앞부분만(열쇠는 가린다)
+      if (!up.ok || !res) throw reply(502, { error: 'vworld error', status: up.status, raw: raw.split(env.VWORLD_KEY).join('***').slice(0, 300) });
       if (res.status === 'NOT_FOUND') return JSON.stringify({ ring: null });
       if (res.status !== 'OK') throw reply(502, { error: 'vworld ' + String(res.status || '').slice(0, 20), detail: String((res.error && (res.error.text || res.error.code)) || '').slice(0, 120) });
       const f = (((res.result || {}).featureCollection || {}).features || [])[0];
