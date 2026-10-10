@@ -1721,6 +1721,7 @@ function renderList(vis){
 function renderDetail(){
   const d = $('detail'); const p = findPlace(state.sel);
   document.body.classList.toggle('has-detail', !!p);
+  syncBldPoly(p); // 누른 건물의 외곽선: 지금 연 곳의 것만
   if (!p) { d.hidden = true; d.replaceChildren(); return; }
   // 휴대폰: 새 장소를 열 때는 상세 패널을 '반' 높이에서 시작한다
   if (d.hidden || d.dataset.place !== p.id) { if (detailSheet && isPhone()) detailSheet.set(detailSheet.snaps()[1], false); d.scrollTop = 0; }
@@ -3534,9 +3535,10 @@ async function placeAt(x, y){
   if (!map || map.getZoom() < 17 || !ROUTE_PROXY) return null;
   try {
     const at = map.getProjection().fromOffsetToCoord(new naver.maps.Point(x, y));
+    const ringP = fetchRing(at.lat(), at.lng()); // 건물 외곽선은 주소와 함께 받기 시작하고, 늦게 오면 그때 칠한다
     const r = await proxyPost('/addr', { x: String(at.lng()), y: String(at.lat()) });
     if (!r.ok) return null;
-    return await buildingAt(await r.json(), at.lat(), at.lng(), true);
+    return withRing(await buildingAt(await r.json(), at.lat(), at.lng(), true), ringP);
   } catch { return null; }
 }
 // 주소(/addr 결과) → 건물 카드. 같은 건물의 가게 = 도로명주소가 같거나, 같은 필지(지번)에 딸린 다른 도로명주소의 가게
@@ -3580,12 +3582,30 @@ async function otherBuildings(lat, lng, keys){
     return [...by.values()].sort((x, y) => distM(x, { lat, lng }) - distM(y, { lat, lng })).slice(0, 4);
   } catch { return []; }
 }
-// 근처 다른 건물 하나를 연다: 그 자리의 건물 이름·지번을 다시 받아 같은 방식으로 카드를 만든다
+// 누른 건물의 외곽선(브이월드, 중계 서버 /bldg): 건물 카드나 가게를 여는 동안 지도에 칠해 두고, 다른 곳을 열거나 닫으면 지운다.
+// 어떤 건물을 골랐는지 눈으로 확인할 수 있게. 열쇠가 없거나 건물 자료가 없으면 칠하지 않는다
+var bldPoly = null, bldPolyFor = null; // var: 상세 패널이 스크립트를 다 읽기 전에 그려져도 오류가 나지 않게
+const fetchRing = (lat, lng) => !ROUTE_PROXY ? Promise.resolve(null) : proxyPost('/bldg', { x: String(lng), y: String(lat) })
+  .then(r => r.ok ? r.json() : null).then(j => (j && Array.isArray(j.ring) && j.ring.length >= 3 ? j.ring : null)).catch(() => null);
+function withRing(card, ringP){
+  if (card) ringP.then(ring => { if (!ring) return; card.ring = ring; if (findPlace(state.sel) === card) syncBldPoly(card); });
+  return card;
+}
+function syncBldPoly(p){
+  const want = p && p.ring ? p.id : null;
+  if (bldPolyFor === want && (!want || bldPoly)) return;
+  if (bldPoly) { bldPoly.setMap(null); bldPoly = null; }
+  bldPolyFor = want;
+  if (!want || !map) return;
+  bldPoly = new naver.maps.Polygon({ map, clickable: false, paths: [p.ring.map(([x, y]) => new naver.maps.LatLng(y, x))],
+    strokeColor: '#C8402C', strokeWeight: 2, strokeOpacity: 0.9, fillColor: '#C8402C', fillOpacity: 0.14 });
+}
+// 근처 다른 건물 하나를 연다:그 자리의 건물 이름·지번을 다시 받아 같은 방식으로 카드를 만든다
 async function openOtherBuilding(o){
   try {
     const r = await proxyPost('/addr', { x: String(o.lng), y: String(o.lat) });
     const a = r.ok ? await r.json() : null;
-    const card = await buildingAt(a && a.road ? a : { road: o.addr, jibun: '', building: '' }, o.lat, o.lng, false);
+    const card = withRing(await buildingAt(a && a.road ? a : { road: o.addr, jibun: '', building: '' }, o.lat, o.lng, false), fetchRing(o.lat, o.lng));
     if (card) openShop(card);
   } catch {}
 }

@@ -12,12 +12,13 @@
 //   POST /search   { query, x?, y?, sort?, page? }              → 카카오 키워드 장소 검색 (x, y가 있으면 그 근처부터)
 //   POST /station  { x, y }                                     → 1.5km 안 지하철역 (가까운 순)
 //   POST /addr     { x, y }                                     → 그 자리의 도로명주소·건물명 (카카오 좌표→주소)
+//   POST /bldg     { x, y }                                     → 그 자리 건물의 외곽선 (브이월드, 비밀 변수 VWORLD_KEY)
 //   POST /nearby   { rect: "왼쪽X,아래Y,오른쪽X,위Y", code? }      → 지도 한 칸 안의 장소 (NEARBY의 업종 코드)
 //   POST /intent   { text }                                     → 글로 적은 목적을 기록 항목 조건으로 (로그인 필요)
 //   POST /photo    { images: [base64 JPEG, 최대 3장] }          → 사진에서 눈으로 확인되는 기록 항목 제안 (로그인 필요)
 
 const ALLOWED_ORIGINS = ['https://ian-space.github.io', 'http://localhost:8765'];
-const VERSION = '2026-10-10.1'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
+const VERSION = '2026-10-10.2'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
 // 로그인 확인용 Supabase 주소와 공개 키(사이트 코드에도 있는 공개 값)
 const SUPABASE_URL = 'https://qktrghajroxddrbpwtvn.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_j-kp8YKsQTczGcsQX74OxA_mfI7DoZw';
@@ -81,7 +82,7 @@ const TMAP = {
   transit: 'https://apis.openapi.sk.com/transit/routes',
   walk: 'https://apis.openapi.sk.com/tmap/routes/pedestrian?version=1&format=json',
 };
-const PLACE_KINDS = ['search', 'nearby', 'station', 'addr'];
+const PLACE_KINDS = ['search', 'nearby', 'station', 'addr', 'bldg'];
 const AI_KINDS = ['intent', 'photo'];
 
 export default {
@@ -185,7 +186,32 @@ async function handle(kind, input, { request, env, ctx, send, reply }) {
     });
   }
 
-  /* 가까운 지하철역: 카카오 업종 검색(SW8)으로 1.5km 안의 역을 가까운 순으로. 역은 잘 바뀌지 않아 약 100m 단위로 30일 저장 */
+  /* 좌표 → 그 자리 건물의 외곽선(브이월드 2D데이터 API, 도로명주소 건물 LT_C_SPBD). 지도에서 누른 건물을 색칠해 보여 준다.
+     건물 모양은 잘 바뀌지 않아 약 1m 단위로 30일 저장. 열쇠(VWORLD_KEY)가 없거나 건물이 없으면 { ring: null } */
+  if (kind === 'bldg') {
+    const [x, y] = xy();
+    if (!env.VWORLD_KEY) return reply(200, { ring: null, off: true });
+    return cached(`bldg1:${x.toFixed(5)},${y.toFixed(5)}`, 30 * 86400, async () => {
+      const params = new URLSearchParams({ service: 'data', version: '2.0', request: 'GetFeature', format: 'json', errorformat: 'json', size: '1', page: '1',
+        data: 'LT_C_SPBD', geomfilter: `POINT(${x.toFixed(7)} ${y.toFixed(7)})`, geometry: 'true', attribute: 'true', crs: 'EPSG:4326',
+        key: env.VWORLD_KEY, domain: 'https://ian-space.github.io/gongan-sillok/' });
+      const up = await fetch('https://api.vworld.kr/req/data?' + params);
+      const j = await up.json().catch(() => null);
+      const res = j && j.response;
+      if (!up.ok || !res) throw reply(502, { error: 'vworld error' });
+      if (res.status === 'NOT_FOUND') return JSON.stringify({ ring: null });
+      if (res.status !== 'OK') throw reply(502, { error: 'vworld ' + String(res.status || '').slice(0, 20), detail: String((res.error && (res.error.text || res.error.code)) || '').slice(0, 120) });
+      const f = (((res.result || {}).featureCollection || {}).features || [])[0];
+      if (!f || !f.geometry) return JSON.stringify({ ring: null });
+      // 바깥 테두리 하나만(소수 6자리, 최대 200점). MultiPolygon이면 첫 덩어리
+      const g = f.geometry, outer = g.type === 'MultiPolygon' ? (g.coordinates[0] || [])[0] : (g.coordinates || [])[0];
+      const ring = (outer || []).slice(0, 200).map(([lng, lat]) => [+(+lng).toFixed(6), +(+lat).toFixed(6)]).filter(([lng, lat]) => inKorea(lng, lat));
+      const p = f.properties || {};
+      return JSON.stringify({ ring: ring.length >= 3 ? ring : null, name: String(p.buld_nm || p.bld_nm || '').slice(0, 40) });
+    });
+  }
+
+  /* 가까운 지하철역:카카오 업종 검색(SW8)으로 1.5km 안의 역을 가까운 순으로. 역은 잘 바뀌지 않아 약 100m 단위로 30일 저장 */
   if (kind === 'station') {
     const [x, y] = xy();
     return cached(`station:${x.toFixed(3)},${y.toFixed(3)}`, 30 * 86400, async () => {
