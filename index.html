@@ -194,10 +194,11 @@ button,input{font:inherit;color:inherit}
 .chip.unknown[aria-pressed="true"]{background:var(--paper);color:var(--ink);border:1px solid var(--muted);font-weight:600}
 .chip-ex{margin-left:4px;font-size:11px;color:var(--muted);font-weight:400}
 .chip[aria-pressed="true"] .chip-ex{color:inherit;opacity:.75}
-.count-row{display:flex;justify-content:space-between;align-items:baseline;padding:14px 22px 8px}
-.count{font-size:13px;color:var(--muted)}
+.count-row{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:6px 12px;padding:14px 22px 8px}
+.count{font-size:13px;color:var(--muted);white-space:nowrap}
 .linkbtn{background:none;border:0;color:var(--blue);cursor:pointer;font-size:13px;padding:0}
-.count-tools{display:flex;align-items:baseline;gap:14px}
+.count-tools{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px}
+.count-tools .linkbtn{white-space:nowrap}
 
 /* 구역 제목: 목록 패널과 상세 패널이 같은 형식을 쓴다 (굵은 제목 + 밑줄) */
 .sec{padding:16px 22px 4px}
@@ -273,6 +274,8 @@ button.stat[aria-pressed="true"] span{color:#FFFFFF}
 .crit dd{margin:0;font-size:12px;line-height:1.5}
 /* 지도에서 고른 조건의 기준 (색 안내 아래에 펼침) */
 .legend .lg-help{margin-left:2px}
+.legend .lg-off{margin-left:2px;width:24px;height:24px;border:0;border-radius:50%;background:transparent;color:inherit;opacity:.7;font-size:17px;line-height:1;cursor:pointer}
+.legend .lg-off:hover{opacity:1}
 .quick-title.with-help{display:flex;align-items:center;justify-content:space-between;gap:6px}
 .legend-help{position:absolute;left:14px;z-index:12;width:min(380px,calc(100% - 170px));max-height:calc(100% - 140px);overflow:auto;overscroll-behavior:contain;display:grid;gap:8px;padding:12px;border-radius:10px;background:var(--panel);box-shadow:0 6px 24px rgba(15,20,40,.22)}
 .legend-help[hidden]{display:none}
@@ -2764,7 +2767,14 @@ function renderLegendHelp(){
 function renderLegend(){
   const lg = $('legend'); lg.replaceChildren(); lg.classList.remove('stacked');
   const ks = state.badges;
-  const helpBtn = () => { const b = critButton(toggleLegendHelp, state.legendHelp); b.classList.add('lg-help'); return b; };
+  // 지도에 표시한 값을 끄는 ×: 필터처럼 보이는데 끄는 곳을 못 찾는 일이 있어서 안내 칸에 바로 단다
+  const helpBtn = () => {
+    const f = document.createDocumentFragment();
+    const b = critButton(toggleLegendHelp, state.legendHelp); b.classList.add('lg-help'); f.appendChild(b);
+    const x = el('button','lg-off','×'); x.type = 'button'; x.setAttribute('aria-label','지도에 표시 끄기'); x.title = '지도에 표시 끄기';
+    x.addEventListener('click', () => setBadges([])); f.appendChild(x);
+    return f;
+  };
   if (ks.length === 1) { // 조건 하나: 그 값 기준 진하기
     const k = ks[0]; lg.setAttribute('aria-label', `${ENUMS[k].label} 표시 안내`);
     lg.appendChild(el('b', null, ENUMS[k].label));
@@ -4973,6 +4983,8 @@ function renderAll(){
   vis = sortPlaces(vis);
   $('sortSel').value = sortMode();
   $('zloc').setAttribute('aria-pressed', String(!!state.me));
+  // 지울 것(필터·태그·검색어·지도에 표시)이 있을 때만 '필터 지우기'를 보인다
+  $('btnClear').hidden = !(Object.values(state.filters).some(s => s.size) || Object.values(state.tags).some(s => s.size) || state.q || state.badges.length);
   renderSummary(); renderPicks(vis); renderList(vis); renderExtList(); renderIntent(); renderMap(vis); renderExtMarkers(); renderLegend(); renderQuick(); renderDetail();
   renderQuickChips(); renderPeek(vis); syncFilterChips(); renderRouteBar(); renderCollectBar(); if ($('filterDlg').open) renderFilterExtras();
   $('qClear').hidden = !$('q').value; // 검색어가 있을 때만 × 버튼
@@ -5336,7 +5348,8 @@ $('btnClear').addEventListener('click', () => {
   for (const s of Object.values(state.filters)) s.clear();
   for (const s of Object.values(state.tags)) s.clear();
   document.querySelectorAll('.chip').forEach(c => c.setAttribute('aria-pressed','false'));
-  $('q').value = ''; state.q = ''; renderAll(); queueExtSearch('');
+  $('q').value = ''; state.q = ''; queueExtSearch('');
+  setBadges([]); // 지도에 표시한 값(좌석 간격 등)도 끈다: 이용자에게는 필터와 같아 보인다 (setBadges가 다시 그린다)
 });
 $('zin').addEventListener('click', () => { if (map) map.setZoom(map.getZoom() + 1, true); });
 $('zout').addEventListener('click', () => { if (map) map.setZoom(map.getZoom() - 1, true); });
