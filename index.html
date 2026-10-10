@@ -1808,7 +1808,9 @@ function renderDetail(){
     const box = el('div','ext-info');
     if (p.jibun && p.jibun !== p.addr) box.appendChild(el('p','ext-phone', `지번 ${p.jibun}`));
     // 건물통합정보(브이월드): 층수·용도·사용승인 연도. 엘리베이터가 필요한지 가늠하는 데 쓰는 공공 사실
-    const bf = [p.floorsAbove && `지상 ${p.floorsAbove}층`, p.floorsUnder && `지하 ${p.floorsUnder}층`, p.bldUse, p.bldYear && `${p.bldYear}년 사용승인`].filter(Boolean);
+    const cx = p.complex; // 아파트 단지: 동을 묶어서
+    const bf = cx ? [`${cx.count}개 동`, cx.floors && `최고 ${cx.floors}층`, '공동주택', cx.year && `${cx.year}년 사용승인`, cx.tapped && `누른 곳 ${cx.tapped}`].filter(Boolean)
+      : [p.floorsAbove && `지상 ${p.floorsAbove}층`, p.floorsUnder && `지하 ${p.floorsUnder}층`, p.bldUse, p.bldYear && `${p.bldYear}년 사용승인`].filter(Boolean);
     if (bf.length) box.appendChild(el('p','ext-phone', `${bf.join(' · ')} (건물통합정보)`));    if (p.shops.length) {
       box.appendChild(el('h3','sec-title', `이 건물 가게 ${p.shops.length >= 300 ? '300곳 넘게' : p.shops.length + '곳'}`));
       // 층별로 묶어 보여 준다(지하 → 1층 → 2층 … → 층 정보 없음). 가게가 많으면 이름으로 거르는 칸과 층 고르기를 단다
@@ -3713,14 +3715,14 @@ var bldPoly = null, bldPolyFor = null; // var: 상세 패널이 스크립트를 
 const ringCache = new Map();
 // 건축물 주용도 코드(건물통합정보 usability) → 이름
 const BLD_USE = { '01000':'단독주택','02000':'공동주택','03000':'제1종근린생활시설','04000':'제2종근린생활시설','05000':'문화 및 집회시설','06000':'종교시설','07000':'판매시설','08000':'운수시설','09000':'의료시설','10000':'교육연구시설','11000':'노유자시설','12000':'수련시설','13000':'운동시설','14000':'업무시설','15000':'숙박시설','16000':'위락시설','17000':'공장','18000':'창고시설','20000':'자동차 관련 시설','28000':'관광 휴게시설' };
-function vworldBldg(geom, size, data){
+function vworldBldg(geom, size, data, extra){
   return new Promise(res => {
     const cb = 'vw' + Math.random().toString(36).slice(2), s = document.createElement('script');
     const done = d => { delete window[cb]; s.remove(); res(d); };
     window[cb] = done; s.onerror = () => done(null); setTimeout(() => window[cb] && done(null), 6000);
     s.src = 'https://api.vworld.kr/req/data?' + new URLSearchParams({ service: 'data', version: '2.0', request: 'GetFeature', format: 'json', errorformat: 'json',
       size: String(size), page: '1', data, geomfilter: geom, geometry: 'true', attribute: 'true', crs: 'EPSG:4326',
-      key: VWORLD_KEY, domain: 'https://ian-space.github.io/gongan-sillok/', callback: cb });
+      key: VWORLD_KEY, domain: 'https://ian-space.github.io/gongan-sillok/', callback: cb, ...(extra || {}) });
     document.head.appendChild(s);
   }).then(d => (((((d || {}).response || {}).result || {}).featureCollection || {}).features || []));
 }
@@ -3742,8 +3744,20 @@ function fetchRing(lat, lng){
     const ring = outer(f).slice(0, 300).map(([x, y]) => [+x, +y]).filter(([x, y]) => x > 124 && x < 132 && y > 33 && y < 39);
     const pr = f.properties || {}, num = v => { const n = parseInt(v, 10); return n > 0 ? n : 0; };
     const name = cleanText([pr.bld_nm || pr.buld_nm || '', pr.dong_nm || ''].filter(Boolean).join(' '), 40);
-    const year = /^\d{8}$/.test(pr.useapr_day || '') ? pr.useapr_day.slice(0, 4) : '';
-    return ring.length >= 3 ? { ring, floors: num(pr.grnd_flr || pr.gro_flo_co), under: num(pr.ugrnd_flr), use: BLD_USE[pr.usability] || '', year, name } : null;
+    const yearOf = p => /^\d{8}$/.test(p.useapr_day || '') ? p.useapr_day.slice(0, 4) : '';
+    if (ring.length < 3) return null;
+    const out = { ring, floors: num(pr.grnd_flr || pr.gro_flo_co), under: num(pr.ugrnd_flr), use: BLD_USE[pr.usability] || '', year: yearOf(pr), name };
+    // 아파트 단지(공동주택, 동이 있는 곳): 같은 단지 이름의 동을 약 350m 안에서 모두 받아 단지 하나로 묶는다
+    if (pr.usability === '02000' && pr.bld_nm && pr.dong_nm) {
+      const all = await vworldBldg(`BOX(${lng - 0.004},${lat - 0.003},${lng + 0.004},${lat + 0.003})`, 100, 'LT_C_BLDGINFO', { attrFilter: `bld_nm:=:${pr.bld_nm}` });
+      const rings = all.map(outer).filter(r => r.length >= 3).map(r => r.slice(0, 300).map(([x, y]) => [+x, +y]));
+      if (rings.length > 1) {
+        const years = [...new Set(all.map(g => yearOf(g.properties || {})).filter(Boolean))].sort();
+        Object.assign(out, { complex: { name: cleanText(pr.bld_nm, 40), count: rings.length, rings, tapped: cleanText(pr.dong_nm, 10),
+          floors: Math.max(...all.map(g => num((g.properties || {}).grnd_flr))), year: years[0] || '' } });
+      }
+    }
+    return out;
   })().catch(() => null));
   return ringCache.get(k);
 }
@@ -3751,20 +3765,27 @@ function withRing(card, ringP){
   if (card) ringP.then(b => {
     if (!b) return;
     Object.assign(card, { ring: b.ring, floorsAbove: b.floors, floorsUnder: b.under, bldUse: b.use, bldYear: b.year });
+    // 아파트 단지: 동을 모두 묶어 칠하고, 제목도 단지 이름으로(카카오는 '선사현대아파트 112동'처럼 누른 동을 준다)
+    if (card.building && b.complex) { card.complex = b.complex; card.name = b.complex.name; card.autoName = false; }
     // 카카오가 건물 이름을 안 줬으면(주소·가게 이름으로 지은 제목) 건물통합정보의 이름으로 바꾼다
-    if (card.building && card.autoName && b.name) { card.name = b.name; card.autoName = false; }
+    else if (card.building && card.autoName && b.name) { card.name = b.name; card.autoName = false; }
     if (findPlace(state.sel) === card) { syncBldPoly(card); if (card.building) renderDetail(); }
   });
   return card;
 }
 function syncBldPoly(p){
-  const want = p && p.ring ? p.id : null;
+  const want = p && p.ring ? p.id + (p.complex ? ':c' : '') : null;
   if (bldPolyFor === want && (!want || bldPoly)) return;
-  if (bldPoly) { bldPoly.setMap(null); bldPoly = null; }
+  if (bldPoly) { bldPoly.forEach(x => x.setMap(null)); bldPoly = null; }
   bldPolyFor = want;
   if (!want || !map) return;
-  bldPoly = new naver.maps.Polygon({ map, clickable: false, paths: [p.ring.map(([x, y]) => new naver.maps.LatLng(y, x))],
-    strokeColor: '#C8402C', strokeWeight: 2, strokeOpacity: 0.9, fillColor: '#C8402C', fillOpacity: 0.14 });
+  // 아파트 단지면 동마다 하나씩(누른 동은 조금 더 진하게), 아니면 그 건물 하나
+  const rings = p.complex ? p.complex.rings : [p.ring];
+  bldPoly = rings.map(r => {
+    const tapped = r === p.ring || (p.complex && r.length === p.ring.length && r[0][0] === p.ring[0][0] && r[0][1] === p.ring[0][1]);
+    return new naver.maps.Polygon({ map, clickable: false, paths: [r.map(([x, y]) => new naver.maps.LatLng(y, x))],
+      strokeColor: '#C8402C', strokeWeight: 2, strokeOpacity: 0.9, fillColor: '#C8402C', fillOpacity: p.complex && !tapped ? 0.08 : 0.16 });
+  });
 }
 // 근처 다른 건물 하나를 연다:그 자리의 건물 이름·지번을 다시 받아 같은 방식으로 카드를 만든다
 async function openOtherBuilding(o){
