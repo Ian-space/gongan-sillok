@@ -1809,9 +1809,9 @@ function renderDetail(){
     if (p.jibun && p.jibun !== p.addr) box.appendChild(el('p','ext-phone', `지번 ${p.jibun}`));
     // 건물통합정보(브이월드): 층수·용도·사용승인 연도. 엘리베이터가 필요한지 가늠하는 데 쓰는 공공 사실
     const cx = p.complex; // 아파트 단지: 동을 묶어서
-    const bf = cx ? [`${cx.count}개 동`, cx.floors && `최고 ${cx.floors}층`, '공동주택', cx.year && `${cx.year}년 사용승인`, cx.tapped && `누른 곳 ${cx.tapped}`].filter(Boolean)
+    const bf = cx ? [`${cx.count}개 동`, p.aptUnits && `${p.aptUnits.toLocaleString()}세대`, cx.floors && `최고 ${cx.floors}층`, '공동주택', cx.year && `${cx.year}년 사용승인`, cx.tapped && `누른 곳 ${cx.tapped}`].filter(Boolean)
       : [p.floorsAbove && `지상 ${p.floorsAbove}층`, p.floorsUnder && `지하 ${p.floorsUnder}층`, p.bldUse, p.bldYear && `${p.bldYear}년 사용승인`].filter(Boolean);
-    if (bf.length) box.appendChild(el('p','ext-phone', `${bf.join(' · ')} (건물통합정보)`));
+    if (bf.length) box.appendChild(el('p','ext-phone', `${bf.join(' · ')} (건물통합정보${p.aptUnits ? '·공동주택관리정보' : ''})`));
     if (p.shops.length) {
       box.appendChild(el('h3','sec-title', `이 건물 가게 ${p.shops.length >= 300 ? '300곳 넘게' : p.shops.length + '곳'}`));
       // 층별로 묶어 보여 준다(지하 → 1층 → 2층 … → 층 정보 없음). 가게가 많으면 이름으로 거르는 칸과 층 고르기를 단다
@@ -3806,7 +3806,7 @@ function fetchComplex(name, lat, lng){
     // 이름: 주어진 단지 이름, 없으면 동 이름에서 '509동'을 뺀 것 중 가장 많은 것
     const counts = {}; for (const f of all) { const n = complexBase(f.properties.bld_nm); if (n) counts[n] = (counts[n] || 0) + 1; }
     const top = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
-    return { name: cleanText(name || (top && top[0]) || '아파트 단지', 40), count: rings.length, rings,
+    return { name: cleanText(name || (top && top[0]) || '아파트 단지', 40), count: rings.length, rings, pnu: String((parcel && parcel.properties.pnu) || ''),
       floors: Math.max(0, ...all.map(g => parseInt(g.properties.grnd_flr, 10) || 0)), year: yrs[0] || '' };
   })().catch(() => null));
   return complexCache.get(k);
@@ -3824,13 +3824,33 @@ function aptName(base, lat, lng){
     }).catch(() => base));
   return aptNameCache.get(k);
 }
+// 단지 공식 정보(공공데이터포털 K-apt, 중계 서버 /apt): 누른 필지의 법정동에서 도로명주소·지번이 맞는 단지(이름이 비슷한 단지부터 본다).
+// 공식 이름은 '잠실리센츠'처럼 '아파트'가 빠진 것이 많아 붙여서 보인다 → { name, units } 또는 null
+const aptOffCache = new Map();
+function aptOfficial(pnu, road, base){
+  if (!/^\d{19}$/.test(pnu || '') || !ROUTE_PROXY) return Promise.resolve(null);
+  const lot = (pnu[10] === '2' ? '산' : '') + +pnu.slice(11, 15) + (+pnu.slice(15, 19) ? '-' + +pnu.slice(15, 19) : '');
+  const k = `${pnu}|${road}|${base}`;
+  // 실패하면(공공데이터포털이 잠시 멈춤) 기억하지 않고 다음에 다시 묻는다
+  if (!aptOffCache.has(k)) aptOffCache.set(k, proxyPost('/apt', { bjd: pnu.slice(0, 10), road: road || '', lot, name: base || '' })
+    .then(r => r.ok ? r.json() : Promise.reject()).then(d => {
+      const a = d.apt;
+      return a && a.name ? { name: cleanText(/아파트|APT/i.test(a.name) ? a.name : a.name + '아파트', 40), units: a.units || 0 } : null;
+    }).catch(() => { aptOffCache.delete(k); return null; }));
+  return aptOffCache.get(k);
+}
 function withRing(card, ringP){
   // 카카오가 준 건물 이름: '선사현대아파트 112동'이면 단지 이름과 누른 동, '잠실엘스'면 단지 이름만
   const kn = card && card.building && !card.autoName ? card.name || '' : '';
   const m = /^(.*\S)\s+(\d+동)$/.exec(kn), kBase = m ? m[1] : kn;
   const named = cx => { // 단지를 붙이고, 이름은 온전한 이름이 오는 대로 바꾼다
     card.complex = cx; card.name = kBase || cx.name; card.autoName = false;
-    aptName(card.name, card.lat, card.lng).then(n => { if (card.complex === cx && n !== card.name) { card.name = n; if (findPlace(state.sel) === card) renderDetail(); } });
+    // 공식 이름(K-apt)이 있으면 그것, 없으면 카카오의 '○○아파트'
+    aptOfficial(cx.pnu, card.addr, card.name).then(o => o || aptName(card.name, card.lat, card.lng).then(name => ({ name, units: 0 }))).then(o => {
+      if (card.complex !== cx || (o.name === card.name && o.units === card.aptUnits)) return;
+      card.name = o.name; card.aptUnits = o.units;
+      if (findPlace(state.sel) === card) renderDetail();
+    });
   };
   // 브이월드에서 동을 못 골랐어도(빈 마당·틈을 누름) 카카오가 단지 이름을 줬으면 그 이름과 필지로 동들을 찾아 묶는다
   if (kBase) ringP.then(b => b && (b.complex || (b.use && b.use !== '공동주택')) ? null : fetchComplex(kBase, card.lat, card.lng)).then(cx => {
