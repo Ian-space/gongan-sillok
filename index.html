@@ -1811,7 +1811,8 @@ function renderDetail(){
     const cx = p.complex; // 아파트 단지: 동을 묶어서
     const bf = cx ? [`${cx.count}개 동`, cx.floors && `최고 ${cx.floors}층`, '공동주택', cx.year && `${cx.year}년 사용승인`, cx.tapped && `누른 곳 ${cx.tapped}`].filter(Boolean)
       : [p.floorsAbove && `지상 ${p.floorsAbove}층`, p.floorsUnder && `지하 ${p.floorsUnder}층`, p.bldUse, p.bldYear && `${p.bldYear}년 사용승인`].filter(Boolean);
-    if (bf.length) box.appendChild(el('p','ext-phone', `${bf.join(' · ')} (건물통합정보)`));    if (p.shops.length) {
+    if (bf.length) box.appendChild(el('p','ext-phone', `${bf.join(' · ')} (건물통합정보)`));
+    if (p.shops.length) {
       box.appendChild(el('h3','sec-title', `이 건물 가게 ${p.shops.length >= 300 ? '300곳 넘게' : p.shops.length + '곳'}`));
       // 층별로 묶어 보여 준다(지하 → 1층 → 2층 … → 층 정보 없음). 가게가 많으면 이름으로 거르는 칸과 층 고르기를 단다
       const flOf = s => !s.floor ? '' : /^\d+$/.test(s.floor) ? s.floor + '층' : s.floor === '지' ? '지하' : s.floor;
@@ -3751,7 +3752,8 @@ function fetchRing(lat, lng){
     const out = { ring, floors: num(pr.grnd_flr || pr.gro_flo_co), under: num(pr.ugrnd_flr), use: BLD_USE[pr.usability] || '', year: yearOf(pr), name };
     // 아파트 단지(공동주택, '509동' 같은 동이 있는 곳): 그 동이 선 필지와 같은 단지 이름의 동을 모두 받아 단지 하나로 묶는다.
     // 필지는 누른 자리 대신 그 동의 가운데로 찾는다(단지 안 공원·도로 필지를 누른 경우를 피하려고)
-    if ((pr.usability === '02000' || !pr.usability) && DONG_RE.test(pr.dong_nm || '')) {
+    // 동 대신 경비실·관리동·노인정처럼 단지 안 부속 건물을 눌렀어도(휴대폰에서 흔하다) 그 필지의 동들로 묶는다
+    if ((pr.usability === '02000' || !pr.usability) && (DONG_RE.test(pr.dong_nm || '') || (pr.dong_nm && pr.bld_nm))) {
       const cx0 = ring.reduce((s, p) => s + p[0], 0) / ring.length, cy0 = ring.reduce((s, p) => s + p[1], 0) / ring.length;
       const cx = await fetchComplex(complexBase(pr.bld_nm), cy0, cx0);
       if (cx) out.complex = Object.assign(cx, { tapped: dongLabel(pr.dong_nm) });
@@ -3809,12 +3811,31 @@ function fetchComplex(name, lat, lng){
   })().catch(() => null));
   return complexCache.get(k);
 }
+// 단지의 온전한 이름: 카카오 장소 검색에서 근처(약 500m) '아파트' 장소 중 단지 이름에 '아파트'만 붙은 것('리센츠' → '리센츠아파트').
+// 앞뒤가 더 붙은 이름은 옆 단지일 수 있어서('신반포' → '아크로리버뷰신반포') 쓰지 않는다. 못 찾으면 받은 이름 그대로
+const aptNameCache = new Map();
+function aptName(base, lat, lng){
+  const k = `${base}|${lat.toFixed(3)},${lng.toFixed(3)}`;
+  if (!aptNameCache.has(k)) aptNameCache.set(k, proxyPost('/search', { query: base, x: String(lng), y: String(lat), sort: 'distance' })
+    .then(r => r.ok ? r.json() : {}).then(d => {
+      const hit = (d.places || []).filter(p => / > 아파트( 동)?$/.test(p.category || '') && +p.distance < 500)
+        .map(p => p.name.replace(/\s*\d+동$/, '').replace(/\s*\([^)]*\)$/, '')).find(n => [squash(base), squash(base) + '아파트'].includes(squash(n)));
+      return cleanText(hit || base, 40);
+    }).catch(() => base));
+  return aptNameCache.get(k);
+}
 function withRing(card, ringP){
-  // 카카오가 '○○아파트 112동'처럼 동 이름을 줬는데 브이월드에서 그 동을 못 골랐어도, 단지 이름으로 동들을 찾아 묶는다
-  const m = card && card.building && /^(.*\S)\s+(\d+동)$/.exec(card.name || '');
-  if (m) ringP.then(b => b && b.complex ? null : fetchComplex(m[1], card.lat, card.lng)).then(cx => {
+  // 카카오가 준 건물 이름: '선사현대아파트 112동'이면 단지 이름과 누른 동, '잠실엘스'면 단지 이름만
+  const kn = card && card.building && !card.autoName ? card.name || '' : '';
+  const m = /^(.*\S)\s+(\d+동)$/.exec(kn), kBase = m ? m[1] : kn;
+  const named = cx => { // 단지를 붙이고, 이름은 온전한 이름이 오는 대로 바꾼다
+    card.complex = cx; card.name = kBase || cx.name; card.autoName = false;
+    aptName(card.name, card.lat, card.lng).then(n => { if (card.complex === cx && n !== card.name) { card.name = n; if (findPlace(state.sel) === card) renderDetail(); } });
+  };
+  // 브이월드에서 동을 못 골랐어도(빈 마당·틈을 누름) 카카오가 단지 이름을 줬으면 그 이름과 필지로 동들을 찾아 묶는다
+  if (kBase) ringP.then(b => b && (b.complex || (b.use && b.use !== '공동주택')) ? null : fetchComplex(kBase, card.lat, card.lng)).then(cx => {
     if (!cx || card.complex) return;
-    card.complex = Object.assign(cx, { tapped: m[2] }); card.name = m[1]; card.autoName = false;
+    named(Object.assign({}, cx, { tapped: m ? m[2] : '' }));
     if (findPlace(state.sel) === card) { syncBldPoly(card); renderDetail(); }
   });
   if (card) ringP.then(b => {
@@ -3822,7 +3843,7 @@ function withRing(card, ringP){
     Object.assign(card, { ring: b.ring, floorsAbove: b.floors, floorsUnder: b.under, bldUse: b.use, bldYear: b.year });
     // 아파트 단지: 동을 모두 묶어 칠하고, 제목도 단지 이름으로(카카오는 '선사현대아파트 112동'처럼 누른 동을 준다)
     // 이름은 카카오가 준 단지 이름(동을 뺀 것)이 있으면 그것을 쓴다(브이월드는 동마다 '주공아파트', '잠실아파트'처럼 다를 때가 있다)
-    if (card.building && b.complex) { card.complex = b.complex; card.name = (m && m[1]) || b.complex.name; card.autoName = false; }
+    if (card.building && b.complex) named(b.complex);
     // 카카오가 건물 이름을 안 줬으면(주소·가게 이름으로 지은 제목) 건물통합정보의 이름으로 바꾼다
     else if (card.building && card.autoName && b.name) { card.name = b.name; card.autoName = false; }
     if (findPlace(state.sel) === card) { syncBldPoly(card); if (card.building) renderDetail(); }
@@ -3836,9 +3857,11 @@ function syncBldPoly(p){
   bldPolyFor = want;
   if (!want || !map) return;
   // 아파트 단지면 동마다 하나씩(누른 동은 조금 더 진하게), 아니면 그 건물 하나
-  const rings = p.complex ? p.complex.rings : [p.ring];
+  // 누른 건물이 동이 아니면(경비실·관리동) 그것도 함께 칠한다
+  const same = r => p.ring && (r === p.ring || (r.length === p.ring.length && r[0][0] === p.ring[0][0] && r[0][1] === p.ring[0][1]));
+  const rings = !p.complex ? [p.ring] : p.ring && !p.complex.rings.some(same) ? [...p.complex.rings, p.ring] : p.complex.rings;
   bldPoly = rings.map(r => {
-    const tapped = p.ring && (r === p.ring || (r.length === p.ring.length && r[0][0] === p.ring[0][0] && r[0][1] === p.ring[0][1]));
+    const tapped = same(r);
     return new naver.maps.Polygon({ map, clickable: false, paths: [r.map(([x, y]) => new naver.maps.LatLng(y, x))],
       strokeColor: '#C8402C', strokeWeight: 2, strokeOpacity: 0.9, fillColor: '#C8402C', fillOpacity: p.complex && !tapped ? 0.08 : 0.16 });
   });
