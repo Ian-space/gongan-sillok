@@ -1,82 +1,73 @@
-// 공간실록 중계 서버 (Cloudflare Worker)
-// - 외부 서비스 키(TMAP, 카카오, Anthropic)를 사이트 코드 대신 여기 비밀 변수에만 둔다.
-//     TMAP_APP_KEY      : TMAP 대중교통·보행자 경로
-//     KAKAO_REST_KEY    : 카카오 로컬 장소 검색 (REST API 키)
-//     ANTHROPIC_API_KEY : AI 조건 찾기·사진 보고 채우기
-//     DATA_GO_KR_KEY    : 공공데이터포털 인증키(아파트 단지 공식 정보)
-// - 결과 저장: KV 바인딩 ROUTE_CACHE. 횟수 제한: 바인딩 LIMIT_ROUTE·LIMIT_PLACE (wrangler.toml)
-// - 공간실록 사이트에서 온 요청만 받는다. AI는 로그인한 사람만(Supabase 로그인 토큰을 확인한다).
+﻿// 怨듦컙?ㅻ줉 以묎퀎 ?쒕쾭 (Cloudflare Worker)
+// - ?몃? ?쒕퉬????TMAP, 移댁뭅?? Anthropic)瑜??ъ씠??肄붾뱶 ????ш린 鍮꾨? 蹂?섏뿉留??붾떎.
+//     TMAP_APP_KEY      : TMAP ?以묎탳?돠룸낫?됱옄 寃쎈줈
+//     KAKAO_REST_KEY    : 移댁뭅??濡쒖뺄 ?μ냼 寃??(REST API ??
+//     ANTHROPIC_API_KEY : AI 議곌굔 李얘린쨌?ъ쭊 蹂닿퀬 梨꾩슦湲?//     DATA_GO_KR_KEY    : 怨듦났?곗씠?고룷???몄쬆???꾪뙆???⑥? 怨듭떇 ?뺣낫)
+// - 寃곌낵 ??? KV 諛붿씤??ROUTE_CACHE. ?잛닔 ?쒗븳: 諛붿씤??LIMIT_ROUTE쨌LIMIT_PLACE (wrangler.toml)
+// - 怨듦컙?ㅻ줉 ?ъ씠?몄뿉?????붿껌留?諛쏅뒗?? AI??濡쒓렇?명븳 ?щ엺留?Supabase 濡쒓렇???좏겙???뺤씤?쒕떎).
 //
-// 경로
-//   POST /transit  { startX, startY, endX, endY, searchDttm? }  → TMAP 대중교통
-//   POST /walk     { startX, startY, endX, endY }               → TMAP 보행자 경로
-//   POST /search   { query, x?, y?, sort?, page? }              → 카카오 키워드 장소 검색 (x, y가 있으면 그 근처부터)
-//   POST /station  { x, y }                                     → 1.5km 안 지하철역 (가까운 순)
-//   POST /addr     { x, y }                                     → 그 자리의 도로명주소·건물명 (카카오 좌표→주소)
-//   POST /apt      { bjd: 법정동 코드 10자리 }                  → 그 동네 아파트 단지의 공식 이름·주소·동수·세대수 (공공데이터포털)
-//   POST /nearby   { rect: "왼쪽X,아래Y,오른쪽X,위Y", code? }      → 지도 한 칸 안의 장소 (NEARBY의 업종 코드)
-//   POST /intent   { text }                                     → 글로 적은 목적을 기록 항목 조건으로 (로그인 필요)
-//   POST /photo    { images: [base64 JPEG, 최대 3장] }          → 사진에서 눈으로 확인되는 기록 항목 제안 (로그인 필요)
+// 寃쎈줈
+//   POST /transit  { startX, startY, endX, endY, searchDttm? }  ??TMAP ?以묎탳??//   POST /walk     { startX, startY, endX, endY }               ??TMAP 蹂댄뻾??寃쎈줈
+//   POST /search   { query, x?, y?, sort?, page? }              ??移댁뭅???ㅼ썙???μ냼 寃??(x, y媛 ?덉쑝硫?洹?洹쇱쿂遺??
+//   POST /station  { x, y }                                     ??1.5km ??吏?섏쿋??(媛源뚯슫 ??
+//   POST /addr     { x, y }                                     ??洹??먮━???꾨줈紐낆＜?뙿룰굔臾쇰챸 (移댁뭅??醫뚰몴?믪＜??
+//   POST /apt      { bjd: 踰뺤젙??肄붾뱶 10?먮━ }                  ??洹??숇꽕 ?꾪뙆???⑥???怨듭떇 ?대쫫쨌二쇱냼쨌?숈닔쨌?몃???(怨듦났?곗씠?고룷??
+//   POST /nearby   { rect: "?쇱そX,?꾨옒Y,?ㅻⅨ履폵,?꼄", code? }      ??吏????移??덉쓽 ?μ냼 (NEARBY???낆쥌 肄붾뱶)
+//   POST /intent   { text }                                     ??湲濡??곸? 紐⑹쟻??湲곕줉 ??ぉ 議곌굔?쇰줈 (濡쒓렇???꾩슂)
+//   POST /photo    { images: [base64 JPEG, 理쒕? 3?? }          ???ъ쭊?먯꽌 ?덉쑝濡??뺤씤?섎뒗 湲곕줉 ??ぉ ?쒖븞 (濡쒓렇???꾩슂)
 
 const ALLOWED_ORIGINS = ['https://ian-space.github.io', 'http://localhost:8765'];
-const VERSION = '2026-10-11.1'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
-// 로그인 확인용 Supabase 주소와 공개 키(사이트 코드에도 있는 공개 값)
+const VERSION = '2026-10-11.2'; // ?묐떟 癒몃━留?X-GS-Version. ?먮룞 諛고룷媛 ?먮뒗吏 ?뺤씤????蹂몃떎
+// 濡쒓렇???뺤씤??Supabase 二쇱냼? 怨듦컻 ???ъ씠??肄붾뱶?먮룄 ?덈뒗 怨듦컻 媛?
 const SUPABASE_URL = 'https://qktrghajroxddrbpwtvn.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_j-kp8YKsQTczGcsQX74OxA_mfI7DoZw';
-// AI 하루 한도: 한 사람당 / 전체. 넘으면 429와 함께 Cloudflare 로그에 회원번호·IP를 남긴다(남용 확인용)
+// AI ?섎（ ?쒕룄: ???щ엺??/ ?꾩껜. ?섏쑝硫?429? ?④퍡 Cloudflare 濡쒓렇???뚯썝踰덊샇쨌IP瑜??④릿???⑥슜 ?뺤씤??
 const AI_LIMITS = { intent: { user: 30, day: 1000 }, photo: { user: 20, day: 200 } };
-// 경로 결과 저장 시간(초)
+// 寃쎈줈 寃곌낵 ????쒓컙(珥?
 const CACHE_SECONDS = { transit: 600, walk: 86400 };
-// 주변 장소 종류. 카카오 업종 코드로 찾고, 업종 분류가 없는 도서관은 검색어로 찾은 뒤 분류에 '도서관'이 있는 곳만 남긴다
-const NEARBY = {
-  CS2: { api: 'category', params: { category_group_code: 'CS2' } }, // 편의점
-  CE7: { api: 'category', params: { category_group_code: 'CE7' } }, // 카페
-  FD6: { api: 'category', params: { category_group_code: 'FD6' } }, // 음식점
-  PM9: { api: 'category', params: { category_group_code: 'PM9' } }, // 약국
-  BK9: { api: 'category', params: { category_group_code: 'BK9' } }, // 은행
-  CT1: { api: 'category', params: { category_group_code: 'CT1' } }, // 문화시설
-  HP8: { api: 'category', params: { category_group_code: 'HP8' } }, // 병원
-  AT4: { api: 'category', params: { category_group_code: 'AT4' } }, // 관광명소
-  PO3: { api: 'category', params: { category_group_code: 'PO3' } }, // 공공기관
-  MT1: { api: 'category', params: { category_group_code: 'MT1' } }, // 대형마트
-  PS3: { api: 'category', params: { category_group_code: 'PS3' } }, // 어린이집·유치원
-  LIB: { api: 'keyword', params: { query: '도서관' }, keep: d => /도서관/.test(d.category_name || '') },
+// 二쇰? ?μ냼 醫낅쪟. 移댁뭅???낆쥌 肄붾뱶濡?李얘퀬, ?낆쥌 遺꾨쪟媛 ?녿뒗 ?꾩꽌愿? 寃?됱뼱濡?李얠? ??遺꾨쪟??'?꾩꽌愿'???덈뒗 怨노쭔 ?④릿??const NEARBY = {
+  CS2: { api: 'category', params: { category_group_code: 'CS2' } }, // ?몄쓽??  CE7: { api: 'category', params: { category_group_code: 'CE7' } }, // 移댄럹
+  FD6: { api: 'category', params: { category_group_code: 'FD6' } }, // ?뚯떇??  PM9: { api: 'category', params: { category_group_code: 'PM9' } }, // ?쎄뎅
+  BK9: { api: 'category', params: { category_group_code: 'BK9' } }, // ???  CT1: { api: 'category', params: { category_group_code: 'CT1' } }, // 臾명솕?쒖꽕
+  HP8: { api: 'category', params: { category_group_code: 'HP8' } }, // 蹂묒썝
+  AT4: { api: 'category', params: { category_group_code: 'AT4' } }, // 愿愿묐챸??  PO3: { api: 'category', params: { category_group_code: 'PO3' } }, // 怨듦났湲곌?
+  MT1: { api: 'category', params: { category_group_code: 'MT1' } }, // ??뺣쭏??  PS3: { api: 'category', params: { category_group_code: 'PS3' } }, // ?대┛?댁쭛쨌?좎튂??  LIB: { api: 'keyword', params: { query: '?꾩꽌愿' }, keep: d => /?꾩꽌愿/.test(d.category_name || '') },
 };
 
-// 글로 적은 목적 → 조건(/intent): 사이트의 기록 항목과 같아야 한다(index.html ENUMS, TAGS)
+// 湲濡??곸? 紐⑹쟻 ??議곌굔(/intent): ?ъ씠?몄쓽 湲곕줉 ??ぉ怨?媛숈븘???쒕떎(index.html ENUMS, TAGS)
 const AI_MODEL = 'claude-haiku-4-5-20251001';
 const AI_FIELDS = {
-  noise:    { label: '소음', values: ['조용함', '보통', '시끄러움'] },
-  spacing:  { label: '좌석 간격', values: ['넓음', '보통', '좁음'] },
-  light:    { label: '채광', values: ['밝음', '보통', '어두움'] },
-  lamp:     { label: '조명 색', values: ['따뜻한 빛', '하얀 빛', '섞여 있음'] },
-  outlet:   { label: '콘센트', values: ['많음', '일부', '없음'] },
-  stay:     { label: '머무르기', values: ['장시간 가능', '2시간 내외', '회전 빠름'] },
-  hood:     { label: '고기 굽는 곳 배기', values: ['하향식', '상향식', '후드 없음'] },
-  entrance: { label: '입구', values: ['턱 없음', '경사로 있음', '턱·계단 있음'] },
-  floor:    { label: '층 이동', values: ['1층', '엘리베이터 있음', '계단만'] },
-  toilet:   { label: '화장실', values: ['매장 안', '건물 공용', '없음'] },
-  kids:     { label: '아이 동반', values: ['유아 의자 있음', '동반 가능', '노키즈존'] },
-  pets:     { label: '반려동물', values: ['실내 가능', '야외만', '불가'] },
-  parking:  { label: '주차', values: ['전용 주차장', '근처 유료 주차', '주차 불가'] },
-  diaper:   { label: '기저귀 교환대', values: ['매장 안에 있음', '건물에 있음', '없음'] },
-  late:     { label: '심야 영업', values: ['24시간', '자정 넘어 영업', '자정 전 마감'] },
-  furniture:{ label: '좌석 종류', tag: true, values: ['등받이 의자', '스툴(등받이 없음)', '소파·쿠션', '높은 바 좌석', '좌식', '큰 공용 테이블', '1인석', '야외 자리'] },
-  materials:{ label: '눈에 보이는 마감', tag: true, values: ['나무', '콘크리트', '타일', '벽돌', '돌', '유리', '금속', '페인트 벽', '패브릭·카펫', '식물 많음'] },
+  noise:    { label: '?뚯쓬', values: ['議곗슜??, '蹂댄넻', '?쒕걚?ъ?'] },
+  spacing:  { label: '醫뚯꽍 媛꾧꺽', values: ['?볦쓬', '蹂댄넻', '醫곸쓬'] },
+  light:    { label: '梨꾧킅', values: ['諛앹쓬', '蹂댄넻', '?대몢?'] },
+  lamp:     { label: '議곕챸 ??, values: ['?곕쑜??鍮?, '?섏? 鍮?, '?욎뿬 ?덉쓬'] },
+  outlet:   { label: '肄섏꽱??, values: ['留롮쓬', '?쇰?', '?놁쓬'] },
+  stay:     { label: '癒몃Т瑜닿린', values: ['?μ떆媛?媛??, '2?쒓컙 ?댁쇅', '?뚯쟾 鍮좊쫫'] },
+  hood:     { label: '怨좉린 援쎈뒗 怨?諛곌린', values: ['?섑뼢??, '?곹뼢??, '?꾨뱶 ?놁쓬'] },
+  entrance: { label: '?낃뎄', values: ['???놁쓬', '寃쎌궗濡??덉쓬', '?굿룰퀎???덉쓬'] },
+  floor:    { label: '痢??대룞', values: ['1痢?, '?섎━踰좎씠???덉쓬', '怨꾨떒留?] },
+  toilet:   { label: '?붿옣??, values: ['留ㅼ옣 ??, '嫄대Ъ 怨듭슜', '?놁쓬'] },
+  kids:     { label: '?꾩씠 ?숇컲', values: ['?좎븘 ?섏옄 ?덉쓬', '?숇컲 媛??, '?명궎利덉〈'] },
+  pets:     { label: '諛섎젮?숇Ъ', values: ['?ㅻ궡 媛??, '?쇱쇅留?, '遺덇?'] },
+  parking:  { label: '二쇱감', values: ['?꾩슜 二쇱감??, '洹쇱쿂 ?좊즺 二쇱감', '二쇱감 遺덇?'] },
+  diaper:   { label: '湲곗?洹 援먰솚?', values: ['留ㅼ옣 ?덉뿉 ?덉쓬', '嫄대Ъ???덉쓬', '?놁쓬'] },
+  late:     { label: '?ъ빞 ?곸뾽', values: ['24?쒓컙', '?먯젙 ?섏뼱 ?곸뾽', '?먯젙 ??留덇컧'] },
+  furniture:{ label: '醫뚯꽍 醫낅쪟', tag: true, values: ['?깅컺???섏옄', '?ㅽ댋(?깅컺???놁쓬)', '?뚰뙆쨌荑좎뀡', '?믪? 諛?醫뚯꽍', '醫뚯떇', '??怨듭슜 ?뚯씠釉?, '1?몄꽍', '?쇱쇅 ?먮━'] },
+  materials:{ label: '?덉뿉 蹂댁씠??留덇컧', tag: true, values: ['?섎Т', '肄섑겕由ы듃', '???, '踰쎈룎', '??, '?좊━', '湲덉냽', '?섏씤??踰?, '?⑤툕由?룹뭅??, '?앸Ъ 留롮쓬'] },
 };
 
-// 사진으로 채울 수 있는 항목: 눈으로 확인되는 것만(소음·머무르기·화장실처럼 사진으로 알 수 없는 건 뺀다)
+// ?ъ쭊?쇰줈 梨꾩슱 ???덈뒗 ??ぉ: ?덉쑝濡??뺤씤?섎뒗 寃껊쭔(?뚯쓬쨌癒몃Т瑜닿린쨌?붿옣?ㅼ쿂???ъ쭊?쇰줈 ?????녿뒗 嫄?類??
 const PHOTO_FIELDS = {
-  entrance:  { label: '입구', values: AI_FIELDS.entrance.values, hint: '입구 사진일 때만. 문 앞이나 문지방에 한 칸이라도 턱·계단이 보이면 턱·계단 있음(작은 문턱도 포함), 경사로가 있으면 경사로 있음, 길과 문 바닥이 평평하게 이어질 때만 턱 없음' },
-  floor:     { label: '층 이동', values: AI_FIELDS.floor.values, hint: '1층 매장이거나 엘리베이터·계단이 분명할 때만' },
-  spacing:   { label: '좌석 간격', values: AI_FIELDS.spacing.values, hint: '넓음 1m 이상, 보통 50cm~1m, 좁음 50cm 미만' },
-  light:     { label: '채광', values: AI_FIELDS.light.values, hint: '낮에 찍은 실내 사진에서 분명할 때만' },
-  lamp:      { label: '조명 색', values: AI_FIELDS.lamp.values, hint: '켜진 조명의 빛 색. 노란빛·주황빛이면 따뜻한 빛, 하얀빛이면 하얀 빛' },
-  outlet:    { label: '콘센트', values: AI_FIELDS.outlet.values, hint: '좌석 근처 콘센트가 보일 때만(많음: 좌석 절반 이상)' },
-  hood:      { label: '고기 굽는 곳 배기', values: AI_FIELDS.hood.values, hint: '불판 둘레·아래로 빨아들이면 하향식, 테이블 위 후드면 상향식' },
-  kids:      { label: '아이 동반', values: ['유아 의자 있음'], hint: '유아 의자가 보일 때만' },
-  furniture: { label: '좌석 종류', tag: true, values: AI_FIELDS.furniture.values },
-  materials: { label: '눈에 보이는 마감', tag: true, values: AI_FIELDS.materials.values },
+  entrance:  { label: '?낃뎄', values: AI_FIELDS.entrance.values, hint: '?낃뎄 ?ъ쭊???뚮쭔. 臾??욎씠??臾몄?諛⑹뿉 ??移몄씠?쇰룄 ?굿룰퀎?⑥씠 蹂댁씠硫??굿룰퀎???덉쓬(?묒? 臾명꽦???ы븿), 寃쎌궗濡쒓? ?덉쑝硫?寃쎌궗濡??덉쓬, 湲멸낵 臾?諛붾떏???됲룊?섍쾶 ?댁뼱吏??뚮쭔 ???놁쓬' },
+  floor:     { label: '痢??대룞', values: AI_FIELDS.floor.values, hint: '1痢?留ㅼ옣?닿굅???섎━踰좎씠?걔룰퀎?⑥씠 遺꾨챸???뚮쭔' },
+  spacing:   { label: '醫뚯꽍 媛꾧꺽', values: AI_FIELDS.spacing.values, hint: '?볦쓬 1m ?댁긽, 蹂댄넻 50cm~1m, 醫곸쓬 50cm 誘몃쭔' },
+  light:     { label: '梨꾧킅', values: AI_FIELDS.light.values, hint: '??뿉 李띿? ?ㅻ궡 ?ъ쭊?먯꽌 遺꾨챸???뚮쭔' },
+  lamp:      { label: '議곕챸 ??, values: AI_FIELDS.lamp.values, hint: '耳쒖쭊 議곕챸??鍮??? ?몃?鍮쎛룹＜?⑸튆?대㈃ ?곕쑜??鍮? ?섏?鍮쏆씠硫??섏? 鍮? },
+  outlet:    { label: '肄섏꽱??, values: AI_FIELDS.outlet.values, hint: '醫뚯꽍 洹쇱쿂 肄섏꽱?멸? 蹂댁씪 ?뚮쭔(留롮쓬: 醫뚯꽍 ?덈컲 ?댁긽)' },
+  hood:      { label: '怨좉린 援쎈뒗 怨?諛곌린', values: AI_FIELDS.hood.values, hint: '遺덊뙋 ?섎젅쨌?꾨옒濡?鍮⑥븘?ㅼ씠硫??섑뼢?? ?뚯씠釉????꾨뱶硫??곹뼢?? },
+  kids:      { label: '?꾩씠 ?숇컲', values: ['?좎븘 ?섏옄 ?덉쓬'], hint: '?좎븘 ?섏옄媛 蹂댁씪 ?뚮쭔' },
+  furniture: { label: '醫뚯꽍 醫낅쪟', tag: true, values: AI_FIELDS.furniture.values },
+  materials: { label: '?덉뿉 蹂댁씠??留덇컧', tag: true, values: AI_FIELDS.materials.values },
 };
 
 const TMAP = {
@@ -113,8 +104,7 @@ export default {
     try {
       return await handle(kind, input, { request, env, ctx, send, reply });
     } catch (e) {
-      if (e instanceof Response) return e; // 도우미들이 실패 응답을 던진다
-      return reply(502, { error: 'upstream error' });
+      if (e instanceof Response) return e; // ?꾩슦誘몃뱾???ㅽ뙣 ?묐떟???섏쭊??      return reply(502, { error: 'upstream error' });
     }
   },
 };
@@ -126,15 +116,13 @@ async function handle(kind, input, { request, env, ctx, send, reply }) {
   const kv = env.ROUTE_CACHE;
   const ip = request.headers.get('CF-Connecting-IP') || 'x';
 
-  // 외부 서비스를 부르기 전 횟수 제한(접속 IP별 1분 단위). 저장해 둔 결과를 줄 때는 세지 않는다
-  const limiter = TMAP[kind] ? env.LIMIT_ROUTE : env.LIMIT_PLACE;
+  // ?몃? ?쒕퉬?ㅻ? 遺瑜닿린 ???잛닔 ?쒗븳(?묒냽 IP蹂?1遺??⑥쐞). ??ν빐 ??寃곌낵瑜?以??뚮뒗 ?몄? ?딅뒗??  const limiter = TMAP[kind] ? env.LIMIT_ROUTE : env.LIMIT_PLACE;
   const allow = async () => {
     if (!limiter) return;
     const { success } = await limiter.limit({ key: ip }).catch(() => ({ success: true }));
     if (!success) { console.log(JSON.stringify({ blocked: kind, ip })); throw reply(429, { error: 'too many' }); }
   };
-  // 같은 요청은 저장해 둔 결과를 주고, 없으면 make()로 만들어 ttl초 저장한다
-  const cached = async (key, ttl, make) => {
+  // 媛숈? ?붿껌? ??ν빐 ??寃곌낵瑜?二쇨퀬, ?놁쑝硫?make()濡?留뚮뱾??ttl珥???ν븳??  const cached = async (key, ttl, make) => {
     if (kv) { const hit = await kv.get(key).catch(() => null); if (hit) return send(hit, 200, { 'X-Cache': 'HIT' }); }
     await allow();
     const text = await make();
@@ -150,36 +138,35 @@ async function handle(kind, input, { request, env, ctx, send, reply }) {
   };
   const xy = () => { const x = num(input.x), y = num(input.y); if (!inKorea(x, y)) throw reply(400, { error: 'coordinates out of range' }); return [x, y]; };
 
-  /* 카카오 장소 검색 */
+  /* 移댁뭅???μ냼 寃??*/
   if (kind === 'search') {
     const query = String(input.query || '').replace(/[\u0000-\u001F\u007F]/g, '').trim().slice(0, 40);
     if (!query) return reply(400, { error: 'empty query' });
     const params = { query, size: '15' };
     const x = num(input.x), y = num(input.y);
-    if (inKorea(x, y)) { Object.assign(params, { x: String(x), y: String(y) }); if (input.sort === 'distance') params.sort = 'distance'; } // 지도 중심 근처 결과부터(distance면 가까운 순)
+    if (inKorea(x, y)) { Object.assign(params, { x: String(x), y: String(y) }); if (input.sort === 'distance') params.sort = 'distance'; } // 吏??以묒떖 洹쇱쿂 寃곌낵遺??distance硫?媛源뚯슫 ??
     if (/^[1-3]$/.test(String(input.page || ''))) params.page = String(input.page);
     await allow();
     const j = await kakao('search/keyword', params);
-    // 사이트에 필요한 칸만 넘긴다
-    return reply(200, { places: (j.documents || []).map(d => ({
+    // ?ъ씠?몄뿉 ?꾩슂??移몃쭔 ?섍릿??    return reply(200, { places: (j.documents || []).map(d => ({
       name: d.place_name, category: d.category_name, address: d.road_address_name || d.address_name,
       phone: d.phone, x: d.x, y: d.y, url: d.place_url, distance: d.distance,
     })) });
   }
 
-  /* 좌표 → 주소(카카오): 지도에서 누른 자리의 건물(도로명주소·건물명). 주소는 잘 바뀌지 않아 약 1m 단위로 30일 저장 */
+  /* 醫뚰몴 ??二쇱냼(移댁뭅??: 吏?꾩뿉???꾨Ⅸ ?먮━??嫄대Ъ(?꾨줈紐낆＜?뙿룰굔臾쇰챸). 二쇱냼????諛붾뚯? ?딆븘 ??1m ?⑥쐞濡?30?????*/
   if (kind === 'addr') {
     const [x, y] = xy();
     return cached(`addr3:${x.toFixed(5)},${y.toFixed(5)}`, 30 * 86400, async () => {
       const j = await kakao('geo/coord2address', { x: x.toFixed(6), y: y.toFixed(6) });
       const d = (j.documents || [])[0] || {}, ra = d.road_address || null, ad = d.address || null;
       let building = ra ? ra.building_name || '' : '';
-      // 아파트 단지는 건물명이 '112동'처럼 동 번호만 온다 → 같은 도로명주소의 아파트·주거시설을 찾아 단지 이름을 붙인다.
-      // 주소가 같은 곳만 쓴다(근처 다른 단지 이름이 빌라에 붙지 않게). 주소 앞의 '서울'/'서울특별시' 표기는 달라서 빼고 비교한다
-      if (ra && ra.address_name && (!building || /^[\dA-Za-z가-힣]{0,4}\d+동$/.test(building))) {
+      // ?꾪뙆???⑥???嫄대Ъ紐낆씠 '112??泥섎읆 ??踰덊샇留??⑤떎 ??媛숈? ?꾨줈紐낆＜?뚯쓽 ?꾪뙆?맞룹＜嫄곗떆?ㅼ쓣 李얠븘 ?⑥? ?대쫫??遺숈씤??
+      // 二쇱냼媛 媛숈? 怨노쭔 ?대떎(洹쇱쿂 ?ㅻⅨ ?⑥? ?대쫫??鍮뚮씪??遺숈? ?딄쾶). 二쇱냼 ?욎쓽 '?쒖슱'/'?쒖슱?밸퀎?? ?쒓린???щ씪??鍮쇨퀬 鍮꾧탳?쒕떎
+      if (ra && ra.address_name && (!building || /^[\dA-Za-z媛-??{0,4}\d+??/.test(building))) {
         const tail = s => String(s || '').trim().split(/\s+/).slice(1).join(' ');
         const kj = await kakao('search/keyword', { query: ra.address_name, x: x.toFixed(6), y: y.toFixed(6), radius: '500', sort: 'distance', size: '5' }).catch(() => null);
-        const apt = ((kj && kj.documents) || []).find(p => /아파트|주거시설|오피스텔/.test(p.category_name || '') && !/동$/.test(p.place_name) && tail(p.road_address_name) === tail(ra.address_name));
+        const apt = ((kj && kj.documents) || []).find(p => /?꾪뙆??二쇨굅?쒖꽕|?ㅽ뵾?ㅽ뀛/.test(p.category_name || '') && !/??/.test(p.place_name) && tail(p.road_address_name) === tail(ra.address_name));
         if (apt && !building.includes(apt.place_name)) building = (apt.place_name + ' ' + building).trim();
       }
       return JSON.stringify({ road: ra ? ra.address_name : '', building, jibun: ad ? ad.address_name : '',
@@ -187,7 +174,7 @@ async function handle(kind, input, { request, env, ctx, send, reply }) {
     });
   }
 
-  /* 가까운 지하철역: 카카오 업종 검색(SW8)으로 1.5km 안의 역을 가까운 순으로. 역은 잘 바뀌지 않아 약 100m 단위로 30일 저장 */
+  /* 媛源뚯슫 吏?섏쿋?? 移댁뭅???낆쥌 寃??SW8)?쇰줈 1.5km ?덉쓽 ??쓣 媛源뚯슫 ?쒖쑝濡? ??? ??諛붾뚯? ?딆븘 ??100m ?⑥쐞濡?30?????*/
   if (kind === 'station') {
     const [x, y] = xy();
     return cached(`station:${x.toFixed(3)},${y.toFixed(3)}`, 30 * 86400, async () => {
@@ -196,9 +183,8 @@ async function handle(kind, input, { request, env, ctx, send, reply }) {
     });
   }
 
-  /* 아파트 단지 공식 정보(공공데이터포털, 국토교통부 공동주택 단지 목록·기본 정보 = K-apt): 법정동 하나의 단지들
-     → { apts: [{ code, name, addr, road, dongs, units, year }] }. 사이트가 누른 필지의 지번·이름으로 맞는 단지를 고른다.
-     단지 목록은 잘 바뀌지 않아 법정동마다 30일 저장. 기본 정보는 단지마다 따로 저장해서, 단지가 많은 동네도 몇 번에 나눠 채운다 */
+  /* ?꾪뙆???⑥? 怨듭떇 ?뺣낫(怨듦났?곗씠?고룷?? 援?넗援먰넻遺 怨듬룞二쇳깮 ?⑥? 紐⑸줉쨌湲곕낯 ?뺣낫 = K-apt): 踰뺤젙???섎굹???⑥???     ??{ apts: [{ code, name, addr, road, dongs, units, year }] }. ?ъ씠?멸? ?꾨Ⅸ ?꾩???吏踰댟룹씠由꾩쑝濡?留욌뒗 ?⑥?瑜?怨좊Ⅸ??
+     ?⑥? 紐⑸줉? ??諛붾뚯? ?딆븘 踰뺤젙?숇쭏??30????? 湲곕낯 ?뺣낫???⑥?留덈떎 ?곕줈 ??ν빐?? ?⑥?媛 留롮? ?숇꽕??紐?踰덉뿉 ?섎닠 梨꾩슫??*/
   if (kind === 'apt') {
     const bjd = String(input.bjd || '');
     if (!/^\d{10}$/.test(bjd)) return reply(400, { error: 'bad bjd' });
@@ -206,28 +192,24 @@ async function handle(kind, input, { request, env, ctx, send, reply }) {
     const hit = kv && await kv.get(`apt1:${bjd}`).catch(() => null);
     if (hit) return send(hit, 200, { 'X-Cache': 'HIT' });
     await allow();
-    const key = /%[0-9A-Fa-f]{2}/.test(env.DATA_GO_KR_KEY) ? decodeURIComponent(env.DATA_GO_KR_KEY) : env.DATA_GO_KR_KEY; // 인코딩된 키를 넣었어도
+    const key = /%[0-9A-Fa-f]{2}/.test(env.DATA_GO_KR_KEY) ? decodeURIComponent(env.DATA_GO_KR_KEY) : env.DATA_GO_KR_KEY; // ?몄퐫?⑸맂 ?ㅻ? ?ｌ뿀?대룄
     const gov = async (path, params) => {
-      const up = await fetch(`https://apis.data.go.kr/1613000/${path}?` + new URLSearchParams({ serviceKey: key, _type: 'json', ...params }));
-      const j = await up.json().catch(() => null);
+      const up = await fetch(`https://apis.data.go.kr/1613000/${path}?` + new URLSearchParams({ serviceKey: key, _type: 'json', ...params }), { signal: AbortSignal.timeout(6000) }); // 怨듦났?곗씠?고룷?몄? 紐곕━硫?媛??硫덉텣??      const raw = await up.text().catch(() => ''); let j = null; try { j = JSON.parse(raw); } catch {}
       const body = j && j.response && j.response.body;
-      if (!body) throw reply(502, { error: 'apt upstream', code: (j && j.response && j.response.header && j.response.header.resultCode) || up.status });
+      const err = (j && ((j.response && j.response.header && j.response.header.resultCode) || (j.OpenAPI_ServiceResponse && j.OpenAPI_ServiceResponse.cmmMsgHeader && j.OpenAPI_ServiceResponse.cmmMsgHeader.errMsg))) || (/<errMsg>([A-Z_]+)/.exec(raw) || [])[1];
+      if (!body) { console.log(JSON.stringify({ apt: path, err, status: up.status })); throw reply(502, { error: 'apt upstream', code: err || up.status }); } // 22쨌LIMITED_?? ?섎（ ?쒕룄
       return body;
     };
     const arr = v => !v ? [] : Array.isArray(v) ? v : [v];
     const listBody = await gov('AptListService4/getLegaldongAptList4', { bjdCode: bjd, pageNo: '1', numOfRows: '200' });
     const list = arr(listBody.items && (listBody.items.item || listBody.items));
-    if (input.debug === 'raw') { // 임시: 응답 모양 확인용(공공 자료라 비밀 없음)
-      const one = list[0] && await gov('AptBasisInfoServiceV5/getAphusBassInfoV5', { kaptCode: String(list[0].kaptCode) }).catch(e => String(e.status || e));
-      return reply(200, { listBody: { ...listBody, items: list.slice(0, 3) }, n: list.length, one });
-    }
     let full = true;
     const apts = [];
     for (const it of list.slice(0, 120)) {
       const code = String(it.kaptCode || '');
       if (!/^[A-Z0-9]{5,12}$/.test(code)) continue;
       let info = kv && await kv.get(`aptb1:${code}`).catch(() => null);
-      if (!info && apts.filter(a => a.fresh).length < 40) { // 한 번에 외부 요청 40번까지(Cloudflare 무료 한도 50번)
+      if (!info && apts.filter(a => a.fresh).length < 40) { // ??踰덉뿉 ?몃? ?붿껌 40踰덇퉴吏(Cloudflare 臾대즺 ?쒕룄 50踰?
         const b = await gov('AptBasisInfoServiceV5/getAphusBassInfoV5', { kaptCode: code }).catch(() => null);
         const d = b && (b.item || (b.items && (b.items.item || b.items)));
         const x = Array.isArray(d) ? d[0] : d;
@@ -241,13 +223,13 @@ async function handle(kind, input, { request, env, ctx, send, reply }) {
       if (info) apts.push(JSON.parse(info));
       else { full = false; apts.push({ code, name: String(it.kaptName || ''), addr: '', road: '', dongs: 0, units: 0, year: '' }); }
     }
-    const text = JSON.stringify({ apts: apts.map(({ fresh, ...a }) => a) });
+    const text = JSON.stringify({ apts: apts.map(({ fresh, ...a }) => a), ...(!full && { partial: true }) }); // partial: ?꾩쭅 紐?梨꾩슫 ?⑥?媛 ?덈떎(?ㅼ쓬???댁뼱??
     if (kv && full) ctx.waitUntil(kv.put(`apt1:${bjd}`, text, { expirationTtl: 30 * 86400 }).catch(() => {}));
     return send(text, 200, { 'X-Cache': 'MISS' });
   }
 
-  /* 카카오 업종 검색: 지도 한 칸(사각형) 안의 장소. 카카오는 한 번에 최대 45곳(15곳씩 3쪽)만 준다.
-     그보다 많고 칸이 아직 크면 { split: true }만 돌려줘서, 사이트가 칸을 4등분해 다시 묻게 한다. 하루 동안 저장 */
+  /* 移댁뭅???낆쥌 寃?? 吏????移??ш컖?? ?덉쓽 ?μ냼. 移댁뭅?ㅻ뒗 ??踰덉뿉 理쒕? 45怨?15怨녹뵫 3履?留?以??
+     洹몃낫??留롪퀬 移몄씠 ?꾩쭅 ?щ㈃ { split: true }留??뚮젮以섏꽌, ?ъ씠?멸? 移몄쓣 4?깅텇???ㅼ떆 臾산쾶 ?쒕떎. ?섎（ ?숈븞 ???*/
   if (kind === 'nearby') {
     const r = String(input.rect || '').split(',').map(num);
     if (r.length !== 4 || !inKorea(r[0], r[1]) || !inKorea(r[2], r[3]) || r[2] <= r[0] || r[3] <= r[1] || r[2] - r[0] > 0.03 || r[3] - r[1] > 0.03)
@@ -271,12 +253,12 @@ async function handle(kind, input, { request, env, ctx, send, reply }) {
     });
   }
 
-  /* AI (Anthropic Claude): 로그인한 사람만, 한 사람당·전체 하루 한도 안에서. 누가 물었는지는 Anthropic에 보내지 않는다 */
+  /* AI (Anthropic Claude): 濡쒓렇?명븳 ?щ엺留? ???щ엺?뮤룹쟾泥??섎（ ?쒕룄 ?덉뿉?? ?꾧? 臾쇱뿀?붿???Anthropic??蹂대궡吏 ?딅뒗??*/
   if (AI_KINDS.includes(kind)) {
     if (!env.ANTHROPIC_API_KEY) return reply(503, { error: 'ai off' });
     const uid = await userOf(request);
     if (!uid) return reply(401, { error: 'login required' });
-    // 하루 한도 확인(저장해 둔 결과를 줄 때는 세지 않는다)
+    // ?섎（ ?쒕룄 ?뺤씤(??ν빐 ??寃곌낵瑜?以??뚮뒗 ?몄? ?딅뒗??
     const count = async () => {
       if (!kv) return;
       const day = new Date().toISOString().slice(0, 10), lim = AI_LIMITS[kind];
@@ -291,15 +273,15 @@ async function handle(kind, input, { request, env, ctx, send, reply }) {
         headers: { 'x-api-key': env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
         body: JSON.stringify({ model: AI_MODEL, max_tokens: 500, temperature: 0, system, messages: [{ role: 'user', content }] }),
       });
-      const j = await up.json().catch(() => null);
-      if (!up.ok || !j) throw reply(502, { error: 'ai error' });
+      const raw = await up.text().catch(() => ''); let j = null; try { j = JSON.parse(raw); } catch {}
+      const body = j && j.response && j.response.body;
       const out = String((j.content || []).map(c => c.text || '').join(''));
       let parsed = null;
       try { parsed = JSON.parse(out.slice(out.indexOf('{'), out.lastIndexOf('}') + 1)); } catch {}
-      if (!parsed || typeof parsed !== 'object') throw reply(502, { error: 'ai parse', stop: j.stop_reason, raw: out.slice(0, 300) }); // 원인 확인용(AI 답의 앞부분만, 키·사진은 없음)
+      if (!parsed || typeof parsed !== 'object') throw reply(502, { error: 'ai parse', stop: j.stop_reason, raw: out.slice(0, 300) }); // ?먯씤 ?뺤씤??AI ?듭쓽 ?욌?遺꾨쭔, ?ㅒ룹궗吏꾩? ?놁쓬)
       return parsed;
     };
-    // 기록 항목 안의 값만 남긴다: w는 한 값 항목, t는 여러 값 항목
+    // 湲곕줉 ??ぉ ?덉쓽 媛믩쭔 ?④릿?? w????媛???ぉ, t???щ윭 媛???ぉ
     const keepFields = (conds, fields) => {
       const w = {}, t = {};
       for (const [k, vals] of Object.entries(conds || {})) {
@@ -310,24 +292,24 @@ async function handle(kind, input, { request, env, ctx, send, reply }) {
       return { w, t };
     };
 
-    /* 글로 적은 목적 → 기록 항목 조건. 같은 문장은 30일 저장해 다시 쓴다 */
+    /* 湲濡??곸? 紐⑹쟻 ??湲곕줉 ??ぉ 議곌굔. 媛숈? 臾몄옣? 30????ν빐 ?ㅼ떆 ?대떎 */
     if (kind === 'intent') {
       const text = String(input.text || '').replace(/[\u0000-\u001F\u007F]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60);
       if (text.length < 2) return reply(400, { error: 'empty text' });
-      const cacheKey = 'intent4:' + text; // 지시문을 바꾸면 번호를 올려 예전 저장 결과를 쓰지 않게 한다
+      const cacheKey = 'intent4:' + text; // 吏?쒕Ц??諛붽씀硫?踰덊샇瑜??щ젮 ?덉쟾 ???寃곌낵瑜??곗? ?딄쾶 ?쒕떎
       if (kv) { const hit = await kv.get(cacheKey).catch(() => null); if (hit) return send(hit, 200, { 'X-Cache': 'HIT' }); }
       await count();
       const list = Object.entries(AI_FIELDS).map(([k, f]) => `${k} (${f.label}): ${f.values.join(' | ')}`).join('\n');
-      const system = `너는 공간 기록 지도의 검색 도우미다. 이용자가 적은 목적 문장을 아래 기록 항목의 값으로만 바꾼다.
-- 목록에 없는 항목이나 값은 절대 만들지 않는다. 값은 글자 그대로 쓴다.
-- 문장에서 분명히 드러나거나 그 목적에 일반적으로 꼭 필요한 조건만 고른다. 애매하면 고르지 않는다.
-- 한 항목에서 그 목적에 괜찮은 값은 모두 고른다(예: 휠체어면 entrance에 "턱 없음", "경사로 있음").
-- 'kids'는 아이·아기·유아와 함께 갈 때만 고른다(부모님·엄마와 가는 것은 아이 동반이 아니다).
-- 이 목적에 좋은 값만 고르고, '보통'은 그 목적에 꼭 맞을 때만 고른다.
-- 위 항목으로 전혀 나타낼 수 없는 요구만 missing에 짧은 낱말로 적는다(최대 3개). 이미 고른 항목으로 나타낸 것은 missing에 넣지 않는다.
-항목:
+      const system = `?덈뒗 怨듦컙 湲곕줉 吏?꾩쓽 寃???꾩슦誘몃떎. ?댁슜?먭? ?곸? 紐⑹쟻 臾몄옣???꾨옒 湲곕줉 ??ぉ??媛믪쑝濡쒕쭔 諛붽씔??
+- 紐⑸줉???녿뒗 ??ぉ?대굹 媛믪? ?덈? 留뚮뱾吏 ?딅뒗?? 媛믪? 湲??洹몃?濡??대떎.
+- 臾몄옣?먯꽌 遺꾨챸???쒕윭?섍굅??洹?紐⑹쟻???쇰컲?곸쑝濡?瑗??꾩슂??議곌굔留?怨좊Ⅸ?? ?좊ℓ?섎㈃ 怨좊Ⅴ吏 ?딅뒗??
+- ????ぉ?먯꽌 洹?紐⑹쟻??愿쒖갖? 媛믪? 紐⑤몢 怨좊Ⅸ???? ?좎껜?대㈃ entrance??"???놁쓬", "寃쎌궗濡??덉쓬").
+- 'kids'???꾩씠쨌?꾧린쨌?좎븘? ?④퍡 媛??뚮쭔 怨좊Ⅸ??遺紐⑤떂쨌?꾨쭏? 媛??寃껋? ?꾩씠 ?숇컲???꾨땲??.
+- ??紐⑹쟻??醫뗭? 媛믩쭔 怨좊Ⅴ怨? '蹂댄넻'? 洹?紐⑹쟻??瑗?留욎쓣 ?뚮쭔 怨좊Ⅸ??
+- ????ぉ?쇰줈 ?꾪? ?섑??????녿뒗 ?붽뎄留?missing??吏㏃? ?깅쭚濡??곷뒗??理쒕? 3媛?. ?대? 怨좊Ⅸ ??ぉ?쇰줈 ?섑???寃껋? missing???ｌ? ?딅뒗??
+??ぉ:
 ${list}
-출력은 JSON 하나만, 설명 없이: {"conds":{"항목키":["값"]},"missing":["낱말"]}`;
+異쒕젰? JSON ?섎굹留? ?ㅻ챸 ?놁씠: {"conds":{"??ぉ??:["媛?]},"missing":["?깅쭚"]}`;
       const parsed = await askClaude(system, text);
       const { w, t } = keepFields(parsed.conds, AI_FIELDS);
       const missing = (Array.isArray(parsed.missing) ? parsed.missing : []).map(s => String(s).slice(0, 12)).slice(0, 3);
@@ -336,39 +318,38 @@ ${list}
       return send(body, 200, { 'X-Cache': kv ? 'MISS' : 'OFF' });
     }
 
-    /* 사진으로 항목 채우기. 사진은 저장하지 않고 바로 넘기며, 눈으로 확인할 수 있는 항목만 고르게 한다.
-       잰 숫자(단차 cm, 소음 dB)는 고르지 않는다 */
+    /* ?ъ쭊?쇰줈 ??ぉ 梨꾩슦湲? ?ъ쭊? ??ν븯吏 ?딄퀬 諛붾줈 ?섍린硫? ?덉쑝濡??뺤씤?????덈뒗 ??ぉ留?怨좊Ⅴ寃??쒕떎.
+       ???レ옄(?⑥감 cm, ?뚯쓬 dB)??怨좊Ⅴ吏 ?딅뒗??*/
     const imgs = (Array.isArray(input.images) ? input.images : []).slice(0, 3).map(String)
       .filter(s => s.length > 100 && s.length < 1500000 && /^[A-Za-z0-9+/=]+$/.test(s));
     if (!imgs.length) return reply(400, { error: 'no image' });
     await count();
-    const list = Object.entries(PHOTO_FIELDS).map(([k, f]) => `${k} (${f.label}${f.tag ? ', 여러 개 가능' : ', 하나만'}): ${f.values.join(' | ')}${f.hint ? ` — ${f.hint}` : ''}`).join('\n');
-    const system = `너는 공간 기록 지도의 기록 도우미다. 이용자가 매장에서 찍은 사진을 보고, 아래 기록 항목 중 사진에서 눈으로 분명히 확인되는 것만 고른다.
-- 목록에 없는 항목이나 값은 만들지 않는다. 값은 글자 그대로 쓴다.
-- 사진에 보이지 않거나 애매하면 그 항목은 고르지 않는다. 추측하지 않는다. 적게 고르는 편이 낫다.
-- '하나만' 항목은 값 하나, '여러 개 가능' 항목은 분명히 보이는 것을 모두.
-- floor(층 이동)는 엘리베이터·계단·건물 바깥이 사진에 직접 보일 때만 고른다. 실내 사진만으로는 고르지 않는다.
-- materials(마감)는 바닥·벽·천장처럼 넓게 보이는 재료만. 조명·소품의 재료는 넣지 않는다. '식물 많음'은 식물이 공간을 채울 만큼 많을 때만.
-- furniture(좌석 종류)에서 '1인석'은 혼자 앉는 자리가 따로 줄지어 있을 때만, '큰 공용 테이블'은 여러 명이 함께 앉는 긴 테이블이 보이면 고른다.
-항목:
+    const list = Object.entries(PHOTO_FIELDS).map(([k, f]) => `${k} (${f.label}${f.tag ? ', ?щ윭 媛?媛?? : ', ?섎굹留?}): ${f.values.join(' | ')}${f.hint ? ` ??${f.hint}` : ''}`).join('\n');
+    const system = `?덈뒗 怨듦컙 湲곕줉 吏?꾩쓽 湲곕줉 ?꾩슦誘몃떎. ?댁슜?먭? 留ㅼ옣?먯꽌 李띿? ?ъ쭊??蹂닿퀬, ?꾨옒 湲곕줉 ??ぉ 以??ъ쭊?먯꽌 ?덉쑝濡?遺꾨챸???뺤씤?섎뒗 寃껊쭔 怨좊Ⅸ??
+- 紐⑸줉???녿뒗 ??ぉ?대굹 媛믪? 留뚮뱾吏 ?딅뒗?? 媛믪? 湲??洹몃?濡??대떎.
+- ?ъ쭊??蹂댁씠吏 ?딄굅???좊ℓ?섎㈃ 洹???ぉ? 怨좊Ⅴ吏 ?딅뒗?? 異붿륫?섏? ?딅뒗?? ?곴쾶 怨좊Ⅴ???몄씠 ?ル떎.
+- '?섎굹留? ??ぉ? 媛??섎굹, '?щ윭 媛?媛?? ??ぉ? 遺꾨챸??蹂댁씠??寃껋쓣 紐⑤몢.
+- floor(痢??대룞)???섎━踰좎씠?걔룰퀎?㉱룰굔臾?諛붽묑???ъ쭊??吏곸젒 蹂댁씪 ?뚮쭔 怨좊Ⅸ?? ?ㅻ궡 ?ъ쭊留뚯쑝濡쒕뒗 怨좊Ⅴ吏 ?딅뒗??
+- materials(留덇컧)??諛붾떏쨌踰승룹쿇?μ쿂???볤쾶 蹂댁씠???щ즺留? 議곕챸쨌?뚰뭹???щ즺???ｌ? ?딅뒗?? '?앸Ъ 留롮쓬'? ?앸Ъ??怨듦컙??梨꾩슱 留뚰겮 留롮쓣 ?뚮쭔.
+- furniture(醫뚯꽍 醫낅쪟)?먯꽌 '1?몄꽍'? ?쇱옄 ?됰뒗 ?먮━媛 ?곕줈 以꾩????덉쓣 ?뚮쭔, '??怨듭슜 ?뚯씠釉?? ?щ윭 紐낆씠 ?④퍡 ?됰뒗 湲??뚯씠釉붿씠 蹂댁씠硫?怨좊Ⅸ??
+??ぉ:
 ${list}
-출력은 JSON 하나만, 설명 없이: {"conds":{"항목키":["값"]}}`;
-    const content = [...imgs.map(data => ({ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data } })), { type: 'text', text: '이 사진들에서 확인되는 항목을 골라 줘.' }];
+異쒕젰? JSON ?섎굹留? ?ㅻ챸 ?놁씠: {"conds":{"??ぉ??:["媛?]}}`;
+    const content = [...imgs.map(data => ({ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data } })), { type: 'text', text: '???ъ쭊?ㅼ뿉???뺤씤?섎뒗 ??ぉ??怨⑤씪 以?' }];
     const { w, t } = keepFields((await askClaude(system, content)).conds, PHOTO_FIELDS);
-    for (const k of Object.keys(w)) w[k] = w[k][0]; // 사진은 한 값 항목마다 값 하나
+    for (const k of Object.keys(w)) w[k] = w[k][0]; // ?ъ쭊? ??媛???ぉ留덈떎 媛??섎굹
     return reply(200, { w, t });
   }
 
-  /* TMAP 경로: 국내 좌표만, 정해진 칸만 넘긴다 */
+  /* TMAP 寃쎈줈: 援?궡 醫뚰몴留? ?뺥빐吏?移몃쭔 ?섍릿??*/
   if (!env.TMAP_APP_KEY) return reply(500, { error: 'TMAP_APP_KEY is not set' });
   const sx = num(input.startX), sy = num(input.startY), ex = num(input.endX), ey = num(input.endY);
   if (!inKorea(sx, sy) || !inKorea(ex, ey)) return reply(400, { error: 'coordinates out of range' });
   const stamp = /^\d{12}$/.test(String(input.searchDttm || '')) ? String(input.searchDttm) : '';
   const body = kind === 'transit'
     ? { startX: String(sx), startY: String(sy), endX: String(ex), endY: String(ey), lang: 0, format: 'json', count: 10, ...(stamp && { searchDttm: stamp }) }
-    : { startX: String(sx), startY: String(sy), endX: String(ex), endY: String(ey), startName: encodeURIComponent('출발'), endName: encodeURIComponent('도착') };
-  // 같은 구간(약 10m 단위) 요청은 저장해 둔 결과를 준다. 대중교통은 같은 10분대만, 도보는 하루 동안. 누가 요청했는지는 저장하지 않는다
-  const r4 = v => v.toFixed(4);
+    : { startX: String(sx), startY: String(sy), endX: String(ex), endY: String(ey), startName: encodeURIComponent('異쒕컻'), endName: encodeURIComponent('?꾩갑') };
+  // 媛숈? 援ш컙(??10m ?⑥쐞) ?붿껌? ??ν빐 ??寃곌낵瑜?以?? ?以묎탳?듭? 媛숈? 10遺꾨?留? ?꾨낫???섎（ ?숈븞. ?꾧? ?붿껌?덈뒗吏????ν븯吏 ?딅뒗??  const r4 = v => v.toFixed(4);
   const cacheKey = `${kind}:${r4(sx)},${r4(sy)},${r4(ex)},${r4(ey)}` + (kind === 'transit' ? `:${stamp.slice(0, 11)}` : '');
   return cached(cacheKey, CACHE_SECONDS[kind], async () => {
     const upstream = await fetch(TMAP[kind], {
@@ -382,7 +363,7 @@ ${list}
   });
 }
 
-// Supabase 로그인 토큰 → 회원번호. 토큰이 없거나 틀리면 null
+// Supabase 濡쒓렇???좏겙 ???뚯썝踰덊샇. ?좏겙???녾굅???由щ㈃ null
 async function userOf(request) {
   const m = /^Bearer ([A-Za-z0-9._-]{20,4096})$/.exec(request.headers.get('Authorization') || '');
   if (!m) return null;
