@@ -290,6 +290,7 @@ window.GS_EN = {
   '커피전문점': 'Coffee shop', '북카페': 'Book café', '베이커리 카페': 'Bakery café', '베이커리': 'Bakery', '복합문화공간': 'Cultural space', '찻집': 'Tea house',
   '스터디카페': 'Study café', '문화공간': 'Cultural space', '음식': 'Food', '소매': 'Retail', '교육': 'Education', '보건의료': 'Health', '숙박': 'Lodging',
   '예술·스포츠': 'Arts · sports', '수리·개인': 'Repair · personal', '커피': 'Coffee', '한식': 'Korean food', '중식': 'Chinese food', '일식': 'Japanese food', '양식': 'Western food',
+  '삼겹살': 'Pork belly BBQ', '순대': 'Sundae (blood sausage)', '일본식라면': 'Ramen', '라면': 'Ramen', '육류,고기': 'Meat BBQ', '고기': 'Meat', '햄버거': 'Burgers', '피자': 'Pizza', '국밥': 'Gukbap (rice soup)', '돈까스': 'Tonkatsu', '초밥': 'Sushi', '칼국수': 'Kalguksu (noodle soup)', '냉면': 'Naengmyeon (cold noodles)', '족발': 'Jokbal (pork trotters)', '곱창': 'Gopchang (tripe BBQ)', '떡볶이': 'Tteokbokki', '갈비': 'Galbi (ribs)', '횟집': 'Raw fish', '해물,생선': 'Seafood', '호프,요리주점': 'Pub', '도넛': 'Donuts', '샌드위치': 'Sandwiches', '쌀국수': 'Pho', '감자탕': 'Gamjatang (pork bone stew)', '닭갈비': 'Dakgalbi (spicy chicken)', '중국요리': 'Chinese food', '일식집': 'Japanese food', '퓨전요리': 'Fusion', '뷔페': 'Buffet', '브런치': 'Brunch',
   '분식': 'Snacks', '술집': 'Bar', '치킨': 'Chicken', '패스트푸드': 'Fast food', '제과,베이커리': 'Bakery', '아이스크림': 'Ice cream', '디저트카페': 'Dessert café',
 
   // ── 길찾기
@@ -485,6 +486,7 @@ window.GS_EN_RULES = [
   [/^(.+) 조건 안내$/, (m, tr) => `About ${tr(m[1])} conditions`],
   [/^(.+) 그 밖에$/, (m, tr) => `${tr(m[1])} · other`],
   [/^(.+): (.+)$/, (m, tr) => `${tr(m[1])}: ${tr(m[2])}`],
+  [/^(.+) 모두 만족$/, (m, tr) => `${m[1].split(' + ').map(tr).join(' + ')} all met`],
   [/^(.+) 모두 만족 (\d+)곳$/, (m, tr) => `${m[1].split(' + ').map(tr).join(' + ')} all met: ${m[2]}`],
   [/^(.+) 기록 (\d+)곳$/, (m, tr) => `${m[1].split('·').map(tr).join('·')} recorded: ${m[2]}`],
   [/^(.+?)(와|과) 비슷한 곳$/, m => `Similar to ${m[1]}`],
