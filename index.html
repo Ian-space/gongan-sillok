@@ -2161,6 +2161,8 @@ function initMap(){
   const TAP_MS = 400, DOUBLE_MS = 300;
   let down = null, tapTimer = null, lastTapAt = 0;
   const mapEl = $('map');
+  const mapClick = { t: 0, coord: null }; // 네이버 지도가 알려 준 마지막 누른 자리
+  naver.maps.Event.addListener(map, 'click', e => { if (e && e.coord) Object.assign(mapClick, { t: Date.now(), coord: e.coord }); });
   const cancelTap = () => { clearTimeout(tapTimer); tapTimer = null; };
   const onBlank = e => !(e.target.closest && e.target.closest('.pin, .near-dot, .pin-label, .pin-badge'));
   mapEl.addEventListener('pointerdown', e => {
@@ -2175,13 +2177,15 @@ function initMap(){
     if (!onBlank(e)) return;
     if (Date.now() - lastTapAt < DOUBLE_MS + 150) { lastTapAt = 0; return; } // 두 번째 톡(두 번 톡톡 확대)은 세지 않는다
     lastTapAt = Date.now();
-    // 누른 자리 가까이에 상가정보의 가게가 있으면 그 가게를 연다(네이버 지도 그림 속 가게 아이콘을 누른 것처럼)
-    const r = mapEl.getBoundingClientRect(), lookup = placeAt(e.clientX - r.left, e.clientY - r.top);
+    // 누른 자리의 건물을 연다. 좌표는 네이버 지도가 같은 누름에 알려 주는 것(click의 coord)을 쓴다:
+    // 화면 픽셀을 직접 좌표로 바꾸면 휴대폰(화면 확대·주소창·미끄러지는 중)에서 수십~수백 m 어긋날 때가 있었다
+    const r = mapEl.getBoundingClientRect(), px = { x: e.clientX - r.left, y: e.clientY - r.top };
     tapTimer = setTimeout(async () => {
       tapTimer = null;
       if (Date.now() - pinTapAt <= 400) return; // 같은 누름으로 핀이 열렸다
       if (state.sel) { select(null); return; } // 장소가 열려 있으면 닫기만(가게가 빽빽한 곳에서도 닫을 수 있게)
-      const shop = await lookup;
+      const at = Date.now() - mapClick.t < DOUBLE_MS + 400 ? mapClick.coord : map.getProjection().fromOffsetToCoord(new naver.maps.Point(px.x, px.y));
+      const shop = await placeAt(at);
       if (shop) { openShop(shop); return; }
       if (isPhone()) setMapOnly(!document.body.classList.contains('map-only')); // 휴대폰: 빈 곳 한 번 톡 → 지도만 보기
     }, DOUBLE_MS);
@@ -3628,10 +3632,9 @@ function closedNote(p, box){
   });
 }
 const roadKey = a => { const t = String(a || '').trim().split(/\s+/); return t.length >= 3 ? `${t[1]} ${t[t.length - 2]} ${t[t.length - 1]}` : ''; }; // '구 도로명 번호'
-async function placeAt(x, y){
-  if (!map || map.getZoom() < 17 || !ROUTE_PROXY) return null;
+async function placeAt(at){ // at: 누른 자리(네이버 좌표)
+  if (!map || !at || map.getZoom() < 17 || !ROUTE_PROXY) return null;
   try {
-    const at = map.getProjection().fromOffsetToCoord(new naver.maps.Point(x, y));
     const ringP = fetchRing(at.lat(), at.lng()); // 건물 외곽선은 주소와 함께 받기 시작하고, 늦게 오면 그때 칠한다
     const r = await proxyPost('/addr', { x: String(at.lng()), y: String(at.lat()) });
     if (!r.ok) return null;
