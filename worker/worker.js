@@ -19,7 +19,7 @@
 //   POST /photo    { images: [base64 JPEG, 최대 3장] }          → 사진에서 눈으로 확인되는 기록 항목 제안 (로그인 필요)
 
 const ALLOWED_ORIGINS = ['https://ian-space.github.io', 'http://localhost:8765'];
-const VERSION = '2026-10-11.4'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
+const VERSION = '2026-10-11.5'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
 // 로그인 확인용 Supabase 주소와 공개 키(사이트 코드에도 있는 공개 값)
 const SUPABASE_URL = 'https://qktrghajroxddrbpwtvn.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_j-kp8YKsQTczGcsQX74OxA_mfI7DoZw';
@@ -119,6 +119,11 @@ export default {
   },
 };
 
+// 서버 메모리 저장(요청을 받는 Cloudflare 서버마다 따로, 서버가 쉬면 사라진다). KV 쓰기를 아끼려고 쓴다. 최대 2,000개, 오래된 것부터 지운다
+const MEM = new Map();
+const memGet = k => { const e = MEM.get(k); if (!e) return null; if (e.until < Date.now()) { MEM.delete(k); return null; } return e.v; };
+const memPut = (k, v, ttl) => { MEM.delete(k); MEM.set(k, { v, until: Date.now() + Math.min(ttl, 86400) * 1000 }); if (MEM.size > 2000) MEM.delete(MEM.keys().next().value); };
+
 const num = v => (typeof v === 'string' || typeof v === 'number') && /^-?\d+(\.\d+)?$/.test(String(v)) ? Number(v) : NaN;
 const inKorea = (x, y) => x >= 124 && x <= 132 && y >= 33 && y <= 39;
 
@@ -133,13 +138,18 @@ async function handle(kind, input, { request, env, ctx, send, reply }) {
     const { success } = await limiter.limit({ key: ip }).catch(() => ({ success: true }));
     if (!success) { console.log(JSON.stringify({ blocked: kind, ip })); throw reply(429, { error: 'too many' }); }
   };
-  // 같은 요청은 저장해 둔 결과를 주고, 없으면 make()로 만들어 ttl초 저장한다
+  // 같은 요청은 저장해 둔 결과를 주고, 없으면 make()로 만들어 ttl초 저장한다.
+  // KV 무료 한도는 저장(쓰기)이 하루 1,000번뿐이라, 하루 한도가 넉넉한(10만 번) 카카오 결과는 KV에 쓰지 않고
+  // 이 서버 메모리에만 잠시 둔다(addr3·station·nearby2). KV에는 한도가 작거나 돈이 드는 것(TMAP 경로, AI, 공공데이터포털)만 쓴다
   const cached = async (key, ttl, make) => {
-    if (kv) { const hit = await kv.get(key).catch(() => null); if (hit) return send(hit, 200, { 'X-Cache': 'HIT' }); }
+    const store = !/^(addr3|station|nearby2):/.test(key); // 카카오 결과
+    const m = memGet(key); if (m) return send(m, 200, { 'X-Cache': 'MEM' });
+    if (kv && store) { const hit = await kv.get(key).catch(() => null); if (hit) { memPut(key, hit, ttl); return send(hit, 200, { 'X-Cache': 'HIT' }); } }
     await allow();
     const text = await make();
-    if (kv) ctx.waitUntil(kv.put(key, text, { expirationTtl: ttl }).catch(() => {}));
-    return send(text, 200, { 'X-Cache': kv ? 'MISS' : 'OFF' });
+    memPut(key, text, ttl);
+    if (kv && store) ctx.waitUntil(kv.put(key, text, { expirationTtl: ttl }).catch(() => {}));
+    return send(text, 200, { 'X-Cache': kv && store ? 'MISS' : 'OFF' });
   };
   const kakao = async (path, params) => {
     if (!env.KAKAO_REST_KEY) throw reply(500, { error: 'KAKAO_REST_KEY is not set' });
@@ -216,8 +226,8 @@ async function handle(kind, input, { request, env, ctx, send, reply }) {
       if (!body) { console.log(JSON.stringify({ apt: path, err, status: up.status })); throw reply(502, { error: 'apt upstream', code: err || up.status }); } // LIMITED_…: 하루 한도
       return body;
     };
-    const kvGet = k => kv ? kv.get(k).catch(() => null) : null;
-    const kvPut = (k, v) => { if (kv) ctx.waitUntil(kv.put(k, v, { expirationTtl: 30 * 86400 }).catch(() => {})); };
+    const kvGet = async k => { const m = memGet(k); if (m) return m; const v = kv ? await kv.get(k).catch(() => null) : null; if (v) memPut(k, v, 86400); return v; };
+    const kvPut = (k, v) => { memPut(k, v, 86400); if (kv) ctx.waitUntil(kv.put(k, v, { expirationTtl: 30 * 86400 }).catch(() => {})); };
     const arr = v => !v ? [] : Array.isArray(v) ? v : [v];
     // 법정동의 단지 목록 [{ code, name }]
     let list = JSON.parse(await kvGet(`aptl1:${bjd}`) || 'null');
@@ -301,10 +311,9 @@ async function handle(kind, input, { request, env, ctx, send, reply }) {
         headers: { 'x-api-key': env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
         body: JSON.stringify({ model: AI_MODEL, max_tokens: 500, temperature: 0, system, messages: [{ role: 'user', content }] }),
       });
-      const raw = await up.text().catch(() => ''); let j = null; try { j = JSON.parse(raw); } catch {}
-      const body = j && j.response && j.response.body;
-      const err = (j && ((j.response && j.response.header && j.response.header.resultCode) || (j.OpenAPI_ServiceResponse && j.OpenAPI_ServiceResponse.cmmMsgHeader && j.OpenAPI_ServiceResponse.cmmMsgHeader.errMsg))) || (/<errMsg>([A-Z_]+)/.exec(raw) || [])[1];
-      if (!body) { console.log(JSON.stringify({ apt: path, err, status: up.status })); throw reply(502, { error: 'apt upstream', code: err || up.status }); } // 22·LIMITED_…: 하루 한도
+      const j = await up.json().catch(() => null);
+      if (!up.ok || !j) throw reply(502, { error: 'ai error' });
+      const out = String((j.content || []).map(c => c.text || '').join(''));
       let parsed = null;
       try { parsed = JSON.parse(out.slice(out.indexOf('{'), out.lastIndexOf('}') + 1)); } catch {}
       if (!parsed || typeof parsed !== 'object') throw reply(502, { error: 'ai parse', stop: j.stop_reason, raw: out.slice(0, 300) }); // 원인 확인용(AI 답의 앞부분만, 키·사진은 없음)
