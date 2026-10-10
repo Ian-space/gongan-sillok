@@ -1794,6 +1794,7 @@ function renderDetail(){
   if (p.building) { // 지도에서 누른 건물: 주소와 이 건물 안 가게(상가정보)
     const box = el('div','ext-info');
     if (p.jibun && p.jibun !== p.addr) box.appendChild(el('p','ext-phone', `지번 ${p.jibun}`));
+    if (p.floorsAbove) box.appendChild(el('p','ext-phone', `지상 ${p.floorsAbove}층 건물 (브이월드)`));
     if (p.shops.length) {
       box.appendChild(el('h3','sec-title', `이 건물 가게 ${p.shops.length >= 300 ? '300곳 넘게' : p.shops.length + '곳'}`));
       // 층별로 묶어 보여 준다(지하 → 1층 → 2층 … → 층 정보 없음). 가게가 많으면 이름으로 거르는 칸과 층 고르기를 단다
@@ -3582,13 +3583,46 @@ async function otherBuildings(lat, lng, keys){
     return [...by.values()].sort((x, y) => distM(x, { lat, lng }) - distM(y, { lat, lng })).slice(0, 4);
   } catch { return []; }
 }
-// 누른 건물의 외곽선(브이월드, 중계 서버 /bldg): 건물 카드나 가게를 여는 동안 지도에 칠해 두고, 다른 곳을 열거나 닫으면 지운다.
-// 어떤 건물을 골랐는지 눈으로 확인할 수 있게. 열쇠가 없거나 건물 자료가 없으면 칠하지 않는다
+// 누른 건물의 외곽선(브이월드 2D데이터 API, 도로명주소 건물 LT_C_SPBD): 건물 카드나 가게를 여는 동안 지도에 칠해 두고,
+// 다른 곳을 열거나 닫으면 지운다. 어떤 건물을 골랐는지 눈으로 확인할 수 있게. 자료가 없거나 응답이 없으면 칠하지 않는다.
+// 브이월드는 Cloudflare 중계 서버의 요청을 막아서(오류 520) 사이트에서 직접 부른다(JSONP). 이 열쇠는 네이버 지도 열쇠처럼
+// 웹페이지에 넣어 쓰는 공개 열쇠이고, 브이월드에 등록한 주소(ian-space.github.io/gongan-sillok)에서만 쓰인다
+const VWORLD_KEY = 'CF009812-95C2-4FAD-9434-72DB7158FDBC';
 var bldPoly = null, bldPolyFor = null; // var: 상세 패널이 스크립트를 다 읽기 전에 그려져도 오류가 나지 않게
-const fetchRing = (lat, lng) => !ROUTE_PROXY ? Promise.resolve(null) : proxyPost('/bldg', { x: String(lng), y: String(lat) })
-  .then(r => r.ok ? r.json() : null).then(j => (j && Array.isArray(j.ring) && j.ring.length >= 3 ? j.ring : null)).catch(() => null);
+const ringCache = new Map();
+function vworldBldg(geom, size){
+  return new Promise(res => {
+    const cb = 'vw' + Math.random().toString(36).slice(2), s = document.createElement('script');
+    const done = d => { delete window[cb]; s.remove(); res(d); };
+    window[cb] = done; s.onerror = () => done(null); setTimeout(() => window[cb] && done(null), 6000);
+    s.src = 'https://api.vworld.kr/req/data?' + new URLSearchParams({ service: 'data', version: '2.0', request: 'GetFeature', format: 'json', errorformat: 'json',
+      size: String(size), page: '1', data: 'LT_C_SPBD', geomfilter: geom, geometry: 'true', attribute: 'true', crs: 'EPSG:4326',
+      key: VWORLD_KEY, domain: 'https://ian-space.github.io/gongan-sillok/', callback: cb });
+    document.head.appendChild(s);
+  }).then(d => (((((d || {}).response || {}).result || {}).featureCollection || {}).features || []));
+}
+// 그 자리 건물 → { ring: [[경도, 위도]…], floors: 지상 층수 }. 누른 자리에 건물이 없으면(가장자리·틈) 약 10m 안에서 가장 가까운 건물
+function fetchRing(lat, lng){
+  const k = lat.toFixed(5) + ',' + lng.toFixed(5);
+  if (!ringCache.has(k)) ringCache.set(k, (async () => {
+    let fs = await vworldBldg(`POINT(${lng.toFixed(7)} ${lat.toFixed(7)})`, 1);
+    if (!fs.length) fs = await vworldBldg(`BOX(${lng - 0.00012},${lat - 0.0001},${lng + 0.00012},${lat + 0.0001})`, 10);
+    const outer = f => { const g = f.geometry || {}; return (g.type === 'MultiPolygon' ? (g.coordinates[0] || [])[0] : (g.coordinates || [])[0]) || []; };
+    const near = f => Math.min(...outer(f).map(([x, y]) => Math.hypot((x - lng) * 0.79, y - lat)));
+    const f = fs.sort((a, b) => near(a) - near(b))[0];
+    if (!f) return null;
+    const ring = outer(f).slice(0, 300).map(([x, y]) => [+x, +y]).filter(([x, y]) => x > 124 && x < 132 && y > 33 && y < 39);
+    const fl = parseInt((f.properties || {}).gro_flo_co, 10);
+    return ring.length >= 3 ? { ring, floors: fl > 0 ? fl : 0 } : null;
+  })().catch(() => null));
+  return ringCache.get(k);
+}
 function withRing(card, ringP){
-  if (card) ringP.then(ring => { if (!ring) return; card.ring = ring; if (findPlace(state.sel) === card) syncBldPoly(card); });
+  if (card) ringP.then(b => {
+    if (!b) return;
+    Object.assign(card, { ring: b.ring, floorsAbove: b.floors });
+    if (findPlace(state.sel) === card) { syncBldPoly(card); if (card.building && b.floors) renderDetail(); }
+  });
   return card;
 }
 function syncBldPoly(p){
