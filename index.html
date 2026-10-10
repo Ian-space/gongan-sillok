@@ -3749,26 +3749,47 @@ function fetchRing(lat, lng){
     const yearOf = p => /^\d{8}$/.test(p.useapr_day || '') ? p.useapr_day.slice(0, 4) : '';
     if (ring.length < 3) return null;
     const out = { ring, floors: num(pr.grnd_flr || pr.gro_flo_co), under: num(pr.ugrnd_flr), use: BLD_USE[pr.usability] || '', year: yearOf(pr), name };
-    // 아파트 단지(공동주택, 동이 있는 곳): 같은 단지 이름의 동을 약 350m 안에서 모두 받아 단지 하나로 묶는다
-    if (pr.usability === '02000' && pr.bld_nm && pr.dong_nm) {
-      const cx = await fetchComplex(pr.bld_nm, lat, lng);
+    // 아파트 단지(공동주택, '509동' 같은 동이 있는 곳): 그 동이 선 필지와 같은 단지 이름의 동을 모두 받아 단지 하나로 묶는다.
+    // 필지는 누른 자리 대신 그 동의 가운데로 찾는다(단지 안 공원·도로 필지를 누른 경우를 피하려고)
+    if (pr.usability === '02000' && /\d+동$/.test(pr.dong_nm || '')) {
+      const cx0 = ring.reduce((s, p) => s + p[0], 0) / ring.length, cy0 = ring.reduce((s, p) => s + p[1], 0) / ring.length;
+      const cx = await fetchComplex((pr.bld_nm || '').replace(/\s*\d+동$/, '').trim(), cy0, cx0);
       if (cx) out.complex = Object.assign(cx, { tapped: cleanText(pr.dong_nm, 10) });
     }
     return out;
   })().catch(() => null));
   return ringCache.get(k);
 }
-// 아파트 단지: 같은 단지 이름(bld_nm)의 동을 약 350m 안에서 모두 → { name, count, rings, floors, year }
+// 아파트 단지: 누른 동이 있는 필지(연속지적도 LP_PA_CBND_BUBUN) 안의 아파트 동 + 같은 단지 이름의 동(약 350m 안)을 모두 묶는다
+// → { name, count, rings, floors, year }. 잠실주공처럼 동마다 이름이 다른('주공아파트 509동', '잠실아파트 517동') 단지는 필지로,
+// 한 동이 옆 필지에 있는 단지는 이름으로 잡힌다
 const complexCache = new Map();
+const vwOuter = f => { const g = f.geometry || {}; return (g.type === 'MultiPolygon' ? (g.coordinates[0] || [])[0] : (g.coordinates || [])[0]) || []; };
 function fetchComplex(name, lat, lng){
-  const k = `${name}|${lat.toFixed(3)},${lng.toFixed(3)}`;
-  if (!complexCache.has(k)) complexCache.set(k, vworldBldg(`BOX(${lng - 0.004},${lat - 0.003},${lng + 0.004},${lat + 0.003})`, 100, 'LT_C_BLDGINFO', { attrFilter: `bld_nm:=:${name}` }).then(all => {
-    const outer = f => { const g = f.geometry || {}; return (g.type === 'MultiPolygon' ? (g.coordinates[0] || [])[0] : (g.coordinates || [])[0]) || []; };
-    const rings = all.map(outer).filter(r => r.length >= 3).map(r => r.slice(0, 300).map(([x, y]) => [+x, +y]));
-    if (rings.length < 2) return null;
-    const yrs = all.map(g => ((g.properties || {}).useapr_day || '')).filter(d => /^\d{8}$/.test(d)).map(d => d.slice(0, 4)).sort();
-    return { name: cleanText(name, 40), count: rings.length, rings, floors: Math.max(0, ...all.map(g => parseInt((g.properties || {}).grnd_flr, 10) || 0)), year: yrs[0] || '' };
-  }).catch(() => null));
+  const k = `${name}|${lat.toFixed(4)},${lng.toFixed(4)}`;
+  if (!complexCache.has(k)) complexCache.set(k, (async () => {
+    const isDong = f => /\d+동$/.test((f.properties || {}).dong_nm || '');
+    const cen = r => [r.reduce((s, p) => s + p[0], 0) / r.length, r.reduce((s, p) => s + p[1], 0) / r.length];
+    const got = new Map(); // 동 이름+위치 → 동
+    const add = f => { const r = vwOuter(f); if (r.length < 3 || !isDong(f)) return; const [cx, cy] = cen(r); got.set(`${f.properties.dong_nm}|${cx.toFixed(4)},${cy.toFixed(4)}`, f); };
+    const parcel = (await vworldBldg(`POINT(${lng.toFixed(7)} ${lat.toFixed(7)})`, 1, 'LP_PA_CBND_BUBUN'))[0];
+    const pr = parcel ? vwOuter(parcel) : [];
+    if (pr.length >= 3) {
+      const xs = pr.map(p => p[0]), ys = pr.map(p => p[1]);
+      const fs = await vworldBldg(`BOX(${Math.min(...xs)},${Math.min(...ys)},${Math.max(...xs)},${Math.max(...ys)})`, 1000, 'LT_C_BLDGINFO', { attrFilter: 'usability:=:02000' });
+      for (const f of fs) { const r = vwOuter(f); if (r.length >= 3 && inRing(...cen(r), pr)) add(f); }
+    }
+    if (name) for (const f of await vworldBldg(`BOX(${lng - 0.004},${lat - 0.003},${lng + 0.004},${lat + 0.003})`, 100, 'LT_C_BLDGINFO', { attrFilter: `bld_nm:=:${name}` })) add(f);
+    const all = [...got.values()];
+    if (all.length < 2) return null;
+    const rings = all.map(f => vwOuter(f).slice(0, 300).map(([x, y]) => [+x, +y]));
+    const yrs = all.map(g => (g.properties.useapr_day || '')).filter(d => /^\d{8}$/.test(d)).map(d => d.slice(0, 4)).sort();
+    // 이름: 주어진 단지 이름, 없으면 동 이름에서 '509동'을 뺀 것 중 가장 많은 것
+    const counts = {}; for (const f of all) { const n = (f.properties.bld_nm || '').replace(/\s*\d+동$/, '').trim(); if (n) counts[n] = (counts[n] || 0) + 1; }
+    const top = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
+    return { name: cleanText(name || (top && top[0]) || '아파트 단지', 40), count: rings.length, rings,
+      floors: Math.max(0, ...all.map(g => parseInt(g.properties.grnd_flr, 10) || 0)), year: yrs[0] || '' };
+  })().catch(() => null));
   return complexCache.get(k);
 }
 function withRing(card, ringP){
@@ -3776,14 +3797,15 @@ function withRing(card, ringP){
   const m = card && card.building && /^(.*\S)\s+(\d+동)$/.exec(card.name || '');
   if (m) ringP.then(b => b && b.complex ? null : fetchComplex(m[1], card.lat, card.lng)).then(cx => {
     if (!cx || card.complex) return;
-    card.complex = Object.assign(cx, { tapped: m[2] }); card.name = cx.name; card.autoName = false;
+    card.complex = Object.assign(cx, { tapped: m[2] }); card.name = m[1]; card.autoName = false;
     if (findPlace(state.sel) === card) { syncBldPoly(card); renderDetail(); }
   });
   if (card) ringP.then(b => {
     if (!b) return;
     Object.assign(card, { ring: b.ring, floorsAbove: b.floors, floorsUnder: b.under, bldUse: b.use, bldYear: b.year });
     // 아파트 단지: 동을 모두 묶어 칠하고, 제목도 단지 이름으로(카카오는 '선사현대아파트 112동'처럼 누른 동을 준다)
-    if (card.building && b.complex) { card.complex = b.complex; card.name = b.complex.name; card.autoName = false; }
+    // 이름은 카카오가 준 단지 이름(동을 뺀 것)이 있으면 그것을 쓴다(브이월드는 동마다 '주공아파트', '잠실아파트'처럼 다를 때가 있다)
+    if (card.building && b.complex) { card.complex = b.complex; card.name = (m && m[1]) || b.complex.name; card.autoName = false; }
     // 카카오가 건물 이름을 안 줬으면(주소·가게 이름으로 지은 제목) 건물통합정보의 이름으로 바꾼다
     else if (card.building && card.autoName && b.name) { card.name = b.name; card.autoName = false; }
     if (findPlace(state.sel) === card) { syncBldPoly(card); if (card.building) renderDetail(); }
