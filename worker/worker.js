@@ -3,6 +3,7 @@
 //     TMAP_APP_KEY      : TMAP 대중교통·보행자 경로
 //     KAKAO_REST_KEY    : 카카오 로컬 장소 검색 (REST API 키)
 //     ANTHROPIC_API_KEY : AI 조건 찾기·사진 보고 채우기
+//     DATA_GO_KR_KEY    : 공공데이터포털 인증키(아파트 단지 공식 정보)
 // - 결과 저장: KV 바인딩 ROUTE_CACHE. 횟수 제한: 바인딩 LIMIT_ROUTE·LIMIT_PLACE (wrangler.toml)
 // - 공간실록 사이트에서 온 요청만 받는다. AI는 로그인한 사람만(Supabase 로그인 토큰을 확인한다).
 //
@@ -12,12 +13,13 @@
 //   POST /search   { query, x?, y?, sort?, page? }              → 카카오 키워드 장소 검색 (x, y가 있으면 그 근처부터)
 //   POST /station  { x, y }                                     → 1.5km 안 지하철역 (가까운 순)
 //   POST /addr     { x, y }                                     → 그 자리의 도로명주소·건물명 (카카오 좌표→주소)
+//   POST /apt      { bjd: 법정동 코드 10자리 }                  → 그 동네 아파트 단지의 공식 이름·주소·동수·세대수 (공공데이터포털)
 //   POST /nearby   { rect: "왼쪽X,아래Y,오른쪽X,위Y", code? }      → 지도 한 칸 안의 장소 (NEARBY의 업종 코드)
 //   POST /intent   { text }                                     → 글로 적은 목적을 기록 항목 조건으로 (로그인 필요)
 //   POST /photo    { images: [base64 JPEG, 최대 3장] }          → 사진에서 눈으로 확인되는 기록 항목 제안 (로그인 필요)
 
 const ALLOWED_ORIGINS = ['https://ian-space.github.io', 'http://localhost:8765'];
-const VERSION = '2026-10-10.4'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
+const VERSION = '2026-10-11.1'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
 // 로그인 확인용 Supabase 주소와 공개 키(사이트 코드에도 있는 공개 값)
 const SUPABASE_URL = 'https://qktrghajroxddrbpwtvn.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_j-kp8YKsQTczGcsQX74OxA_mfI7DoZw';
@@ -81,7 +83,7 @@ const TMAP = {
   transit: 'https://apis.openapi.sk.com/transit/routes',
   walk: 'https://apis.openapi.sk.com/tmap/routes/pedestrian?version=1&format=json',
 };
-const PLACE_KINDS = ['search', 'nearby', 'station', 'addr'];
+const PLACE_KINDS = ['search', 'nearby', 'station', 'addr', 'apt'];
 const AI_KINDS = ['intent', 'photo'];
 
 export default {
@@ -192,6 +194,56 @@ async function handle(kind, input, { request, env, ctx, send, reply }) {
       const j = await kakao('search/category', { category_group_code: 'SW8', x: x.toFixed(4), y: y.toFixed(4), radius: '1500', sort: 'distance', size: '5' });
       return JSON.stringify({ stations: (j.documents || []).map(d => ({ name: d.place_name, line: String(d.category_name || '').split('>').pop().trim(), x: d.x, y: d.y })) });
     });
+  }
+
+  /* 아파트 단지 공식 정보(공공데이터포털, 국토교통부 공동주택 단지 목록·기본 정보 = K-apt): 법정동 하나의 단지들
+     → { apts: [{ code, name, addr, road, dongs, units, year }] }. 사이트가 누른 필지의 지번·이름으로 맞는 단지를 고른다.
+     단지 목록은 잘 바뀌지 않아 법정동마다 30일 저장. 기본 정보는 단지마다 따로 저장해서, 단지가 많은 동네도 몇 번에 나눠 채운다 */
+  if (kind === 'apt') {
+    const bjd = String(input.bjd || '');
+    if (!/^\d{10}$/.test(bjd)) return reply(400, { error: 'bad bjd' });
+    if (!env.DATA_GO_KR_KEY) return reply(503, { error: 'apt off' });
+    const hit = kv && await kv.get(`apt1:${bjd}`).catch(() => null);
+    if (hit) return send(hit, 200, { 'X-Cache': 'HIT' });
+    await allow();
+    const key = /%[0-9A-Fa-f]{2}/.test(env.DATA_GO_KR_KEY) ? decodeURIComponent(env.DATA_GO_KR_KEY) : env.DATA_GO_KR_KEY; // 인코딩된 키를 넣었어도
+    const gov = async (path, params) => {
+      const up = await fetch(`https://apis.data.go.kr/1613000/${path}?` + new URLSearchParams({ serviceKey: key, _type: 'json', ...params }));
+      const j = await up.json().catch(() => null);
+      const body = j && j.response && j.response.body;
+      if (!body) throw reply(502, { error: 'apt upstream', code: (j && j.response && j.response.header && j.response.header.resultCode) || up.status });
+      return body;
+    };
+    const arr = v => !v ? [] : Array.isArray(v) ? v : [v];
+    const listBody = await gov('AptListService4/getLegaldongAptList4', { bjdCode: bjd, pageNo: '1', numOfRows: '200' });
+    const list = arr(listBody.items && (listBody.items.item || listBody.items));
+    if (input.debug === 'raw') { // 임시: 응답 모양 확인용(공공 자료라 비밀 없음)
+      const one = list[0] && await gov('AptBasisInfoServiceV5/getAphusBassInfoV5', { kaptCode: String(list[0].kaptCode) }).catch(e => String(e.status || e));
+      return reply(200, { listBody: { ...listBody, items: list.slice(0, 3) }, n: list.length, one });
+    }
+    let full = true;
+    const apts = [];
+    for (const it of list.slice(0, 120)) {
+      const code = String(it.kaptCode || '');
+      if (!/^[A-Z0-9]{5,12}$/.test(code)) continue;
+      let info = kv && await kv.get(`aptb1:${code}`).catch(() => null);
+      if (!info && apts.filter(a => a.fresh).length < 40) { // 한 번에 외부 요청 40번까지(Cloudflare 무료 한도 50번)
+        const b = await gov('AptBasisInfoServiceV5/getAphusBassInfoV5', { kaptCode: code }).catch(() => null);
+        const d = b && (b.item || (b.items && (b.items.item || b.items)));
+        const x = Array.isArray(d) ? d[0] : d;
+        if (x) {
+          info = JSON.stringify({ code, name: String(x.kaptName || it.kaptName || ''), addr: String(x.kaptAddr || ''), road: String(x.doroJuso || ''),
+            dongs: +x.kaptDongCnt || 0, units: +x.kaptdaCnt || +x.hoCnt || 0, year: /^\d{8}$/.test(String(x.kaptUsedate || '')) ? String(x.kaptUsedate).slice(0, 4) : '' });
+          if (kv) ctx.waitUntil(kv.put(`aptb1:${code}`, info, { expirationTtl: 30 * 86400 }).catch(() => {}));
+          apts.push({ ...JSON.parse(info), fresh: true }); continue;
+        }
+      }
+      if (info) apts.push(JSON.parse(info));
+      else { full = false; apts.push({ code, name: String(it.kaptName || ''), addr: '', road: '', dongs: 0, units: 0, year: '' }); }
+    }
+    const text = JSON.stringify({ apts: apts.map(({ fresh, ...a }) => a) });
+    if (kv && full) ctx.waitUntil(kv.put(`apt1:${bjd}`, text, { expirationTtl: 30 * 86400 }).catch(() => {}));
+    return send(text, 200, { 'X-Cache': 'MISS' });
   }
 
   /* 카카오 업종 검색: 지도 한 칸(사각형) 안의 장소. 카카오는 한 번에 최대 45곳(15곳씩 3쪽)만 준다.
