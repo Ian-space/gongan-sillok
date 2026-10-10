@@ -13,13 +13,13 @@
 //   POST /search   { query, x?, y?, sort?, page? }              → 카카오 키워드 장소 검색 (x, y가 있으면 그 근처부터)
 //   POST /station  { x, y }                                     → 1.5km 안 지하철역 (가까운 순)
 //   POST /addr     { x, y }                                     → 그 자리의 도로명주소·건물명 (카카오 좌표→주소)
-//   POST /apt      { bjd: 법정동 코드 10자리 }                  → 그 동네 아파트 단지의 공식 이름·주소·동수·세대수 (공공데이터포털)
+//   POST /apt      { bjd, road?, lot?, name? }                  → 누른 아파트 단지의 공식 이름·주소·동수·세대수 (공공데이터포털)
 //   POST /nearby   { rect: "왼쪽X,아래Y,오른쪽X,위Y", code? }      → 지도 한 칸 안의 장소 (NEARBY의 업종 코드)
 //   POST /intent   { text }                                     → 글로 적은 목적을 기록 항목 조건으로 (로그인 필요)
 //   POST /photo    { images: [base64 JPEG, 최대 3장] }          → 사진에서 눈으로 확인되는 기록 항목 제안 (로그인 필요)
 
 const ALLOWED_ORIGINS = ['https://ian-space.github.io', 'http://localhost:8765'];
-const VERSION = '2026-10-11.3'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
+const VERSION = '2026-10-11.4'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
 // 로그인 확인용 Supabase 주소와 공개 키(사이트 코드에도 있는 공개 값)
 const SUPABASE_URL = 'https://qktrghajroxddrbpwtvn.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_j-kp8YKsQTczGcsQX74OxA_mfI7DoZw';
@@ -196,55 +196,64 @@ async function handle(kind, input, { request, env, ctx, send, reply }) {
     });
   }
 
-  /* 아파트 단지 공식 정보(공공데이터포털, 국토교통부 공동주택 단지 목록·기본 정보 = K-apt): 법정동 하나의 단지들
-     → { apts: [{ code, name, addr, road, dongs, units, year }] }. 사이트가 누른 필지의 지번·이름으로 맞는 단지를 고른다.
-     단지 목록은 잘 바뀌지 않아 법정동마다 30일 저장. 기본 정보는 단지마다 따로 저장해서, 단지가 많은 동네도 몇 번에 나눠 채운다 */
+  /* 아파트 단지 공식 정보(공공데이터포털, 국토교통부 공동주택 단지 목록·기본 정보 = K-apt)
+     { bjd: 누른 필지의 법정동 코드, road: 도로명주소, lot: '22'·'19-1' 같은 지번, name: 알고 있는 단지 이름 }
+     → { apt: { code, name, addr, road, dongs, units, year } | null }
+     법정동의 단지 목록(이름만)에서 이름이 비슷한 단지부터 기본 정보를 몇 개만 받아, 도로명주소나 지번이 맞는 단지를 고른다.
+     공공데이터포털은 한꺼번에 많이 물으면 막혀서, 한 번에 많아야 7번만 묻는다. 목록·기본 정보는 30일 저장 */
   if (kind === 'apt') {
-    const bjd = String(input.bjd || '');
-    if (!/^\d{10}$/.test(bjd)) return reply(400, { error: 'bad bjd' });
+    const bjd = String(input.bjd || ''), road = String(input.road || '').slice(0, 80), lot = String(input.lot || ''), hint = String(input.name || '').slice(0, 40);
+    if (!/^\d{10}$/.test(bjd) || (lot && !/^산?\d{1,4}(-\d{1,4})?$/.test(lot))) return reply(400, { error: 'bad input' });
     if (!env.DATA_GO_KR_KEY) return reply(503, { error: 'apt off' });
-    const hit = kv && await kv.get(`apt1:${bjd}`).catch(() => null);
-    if (hit) return send(hit, 200, { 'X-Cache': 'HIT' });
-    await allow();
     const key = /%[0-9A-Fa-f]{2}/.test(env.DATA_GO_KR_KEY) ? decodeURIComponent(env.DATA_GO_KR_KEY) : env.DATA_GO_KR_KEY; // 인코딩된 키를 넣었어도
+    let asked = false;
     const gov = async (path, params) => {
+      if (!asked) { await allow(); asked = true; } // 저장해 둔 것만 쓸 때는 횟수를 세지 않는다
       const up = await fetch(`https://apis.data.go.kr/1613000/${path}?` + new URLSearchParams({ serviceKey: key, _type: 'json', ...params }), { signal: AbortSignal.timeout(6000) }); // 공공데이터포털은 몰리면 가끔 멈춘다
       const raw = await up.text().catch(() => ''); let j = null; try { j = JSON.parse(raw); } catch {}
       const body = j && j.response && j.response.body;
       const err = (j && ((j.response && j.response.header && j.response.header.resultCode) || (j.OpenAPI_ServiceResponse && j.OpenAPI_ServiceResponse.cmmMsgHeader && j.OpenAPI_ServiceResponse.cmmMsgHeader.errMsg))) || (/<errMsg>([A-Z_]+)/.exec(raw) || [])[1];
-      if (!body) { console.log(JSON.stringify({ apt: path, err, status: up.status })); throw reply(502, { error: 'apt upstream', code: err || up.status }); } // 22·LIMITED_…: 하루 한도
+      if (!body) { console.log(JSON.stringify({ apt: path, err, status: up.status })); throw reply(502, { error: 'apt upstream', code: err || up.status }); } // LIMITED_…: 하루 한도
       return body;
     };
+    const kvGet = k => kv ? kv.get(k).catch(() => null) : null;
+    const kvPut = (k, v) => { if (kv) ctx.waitUntil(kv.put(k, v, { expirationTtl: 30 * 86400 }).catch(() => {})); };
     const arr = v => !v ? [] : Array.isArray(v) ? v : [v];
-    const listBody = await gov('AptListService4/getLegaldongAptList4', { bjdCode: bjd, pageNo: '1', numOfRows: '200' });
-    const list = arr(listBody.items && (listBody.items.item || listBody.items));
-    if (input.debug === 'raw') { // 임시: 응답 모양 확인용(공공 자료라 비밀 없음)
-      const one = list[0] && await gov('AptBasisInfoServiceV5/getAphusBassInfoV5', { kaptCode: String(list[0].kaptCode) }).catch(e => String(e.status || e));
-      return reply(200, { listBody: { ...listBody, items: list.slice(0, 3) }, n: list.length, one });
+    // 법정동의 단지 목록 [{ code, name }]
+    let list = JSON.parse(await kvGet(`aptl1:${bjd}`) || 'null');
+    if (!list) {
+      const b = await gov('AptListService4/getLegaldongAptList4', { bjdCode: bjd, pageNo: '1', numOfRows: '300' });
+      list = arr(b.items && (b.items.item || b.items)).map(it => ({ code: String(it.kaptCode || ''), name: String(it.kaptName || '') })).filter(x => /^[A-Z0-9]{5,12}$/.test(x.code));
+      kvPut(`aptl1:${bjd}`, JSON.stringify(list));
     }
-    let full = true;
-    const apts = [];
-    for (const it of list.slice(0, 120)) {
-      const code = String(it.kaptCode || '');
-      if (!/^[A-Z0-9]{5,12}$/.test(code)) continue;
-      let info = kv && await kv.get(`aptb1:${code}`).catch(() => null);
-      if (!info && apts.filter(a => a.fresh).length < 40) { // 한 번에 외부 요청 40번까지(Cloudflare 무료 한도 50번)
-        const b = await gov('AptBasisInfoServiceV5/getAphusBassInfoV5', { kaptCode: code }).catch(() => null);
-        const d = b && (b.item || (b.items && (b.items.item || b.items)));
-        const x = Array.isArray(d) ? d[0] : d;
-        if (x) {
-          info = JSON.stringify({ code, name: String(x.kaptName || it.kaptName || ''), addr: String(x.kaptAddr || ''), road: String(x.doroJuso || ''),
-            dongs: +x.kaptDongCnt || 0, units: +x.kaptdaCnt || +x.hoCnt || 0, year: /^\d{8}$/.test(String(x.kaptUsedate || '')) ? String(x.kaptUsedate).slice(0, 4) : '' });
-          if (kv) ctx.waitUntil(kv.put(`aptb1:${code}`, info, { expirationTtl: 30 * 86400 }).catch(() => {}));
-          apts.push({ ...JSON.parse(info), fresh: true }); continue;
-        }
-      }
-      if (info) apts.push(JSON.parse(info));
-      else { full = false; apts.push({ code, name: String(it.kaptName || ''), addr: '', road: '', dongs: 0, units: 0, year: '' }); }
+    // 단지 기본 정보
+    const info = async code => {
+      const hit = await kvGet(`aptb1:${code}`);
+      if (hit) return JSON.parse(hit);
+      const b = await gov('AptBasisInfoServiceV5/getAphusBassInfoV5', { kaptCode: code });
+      const d = b.item || (b.items && (b.items.item || b.items)), x = Array.isArray(d) ? d[0] : d;
+      if (!x) return null;
+      const o = { code, name: String(x.kaptName || ''), addr: String(x.kaptAddr || ''), road: String(x.doroJuso || ''), dongs: +x.kaptDongCnt || 0,
+        units: +x.kaptdaCnt || +x.hoCnt || 0, year: /^\d{8}$/.test(String(x.kaptUsedate || '')) ? String(x.kaptUsedate).slice(0, 4) : '' };
+      kvPut(`aptb1:${code}`, JSON.stringify(o));
+      return o;
+    };
+    // 이름이 비슷한 단지부터(같으면 3, 한쪽이 다른 쪽을 품으면 2), 그다음 목록 순서
+    const sq = s => String(s || '').replace(/[\s\p{P}\p{S}]/gu, '').replace(/아파트$/, '');
+    const h = sq(hint);
+    const score = n => { const s = sq(n); return !h || !s ? 0 : s === h ? 3 : s.includes(h) || h.includes(s) ? 2 : 0; };
+    const ranked = list.map(x => ({ ...x, s: score(x.name) })).sort((a, b) => b.s - a.s);
+    const tail = s => String(s || '').trim().split(/\s+/).slice(1).join(' '); // '서울'/'서울특별시' 표기 차이를 뺀다
+    const byLot = lot && new RegExp('\\s' + lot + '(\\s|$)');
+    let fetched = 0;
+    for (const c of ranked.slice(0, 12)) { // 이름이 비슷한 쪽부터 12곳까지만 본다
+      const kept = await kvGet(`aptb1:${c.code}`);
+      if (!kept && fetched >= 6) continue;
+      if (!kept) fetched++;
+      const a = kept ? JSON.parse(kept) : await info(c.code).catch(e => { if (e instanceof Response && fetched <= 1) throw e; return null; });
+      if (a && ((road && a.road && tail(a.road) === tail(road)) || (byLot && byLot.test(a.addr)) || (c.s === 3 && !road && !lot))) return reply(200, { apt: a });
     }
-    const text = JSON.stringify({ apts: apts.map(({ fresh, ...a }) => a), ...(!full && { partial: true }) }); // partial: 아직 못 채운 단지가 있다(다음에 이어서)
-    if (kv && full) ctx.waitUntil(kv.put(`apt1:${bjd}`, text, { expirationTtl: 30 * 86400 }).catch(() => {}));
-    return send(text, 200, { 'X-Cache': 'MISS' });
+    return reply(200, { apt: null });
   }
 
   /* 카카오 업종 검색: 지도 한 칸(사각형) 안의 장소. 카카오는 한 번에 최대 45곳(15곳씩 3쪽)만 준다.
