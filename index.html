@@ -627,6 +627,7 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
 .sim-box .sim-open{font-size:13px}
 .sim-title{margin:8px 0 6px;font-size:13px;font-weight:700}
 .sim-acts{display:flex;gap:8px;margin-top:10px}
+.sim-atleast{display:flex;align-items:center;gap:6px;margin-top:8px;font-size:12px;color:var(--muted)}
 .sim-acts .btn{flex:1}
 .d-fact{padding:3px 9px;border-radius:999px;font-size:12px;font-weight:700}
 .d-fact.lv0{background:var(--blue);color:#FFFFFF}
@@ -1661,6 +1662,8 @@ function fuzzyHas(t, q){
 
 function matches(p){
   if (state.collect && !inCollect(p)) return false; // 내 장소 모아 보기: 찜한 곳과 내 기록만
+  // '이곳과 비슷한 곳'을 찾는 중이면 기준이 된 그 장소는 결과에서 뺀다
+  if (state.purpose === 'custom' && state.intent && state.intent.ref && sameSpot(p, state.intent.ref)) return false;
   for (const k of Object.keys(ENUMS)) { const f = state.filters[k]; if (f.size && !f.has(p[k])) return false; }
   const vf = state.filters.view; // 내 기록만, 공개 기록만 골라 보기
   if (vf.size && !((vf.has('내 기록') && p.mine && !p.sample) || (vf.has('공개 기록') && (p.pubCount > 0 || p.pub)))) return false;
@@ -2311,15 +2314,20 @@ function renderMap(vis){
   if (!map) return;
   const visSet = new Set(vis.map(p => p.id));
   const ks = state.badges;
-  const showLabels = !ks.length && (vis.length <= 8 || map.getZoom() >= 17);
+  // 좌석 종류·마감만으로 된 조건(인더스트리얼 등): 배지 대신 그 태그가 기록된 곳에 태그 이름을 단다
+  const pu = curPurpose(), tagMode = !ks.length && pu && Object.keys(pu.t || {}).length ? pu.t : null;
+  const tagHits = p => Object.entries(tagMode).flatMap(([k, vals]) => tagList(p[k]).filter(v => vals.includes(v)));
+  const showLabels = !ks.length && !tagMode && (vis.length <= 8 || map.getZoom() >= 17);
   for (const p of state.places) {
     const mk = markers.get(p.id); if (!mk) continue;
     const on = visSet.has(p.id), sel = p.id === state.sel;
-    const lv = ks.length ? badgeLevel(p) : 0; // 0 진함, 1 연함, 2 흐림, -1 기록 없음
-    const cls = 'pin' + (sel ? ' sel' : '') + (on ? '' : ' faint') + (ks.length && on && (lv === 2 || lv < 0) ? ' dim' : '');
+    const hits = tagMode ? tagHits(p) : [];
+    const lv = ks.length ? badgeLevel(p) : tagMode ? (hits.length ? 0 : -1) : 0; // 0 진함, 1 연함, 2 흐림, -1 기록 없음
+    const cls = 'pin' + (sel ? ' sel' : '') + (on ? '' : ' faint') + ((ks.length || tagMode) && on && (lv === 2 || lv < 0) ? ' dim' : '');
     // 고른 조건이 있으면 핀마다 값을 이어 붙인 배지 하나를 달고, 고른 장소는 이름을 보여 준다
-    const text = ks.map(k => { const l = level(p, k); return l < 0 ? '?' : SHORT[k][l]; }).join(' · ');
+    const text = tagMode ? hits.slice(0, 2).join(' · ') : ks.map(k => { const l = level(p, k); return l < 0 ? '?' : SHORT[k][l]; }).join(' · ');
     const label = sel || (on && showLabels) ? `<span class="pin-label">${esc(p.name)}</span>`
+      : tagMode && on ? (hits.length ? `<span class="pin-badge lv0">${esc(text)}</span>` : '')
       : ks.length && on ? `<span class="pin-badge lv${lv < 0 ? 'x' : lv}">${lv < 0 ? '기록 없음' : esc(text)}</span>` : '';
     mk.setIcon({ content: `<div class="${cls}" style="--c:${category(p).color}"><span class="pin-head"></span>${label}</div>`, anchor: new naver.maps.Point(14, 29) });
     mk.setZIndex(sel ? 300 : on ? 200 + (ks.length && lv >= 0 ? (2 - lv) * 10 : 0) : 100); // 좋은 곳이 위로 올라오게
@@ -2655,41 +2663,58 @@ async function askAiIntent(text){
   } catch { if (state.ai.text === text) state.ai.status = 'error'; }
   renderIntent();
 }
-// 이곳과 비슷한 곳: 상세 화면의 사실(조용함, 턱 없음 …)을 그대로 조건으로 삼아 '목적으로 보기'와 같은 방식으로 찾는다.
-// 처음엔 좋은 값(진한 칩)만 켜 두고, 이용자가 원하는 조건만 남길 수 있다. 순서는 기록된 사실로만 정해진다
-state.sim = null; // { id: 장소, pick: Set(항목) }
+// 이곳과 비슷한 곳: 상세 화면의 사실(조용함, 턱 없음 …)과 좌석 종류·마감을 조건으로 삼아 '목적으로 보기'와 같은 방식으로 찾는다.
+// 처음엔 좋은 값(진한 칩)만 켜 두고, 이용자가 원하는 조건만 남길 수 있다. '이 값 이상'이면 더 좋은 값도 맞는 걸로 친다
+// (콘센트 일부 → 많음도). 순서는 기록된 사실로만 정해지고, 기준이 된 장소는 결과에서 뺀다
+state.sim = null; // { id: 장소, pick: Set(항목 또는 't:태그:값'), atLeast }
 function similarBox(p, facts){
   const box = el('div','sim-box');
+  const tags = TAG_KEYS.flatMap(k => tagList(p[k]).filter(v => TAGS[k].values.includes(v)).map(v => ({ id: `t:${k}:${v}`, label: v })));
   if (!state.sim || state.sim.id !== p.id) {
     const b = el('button','linkbtn sim-open','이 조건으로 비슷한 곳 찾기'); b.type = 'button';
     b.addEventListener('click', () => {
       const good = facts.filter(f => !ENUMS[f.k].neutral && f.l === 0).map(f => f.k);
-      state.sim = { id: p.id, pick: new Set(good.length ? good : facts.map(f => f.k)) }; renderDetail();
+      state.sim = { id: p.id, pick: new Set(good.length ? good : facts.map(f => f.k)), atLeast: true }; renderDetail();
     });
     box.appendChild(b); return box;
   }
-  const pick = state.sim.pick;
+  const { pick } = state.sim;
+  const toggle = id => { pick.has(id) ? pick.delete(id) : pick.add(id); renderDetail(); };
   box.appendChild(el('p','sim-title','찾을 조건을 골라 주세요'));
   const chips = el('div','chips');
   for (const f of facts) {
-    const c = el('button','chip', FACT[f.k][f.l]); c.type = 'button'; c.setAttribute('aria-pressed', String(pick.has(f.k)));
-    c.addEventListener('click', () => { pick.has(f.k) ? pick.delete(f.k) : pick.add(f.k); renderDetail(); });
-    chips.appendChild(c);
+    const more = state.sim.atLeast && f.l > 0 && f.l < ENUMS[f.k].values.length - 1 && !ENUMS[f.k].neutral; // 더 좋은 값이 있는 중간 값만(가장 아쉬운 값에 이상을 붙이면 모든 곳이 맞는다)
+    const c = el('button','chip', FACT[f.k][f.l] + (more ? ' 이상' : '')); c.type = 'button'; c.setAttribute('aria-pressed', String(pick.has(f.k)));
+    c.addEventListener('click', () => toggle(f.k)); chips.appendChild(c);
+  }
+  for (const t of tags) {
+    const c = el('button','chip', t.label); c.type = 'button'; c.setAttribute('aria-pressed', String(pick.has(t.id)));
+    c.addEventListener('click', () => toggle(t.id)); chips.appendChild(c);
   }
   box.appendChild(chips);
+  const al = el('label','sim-atleast'), ai = el('input'); ai.type = 'checkbox'; ai.checked = state.sim.atLeast;
+  ai.addEventListener('change', () => { state.sim.atLeast = ai.checked; renderDetail(); });
+  al.append(ai, el('span', null, '이 값보다 좋은 곳도 포함 (예: 콘센트 일부 → 많음도)'));
+  box.appendChild(al);
   const acts = el('div','sim-acts');
   const go = el('button','btn add', pick.size ? `${pick.size}개 조건으로 찾기` : '조건을 하나 이상 골라 주세요'); go.type = 'button'; go.disabled = !pick.size;
-  go.addEventListener('click', () => applySimilar(p, [...pick]));
+  go.addEventListener('click', () => applySimilar(p, [...pick], state.sim.atLeast));
   const no = el('button','btn ghost','닫기'); no.type = 'button'; no.addEventListener('click', () => { state.sim = null; renderDetail(); });
   acts.append(go, no); box.appendChild(acts);
   return box;
 }
-function applySimilar(p, keys){
-  const w = Object.fromEntries(keys.map(k => [k, ENUMS[k].values.map(v => v === p[k] ? 3 : 0)]));
-  const src = `'${p.name}'에 기록된 값과 같은 조건이에요.`;
+function applySimilar(p, ids, atLeast){
+  const w = {}, t = {}, why = {};
+  const same = `'${p.name}'에 기록된 값과 같은 조건이에요.`;
+  for (const id of ids) {
+    if (id.startsWith('t:')) { const [, k, v] = id.split(':'); (t[k] = t[k] || []).push(v); why['t:' + k] = same; continue; }
+    const idx = level(p, id), more = atLeast && !ENUMS[id].neutral && idx < ENUMS[id].values.length - 1; // 가장 아쉬운 값은 같은 값으로만
+    w[id] = ENUMS[id].values.map((v, i) => (more ? i <= idx : i === idx) ? 3 : 0);
+    why[id] = more && idx > 0 ? `'${p.name}'의 값(${p[id]}) 이상이에요.` : same;
+  }
   // 받침이 있으면 '과', 없으면 '와' (버거킹 암사역점과 / 카페이유와)
   const c = p.name.charCodeAt(p.name.length - 1) - 0xAC00, wa = c >= 0 && c < 11172 && c % 28 ? '과' : '와';
-  state.intent = { id: 'custom', label: `${p.name.slice(0, 12)}${wa} 비슷한 곳`, w, t: {}, why: Object.fromEntries(keys.map(k => [k, src])), words: [p.name] };
+  state.intent = { id: 'custom', label: `${p.name.slice(0, 12)}${wa} 비슷한 곳`, w, t, why, words: [p.name], ref: { name: p.name, lat: p.lat, lng: p.lng } };
   state.purpose = 'custom'; state.sortNear = false; state.sortBy = 'fit'; state.intentPick.clear(); state.sim = null;
   $('q').value = ''; state.q = ''; queueExtSearch('');
   select(null);
@@ -2697,7 +2722,7 @@ function applySimilar(p, keys){
   const sc = $('intent').closest('.scroll'); if (sc) sc.scrollTop = 0;
   // 휴대폰: 결과 목록이 보이게 패널을 반쯤 올린다
   if (isPhone() && listSheet) listSheet.set(vh(0.5), true);
-  toast(`'${p.name}'${wa} 같은 조건을 많이 채운 곳부터 보여 줘요.`);
+  toast(`'${p.name}'${wa} 같은 조건을 많이 채운 곳부터 보여 줘요. '${p.name}'은(는) 목록에서 뺐어요.`);
 }
 function applyIntent(sel, words){
   addRecent($('q').value);
@@ -2835,10 +2860,20 @@ function renderLegend(){
   }
   if (ks.length > 1) { // 조건 여럿: 모두 만족하는 곳이 몇 곳인지 함께
     lg.setAttribute('aria-label', '고른 조건 표시 안내');
-    lg.appendChild(el('b', null, `${ks.map(k => SHORT[k][0]).join(' + ')} 모두 만족 ${state.places.filter(allGood).length}곳`));
+    const ref = state.purpose === 'custom' && state.intent && state.intent.ref; // 비슷한 곳 찾기: 기준 장소는 세지 않는다
+    lg.appendChild(el('b', null, `${ks.map(k => SHORT[k][0]).join(' + ')} 모두 만족 ${state.places.filter(p => allGood(p) && !(ref && sameSpot(p, ref))).length}곳`));
     ['모두', '일부', '없음'].forEach((t, i) => { const s = el('span'); s.append(el('i', 'lv' + i), t); lg.appendChild(s); });
     lg.appendChild(helpBtn());
     nearLegendRow(lg); lg.hidden = !map; renderLegendHelp(); return;
+  }
+  const pu = curPurpose(); // 좌석 종류·마감만으로 된 조건(인더스트리얼 등): 어떤 태그를 찾는지와 몇 곳에 기록됐는지
+  if (pu && Object.keys(pu.t || {}).length) {
+    const vals = Object.values(pu.t).flat();
+    const n = state.places.filter(p => Object.entries(pu.t).some(([k, vs]) => tagList(p[k]).some(v => vs.includes(v)))).length;
+    lg.setAttribute('aria-label', `${pu.label} 조건 안내`);
+    lg.appendChild(el('b', null, pu.label));
+    const s = el('span'); s.append(el('i','lv0'), `${vals.join('·')} 기록 ${n}곳`); lg.appendChild(s);
+    nearLegendRow(lg); lg.hidden = !map; $('legendHelp').hidden = true; return;
   }
   if (state.legendHelp) { state.legendHelp = false; } // 조건을 모두 끄면 기준도 접는다
   $('legendHelp').hidden = true;
