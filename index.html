@@ -56,6 +56,9 @@ button,input{font:inherit;color:inherit}
 .side{background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
 .side-head{padding:22px 22px 14px}
 .brand{color:var(--seal-ink);font-family:var(--sans);font-weight:800;font-size:32px;line-height:1.1;margin:0;letter-spacing:-.03em}
+/* 영어 화면(i18n.js가 html lang을 en으로 바꿈)에서만 로고 옆에 로마자 이름. 한국어 화면에서는 숨김 */
+.brand-en{display:none;margin-left:8px;color:var(--muted);font-size:15px;font-weight:600;letter-spacing:0}
+html[lang="en"] .brand-en{display:inline}
 .tagline{margin:6px 0 0;color:var(--muted);font-size:14px}
 .actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}
 .btn{border:1px solid var(--ink);background:var(--ink);color:var(--panel);padding:8px 14px;border-radius:6px;cursor:pointer;font-size:14px;font-weight:500}
@@ -849,7 +852,7 @@ html{touch-action:manipulation}
     <div class="sheet-handle grab" id="sheetHandle" role="button" tabindex="0" aria-label="목록 패널 높이 바꾸기"><span></span></div>
     <div class="side-head">
       <div class="brand-row">
-        <h1 class="brand" translate="no">공간실록</h1>
+        <h1 class="brand" translate="no">공간실록<span class="brand-en" lang="en">Gonggan Sillok</span></h1>
       </div>
       <p class="tagline">평점 대신 사실로 기록하는 공간 지도. 시제품.</p>
       <input type="file" id="file" accept=".xlsx,.csv" hidden>
