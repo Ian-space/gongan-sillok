@@ -3732,14 +3732,16 @@ function vworldBldg(geom, size, data, extra){
 function fetchRing(lat, lng){
   const k = lat.toFixed(5) + ',' + lng.toFixed(5);
   if (!ringCache.has(k)) ringCache.set(k, (async () => {
-    const pt = `POINT(${lng.toFixed(7)} ${lat.toFixed(7)})`, box = `BOX(${lng - 0.00012},${lat - 0.0001},${lng + 0.00012},${lat + 0.0001})`;
+    const pt = `POINT(${lng.toFixed(7)} ${lat.toFixed(7)})`, box = `BOX(${lng - 0.00018},${lat - 0.00015},${lng + 0.00018},${lat + 0.00015})`; // 약 15m
     let fs = await vworldBldg(pt, 1, 'LT_C_BLDGINFO');
-    if (!fs.length) fs = await vworldBldg(box, 10, 'LT_C_BLDGINFO');
+    if (!fs.length) fs = await vworldBldg(box, 20, 'LT_C_BLDGINFO');
     if (!fs.length) fs = await vworldBldg(pt, 1, 'LT_C_SPBD');
-    if (!fs.length) fs = await vworldBldg(box, 10, 'LT_C_SPBD');
+    if (!fs.length) fs = await vworldBldg(box, 20, 'LT_C_SPBD');
     const outer = f => { const g = f.geometry || {}; return (g.type === 'MultiPolygon' ? (g.coordinates[0] || [])[0] : (g.coordinates || [])[0]) || []; };
-    const near = f => Math.min(...outer(f).map(([x, y]) => Math.hypot((x - lng) * 0.79, y - lat)));
-    const f = fs.sort((a, b) => near(a) - near(b))[0];
+    // 고르는 순서: 누른 점을 품은 건물 → 이름·층수 정보가 있는 건물(이름 없는 부속 구조물은 뒤로) → 가까운 건물
+    const near = f => inRing(lng, lat, outer(f)) ? 0 : Math.min(...outer(f).map(([x, y]) => Math.hypot((x - lng) * 0.79, y - lat)));
+    const info = f => { const p = f.properties || {}; return p.bld_nm || p.buld_nm || +p.grnd_flr > 0 || +p.gro_flo_co > 0 ? 0 : 1; };
+    const f = fs.sort((a, b) => (near(a) === 0 ? 0 : 1) - (near(b) === 0 ? 0 : 1) || info(a) - info(b) || near(a) - near(b))[0];
     if (!f) return null;
     const ring = outer(f).slice(0, 300).map(([x, y]) => [+x, +y]).filter(([x, y]) => x > 124 && x < 132 && y > 33 && y < 39);
     const pr = f.properties || {}, num = v => { const n = parseInt(v, 10); return n > 0 ? n : 0; };
@@ -3749,19 +3751,34 @@ function fetchRing(lat, lng){
     const out = { ring, floors: num(pr.grnd_flr || pr.gro_flo_co), under: num(pr.ugrnd_flr), use: BLD_USE[pr.usability] || '', year: yearOf(pr), name };
     // 아파트 단지(공동주택, 동이 있는 곳): 같은 단지 이름의 동을 약 350m 안에서 모두 받아 단지 하나로 묶는다
     if (pr.usability === '02000' && pr.bld_nm && pr.dong_nm) {
-      const all = await vworldBldg(`BOX(${lng - 0.004},${lat - 0.003},${lng + 0.004},${lat + 0.003})`, 100, 'LT_C_BLDGINFO', { attrFilter: `bld_nm:=:${pr.bld_nm}` });
-      const rings = all.map(outer).filter(r => r.length >= 3).map(r => r.slice(0, 300).map(([x, y]) => [+x, +y]));
-      if (rings.length > 1) {
-        const years = [...new Set(all.map(g => yearOf(g.properties || {})).filter(Boolean))].sort();
-        Object.assign(out, { complex: { name: cleanText(pr.bld_nm, 40), count: rings.length, rings, tapped: cleanText(pr.dong_nm, 10),
-          floors: Math.max(...all.map(g => num((g.properties || {}).grnd_flr))), year: years[0] || '' } });
-      }
+      const cx = await fetchComplex(pr.bld_nm, lat, lng);
+      if (cx) out.complex = Object.assign(cx, { tapped: cleanText(pr.dong_nm, 10) });
     }
     return out;
   })().catch(() => null));
   return ringCache.get(k);
 }
+// 아파트 단지: 같은 단지 이름(bld_nm)의 동을 약 350m 안에서 모두 → { name, count, rings, floors, year }
+const complexCache = new Map();
+function fetchComplex(name, lat, lng){
+  const k = `${name}|${lat.toFixed(3)},${lng.toFixed(3)}`;
+  if (!complexCache.has(k)) complexCache.set(k, vworldBldg(`BOX(${lng - 0.004},${lat - 0.003},${lng + 0.004},${lat + 0.003})`, 100, 'LT_C_BLDGINFO', { attrFilter: `bld_nm:=:${name}` }).then(all => {
+    const outer = f => { const g = f.geometry || {}; return (g.type === 'MultiPolygon' ? (g.coordinates[0] || [])[0] : (g.coordinates || [])[0]) || []; };
+    const rings = all.map(outer).filter(r => r.length >= 3).map(r => r.slice(0, 300).map(([x, y]) => [+x, +y]));
+    if (rings.length < 2) return null;
+    const yrs = all.map(g => ((g.properties || {}).useapr_day || '')).filter(d => /^\d{8}$/.test(d)).map(d => d.slice(0, 4)).sort();
+    return { name: cleanText(name, 40), count: rings.length, rings, floors: Math.max(0, ...all.map(g => parseInt((g.properties || {}).grnd_flr, 10) || 0)), year: yrs[0] || '' };
+  }).catch(() => null));
+  return complexCache.get(k);
+}
 function withRing(card, ringP){
+  // 카카오가 '○○아파트 112동'처럼 동 이름을 줬는데 브이월드에서 그 동을 못 골랐어도, 단지 이름으로 동들을 찾아 묶는다
+  const m = card && card.building && /^(.*\S)\s+(\d+동)$/.exec(card.name || '');
+  if (m) ringP.then(b => b && b.complex ? null : fetchComplex(m[1], card.lat, card.lng)).then(cx => {
+    if (!cx || card.complex) return;
+    card.complex = Object.assign(cx, { tapped: m[2] }); card.name = cx.name; card.autoName = false;
+    if (findPlace(state.sel) === card) { syncBldPoly(card); renderDetail(); }
+  });
   if (card) ringP.then(b => {
     if (!b) return;
     Object.assign(card, { ring: b.ring, floorsAbove: b.floors, floorsUnder: b.under, bldUse: b.use, bldYear: b.year });
@@ -3774,7 +3791,7 @@ function withRing(card, ringP){
   return card;
 }
 function syncBldPoly(p){
-  const want = p && p.ring ? p.id + (p.complex ? ':c' : '') : null;
+  const want = p && (p.ring || p.complex) ? p.id + (p.complex ? ':c' : '') : null;
   if (bldPolyFor === want && (!want || bldPoly)) return;
   if (bldPoly) { bldPoly.forEach(x => x.setMap(null)); bldPoly = null; }
   bldPolyFor = want;
@@ -3782,7 +3799,7 @@ function syncBldPoly(p){
   // 아파트 단지면 동마다 하나씩(누른 동은 조금 더 진하게), 아니면 그 건물 하나
   const rings = p.complex ? p.complex.rings : [p.ring];
   bldPoly = rings.map(r => {
-    const tapped = r === p.ring || (p.complex && r.length === p.ring.length && r[0][0] === p.ring[0][0] && r[0][1] === p.ring[0][1]);
+    const tapped = p.ring && (r === p.ring || (r.length === p.ring.length && r[0][0] === p.ring[0][0] && r[0][1] === p.ring[0][1]));
     return new naver.maps.Polygon({ map, clickable: false, paths: [r.map(([x, y]) => new naver.maps.LatLng(y, x))],
       strokeColor: '#C8402C', strokeWeight: 2, strokeOpacity: 0.9, fillColor: '#C8402C', fillOpacity: p.complex && !tapped ? 0.08 : 0.16 });
   });
