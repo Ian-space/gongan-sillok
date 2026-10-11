@@ -397,6 +397,9 @@ window.GS_EN = {
   '사실이 달라요': 'The facts are different', '부적절한 기록 신고': 'Report an inappropriate record', '광고·홍보, 욕설, 개인정보 노출 등 · 관리자가 확인해요': 'Ads, abuse, personal info, etc. · an admin will review',
   '신고할 기록 아래의 "신고"를 눌러 주세요.': 'Tap “Report” under the record you want to report.', '신고 그만하기': 'Stop reporting', '내 기록으로 바로잡기': 'Correct it with my record',
   '출구 번호는 이 경로 정보(TMAP)에 없어요.': 'Exit numbers aren’t included in this route data (TMAP).',
+  '실시간 도착 확인 중…': 'Checking live arrivals…', '이 정류장은 실시간 도착 정보가 없어요': 'No live arrival data for this stop', '실시간 도착 정보를 불러오지 못했어요': 'Couldn’t load live arrivals',
+  '지금 들어오는 열차 정보가 없어요': 'No trains approaching right now', '지금 도착 예정인 버스 정보가 없어요': 'No buses expected right now', '운행종료': 'service ended', '출발대기': 'waiting to depart', '저상': 'low-floor',
+  '전역 도착': 'at the previous station', '전역 출발': 'left the previous station', '전역 진입': 'approaching the previous station', '곧 도착': 'arriving soon',
   '원목·합판': 'Solid wood · plywood', '노출 콘크리트': 'Exposed concrete', '적벽돌': 'Red brick', '대리석·석재': 'Marble · stone', '통창·유리벽': 'Big windows · glass walls', '철제·스테인리스': 'Steel · stainless', '흰 벽 등': 'White walls, etc.',
   '엑셀 양식 안내': 'Excel format guide', '필수 열': 'Required columns', '선택 열': 'Optional columns', '이 페이지의 보안 처리': 'How this page handles security',
   '이름이 "(예시)"로 시작하는 줄은 건너뜁니다': 'Rows whose name starts with "(예시)" are skipped',
@@ -415,6 +418,15 @@ window.GS_EN = {
 
 // 숫자가 들어간 문장: [정규식, 바꾸는 함수(일치, tr)]. 위에서부터 처음 맞는 것 하나만 쓴다
 window.GS_EN_RULES = [
+  // 실시간 도착(버스·지하철)
+  [/^(\d+)분 후 \[(\d+)번째 전\]$/, m => `in ${m[1]} min (${m[2]} stops away)`],
+  [/^(\d+)분 후 \((.+)\)$/, m => `in ${m[1]} min (${m[2]})`],
+  [/^(\d+)분 후$/, m => `in ${m[1]} min`],
+  [/^곧 도착(.*)$/, m => `arriving soon${m[1]}`],
+  [/^\[(\d+)\]번째 전역 \((.+)\)$/, m => `${m[1]} stations away (${m[2]})`],
+  [/^다음 (.+)$/, (m, tr) => `next ${tr(m[1])}`],
+  [/^(\S+)번 (.+)$/, (m, tr) => `Bus ${m[1]}: ${tr(m[2])}`],
+  [/^(.+) 방면 (.+)$/, (m, tr) => `toward ${m[1]}: ${tr(m[2])}`],
   [/^(\d[\d,]*)곳$/, m => `${m[1]} places`],
   // 길찾기 단계
   [/^걷기 (\d+)분$/, m => `Walk ${m[1]} min`],

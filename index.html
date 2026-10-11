@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<script src="i18n.js?v=7"></script>
+<script src="i18n.js?v=8"></script>
 <title>공간실록 시제품</title>
 <meta name="description" content="입구 계단, 화장실, 소음, 콘센트처럼 다녀온 사람만 아는 사실을 평점 대신 남기고 함께 보는 공간 지도예요.">
 <!-- 카톡 등에 링크를 보냈을 때 미리보기 -->
@@ -509,6 +509,8 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
 .d-tsteps li.walk{border-left:3px dotted var(--muted);color:var(--muted)}
 .d-tsteps li.walk b{color:var(--ink);font-weight:600}
 .d-tsteps .t-exit{display:inline-block;margin-top:3px;padding:1px 6px;border-radius:6px;background:var(--mark);color:var(--mark-ink);font-weight:700;font-size:12px}
+/* 실시간 도착: 초록 글씨 */
+.d-tsteps .t-live{display:inline-block;margin-top:3px;color:#00875A;font-weight:600;font-size:12px}
 .inapp{position:sticky;top:env(safe-area-inset-top,0px);z-index:50;display:flex;align-items:center;gap:10px;padding:10px 16px;background:var(--ink);color:var(--panel);font-size:13px;line-height:1.4}
 .inapp[hidden]{display:none}
 .inapp span{flex:1;min-width:0}
@@ -3013,6 +3015,9 @@ function fromOdsay(path){
       interval: +s.intervalTime || 0, way: subway ? cleanText(s.way, 20) : '',
       inExit: subway ? exitNo(s.startExitNo) : '', outExit: subway ? exitNo(s.endExitNo) : '',
       ars: subway ? '' : (/^\d{5}$/.test(String(s.startArsID || '')) ? String(s.startArsID) : ''),
+      // 실시간 도착 조회용: 버스는 서울(도시 코드 1000, 정류소 고유번호)·그 밖(경기 정류소 ID), 지하철은 노선 번호와 다음 역(방면)
+      city: subway ? '' : (+s.startStationCityCode === 1000 ? 'seoul' : 'gg'), localId: subway ? '' : String(s.startLocalStationID || ''),
+      busNos: subway ? [] : (s.lane || []).map(l => String(l.busNo || '')).filter(Boolean), lineCode: subway ? +lane.subwayCode || 0 : 0,
       shape: stops.length >= 2 ? stops.map(x => [+x.y, +x.x]) : [[+s.startY, +s.startX], [+s.endY, +s.endX]]
     };
   });
@@ -3330,6 +3335,50 @@ function routeOption(r, i, t){
   if (on) opt.appendChild(routeSteps(r));
   return opt;
 }
+// 실시간 도착 한 줄: '340번 3분 후 [2번째 전] · 다음 11분 후 · 저상', 지하철은 '천호 방면 전역 도착 · 다음 5분 후'.
+// 중계 서버 /arrive(20초 저장)를 부르고, 경로가 열려 있는 동안 30초마다 다시 부른다. 자리를 먼저 잡고 오는 대로 채운다
+const liveCache = new Map();
+function liveFetch(body){
+  const k = JSON.stringify(body), hit = liveCache.get(k);
+  if (hit && Date.now() - hit.t < 15000) return hit.p;
+  const p = proxyPost('/arrive', body).then(r => r.ok ? r.json() : { list: [] }).then(d => d.list || []).catch(() => null);
+  liveCache.set(k, { t: Date.now(), p });
+  return p;
+}
+function liveArrival(s){
+  const box = el('span','t-live', '실시간 도착 확인 중…');
+  const body = s.mode === 'subway' ? { type: 'subway', station: s.from }
+    : s.city === 'seoul' ? (s.ars ? { type: 'bus', city: 'seoul', ars: s.ars } : null)
+    : (/^\d{6,10}$/.test(s.localId) ? { type: 'bus', city: 'gg', station: s.localId } : null);
+  if (!body) { box.textContent = '이 정류장은 실시간 도착 정보가 없어요'; return box; }
+  const short = m => String(m || '').replace(/(\d+)분\d+초후/, '$1분 후').replace(/(\d+)초후/, '곧 도착').trim();
+  const draw = list => {
+    if (!box.isConnected) return false; // 상세를 다시 그렸으면(새 줄이 따로 부른다) 멈춘다
+    if (list === null) { box.textContent = '실시간 도착 정보를 불러오지 못했어요'; return true; }
+    const lines = [];
+    if (s.mode === 'subway') {
+      // 같은 노선(1~9호선)이고, 다음 역 방면(ODsay의 way)인 열차만
+      const want = s.lineCode >= 1 && s.lineCode <= 9 ? String(1000 + s.lineCode) : '';
+      const mine = list.filter(x => (!want || x.line === want) && (!s.way || x.dir.includes(s.way)));
+      if (mine.length) lines.push(`${s.way ? `${s.way} 방면 ` : ''}${mine[0].msg}` + (mine[1] ? ` · 다음 ${mine[1].msg}` : ''));
+    } else {
+      const wanted = new Set(s.busNos);
+      for (const x of list.filter(x => wanted.has(x.name)).slice(0, 4)) {
+        const now = s.city === 'seoul' ? short(x.msg) : x.min != null ? `${x.min}분 후${x.stops != null ? ` [${x.stops}번째 전]` : ''}` : '';
+        if (!now) continue;
+        const next = s.city === 'seoul' ? short(x.next) : x.next != null ? `${x.next}분 후` : '';
+        lines.push(`${busLabel(x.name)} ${now}${next && next !== now ? ` · 다음 ${next}` : ''}${x.low ? ' · 저상' : ''}`);
+      }
+    }
+    box.replaceChildren();
+    if (!lines.length) box.textContent = s.mode === 'subway' ? '지금 들어오는 열차 정보가 없어요' : '지금 도착 예정인 버스 정보가 없어요';
+    else lines.forEach((t, i) => { if (i) box.appendChild(el('br')); box.append(t); });
+    return true;
+  };
+  const tick = () => liveFetch(body).then(list => { if (draw(list) && box.isConnected) setTimeout(() => { if (box.isConnected) { liveCache.delete(JSON.stringify(body)); tick(); } }, 30000); });
+  tick();
+  return box;
+}
 // 고른 경로의 단계: 걷기(분·거리) → 지하철(방면, 몇 개 역·몇 분, 배차, 들어갈·나갈 출구) / 버스(같이 탈 수 있는 버스, 몇 정류장·몇 분, 배차, 정류장 번호) → … → 도착
 function routeSteps(r){
   const ol = el('ol','d-tsteps');
@@ -3349,6 +3398,8 @@ function routeSteps(r){
     li.append(el('br'), `${s.from} 승차 → ${s.to} 하차`);
     const facts = [`${s.stops}개 ${sub ? '역' : '정류장'}`, `${s.minutes}분`, s.way && `${s.way} 방면`, s.interval && `배차 약 ${s.interval}분`, s.ars && `정류장 번호 ${s.ars}`].filter(Boolean);
     li.append(el('br'), el('span','muted', facts.join(' · ')));
+    // 실시간 도착(ODsay 경로에서 첫 탈것만: 지금 탈 것이라서. 갈아탈 것은 그때 가서 바뀌므로 배차 간격만)
+    if (r.source === 'odsay' && i === r.segs.findIndex(x => x.mode !== 'walk')) li.append(el('br'), liveArrival(s));
     // 지하철에서 내려 걸어가야 하면 나갈 출구를 눈에 띄게
     if (sub && s.outExit) li.append(el('br'), el('span','t-exit', `${s.to}역 ${s.outExit}번 출구로 나가기`));
     ol.appendChild(li);
