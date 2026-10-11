@@ -6,7 +6,7 @@
 -- 순서
 -- 1) 이 파일 전체를 Supabase SQL Editor에서 Run
 -- 2) Table Editor → bus_stops → Insert → Import data from CSV 로
---    '공간실록_상가 CSV/버스정류장/bus_stops_capital.csv'(61,644곳)를 넣는다
+--    '공간실록_CSV/버스정류장/bus_stops_capital.csv'(61,644곳)를 넣는다
 -- 3) 마지막 줄의 analyze 를 한 번 더 Run (새 자료로 검색 계획을 다시 세운다)
 
 create table if not exists public.bus_stops (
