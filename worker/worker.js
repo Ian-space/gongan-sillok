@@ -14,12 +14,13 @@
 //   POST /station  { x, y }                                     → 1.5km 안 지하철역 (가까운 순)
 //   POST /addr     { x, y }                                     → 그 자리의 도로명주소·건물명 (카카오 좌표→주소)
 //   POST /apt      { bjd, road?, lot?, name? }                  → 누른 아파트 단지의 공식 이름·주소·동수·세대수 (공공데이터포털)
+//   POST /bldreg   { pnu: 필지 번호 19자리 }                     → 그 필지 건물들의 승강기 수·층수·주용도 (건축물대장)
 //   POST /nearby   { rect: "왼쪽X,아래Y,오른쪽X,위Y", code? }      → 지도 한 칸 안의 장소 (NEARBY의 업종 코드)
 //   POST /intent   { text }                                     → 글로 적은 목적을 기록 항목 조건으로 (로그인 필요)
 //   POST /photo    { images: [base64 JPEG, 최대 3장] }          → 사진에서 눈으로 확인되는 기록 항목 제안 (로그인 필요)
 
 const ALLOWED_ORIGINS = ['https://ian-space.github.io', 'http://localhost:8765'];
-const VERSION = '2026-10-11.5'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
+const VERSION = '2026-10-11.6'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
 // 로그인 확인용 Supabase 주소와 공개 키(사이트 코드에도 있는 공개 값)
 const SUPABASE_URL = 'https://qktrghajroxddrbpwtvn.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_j-kp8YKsQTczGcsQX74OxA_mfI7DoZw';
@@ -83,7 +84,7 @@ const TMAP = {
   transit: 'https://apis.openapi.sk.com/transit/routes',
   walk: 'https://apis.openapi.sk.com/tmap/routes/pedestrian?version=1&format=json',
 };
-const PLACE_KINDS = ['search', 'nearby', 'station', 'addr', 'apt'];
+const PLACE_KINDS = ['search', 'nearby', 'station', 'addr', 'apt', 'bldreg'];
 const AI_KINDS = ['intent', 'photo'];
 
 export default {
@@ -142,7 +143,7 @@ async function handle(kind, input, { request, env, ctx, send, reply }) {
   // KV 무료 한도는 저장(쓰기)이 하루 1,000번뿐이라, 하루 한도가 넉넉한(10만 번) 카카오 결과는 KV에 쓰지 않고
   // 이 서버 메모리에만 잠시 둔다(addr3·station·nearby2). KV에는 한도가 작거나 돈이 드는 것(TMAP 경로, AI, 공공데이터포털)만 쓴다
   const cached = async (key, ttl, make) => {
-    const store = !/^(addr3|station|nearby2):/.test(key); // 카카오 결과
+    const store = !/^(addr3|station|nearby2|bldreg1):/.test(key); // 카카오 결과·건축물대장
     const m = memGet(key); if (m) return send(m, 200, { 'X-Cache': 'MEM' });
     if (kv && store) { const hit = await kv.get(key).catch(() => null); if (hit) { memPut(key, hit, ttl); return send(hit, 200, { 'X-Cache': 'HIT' }); } }
     await allow();
@@ -203,6 +204,29 @@ async function handle(kind, input, { request, env, ctx, send, reply }) {
     return cached(`station:${x.toFixed(3)},${y.toFixed(3)}`, 30 * 86400, async () => {
       const j = await kakao('search/category', { category_group_code: 'SW8', x: x.toFixed(4), y: y.toFixed(4), radius: '1500', sort: 'distance', size: '5' });
       return JSON.stringify({ stations: (j.documents || []).map(d => ({ name: d.place_name, line: String(d.category_name || '').split('>').pop().trim(), x: d.x, y: d.y })) });
+    });
+  }
+
+  /* 건축물대장 표제부(공공데이터포털 국토교통부 건축HUB): 필지(pnu 19자리) 하나의 건물들 → 승강기 수·층수·주용도.
+     → { blds: [{ name, dong, use, floors, under, elev }] }. 엘리베이터가 있는지(층 이동)를 공공 기록으로 보여 주는 데 쓴다.
+     KV 쓰기를 아끼려고 서버 메모리에만 잠시 둔다(공공데이터포털 하루 한도 안) */
+  if (kind === 'bldreg') {
+    const pnu = String(input.pnu || '');
+    if (!/^\d{19}$/.test(pnu)) return reply(400, { error: 'bad pnu' });
+    if (!env.DATA_GO_KR_KEY) return reply(503, { error: 'bldreg off' });
+    return cached(`bldreg1:${pnu}`, 7 * 86400, async () => {
+      const key = /%[0-9A-Fa-f]{2}/.test(env.DATA_GO_KR_KEY) ? decodeURIComponent(env.DATA_GO_KR_KEY) : env.DATA_GO_KR_KEY;
+      // 필지 번호 → 시군구 5자리, 법정동 5자리, 대지(0)/산(1), 번 4자리, 지 4자리
+      const up = await fetch('https://apis.data.go.kr/1613000/BldRgstHubService/getBrTitleInfo?' + new URLSearchParams({ serviceKey: key, _type: 'json',
+        sigunguCd: pnu.slice(0, 5), bjdongCd: pnu.slice(5, 10), platGbCd: pnu[10] === '2' ? '1' : '0', bun: pnu.slice(11, 15), ji: pnu.slice(15, 19), numOfRows: '100', pageNo: '1' }),
+        { signal: AbortSignal.timeout(6000) });
+      const raw = await up.text().catch(() => ''); let j = null; try { j = JSON.parse(raw); } catch {}
+      const body = j && j.response && j.response.body;
+      if (!body) { const err = (/<errMsg>([A-Z_]+)/.exec(raw) || [])[1] || (j && j.response && j.response.header && j.response.header.resultCode); console.log(JSON.stringify({ bldreg: pnu, err, status: up.status })); throw reply(502, { error: 'bldreg upstream', code: err || up.status }); }
+      const it = body.items && (body.items.item || body.items), list = !it ? [] : Array.isArray(it) ? it : [it];
+      const n = v => parseInt(v, 10) || 0;
+      return JSON.stringify({ blds: list.slice(0, 100).map(x => ({ name: String(x.bldNm || '').trim(), dong: String(x.dongNm || '').trim(), use: String(x.mainPurpsCdNm || ''),
+        floors: n(x.grndFlrCnt), under: n(x.ugrndFlrCnt), elev: n(x.rideUseElvtCnt) + n(x.emgenUseElvtCnt), main: String(x.mainAtchGbCdNm || '') })) });
     });
   }
 
