@@ -3731,7 +3731,7 @@ function queueNearby(){ clearTimeout(nearTimer); nearTimer = setTimeout(loadNear
 function toggleNearKind(code){
   if (state.nearKinds.has(code)) state.nearKinds.delete(code); else state.nearKinds.add(code);
   if (state.nearKinds.size) try { localStorage.setItem(NEAR_PREF, JSON.stringify([...state.nearKinds])); } catch {} // 켜 둔 종류만 기억한다
-  if (state.sel && state.near.has(state.sel) && !NEAR_KIND[state.near.get(state.sel).kind].always && !state.nearKinds.has(state.near.get(state.sel).kind)) select(null);
+  if (state.sel && state.near.has(state.sel) && !(NEAR_KIND[state.near.get(state.sel).kind] || {}).always && !state.nearKinds.has(state.near.get(state.sel).kind)) select(null);
   renderAll(); renderNearMarkers(); loadNearby();
 }
 function loadNearby(){
@@ -4128,7 +4128,7 @@ function withRing(card, ringP){
       card.name = cleanText(`${base} ${dongLabel(b.dong)}`, 40);
       partName(base, b.ring, card.lat, card.lng).then(n => { if (n && card.name !== n) { card.name = n; if (findPlace(state.sel) === card) renderDetail(); } });
     }
-    if (findPlace(state.sel) === card) { syncBldPoly(card); if (card.building) renderDetail(); }
+    if (findPlace(state.sel) === card) { syncBldPoly(card); renderNearMarkers(); if (card.building) renderDetail(); } // 테두리가 오면 핀은 숨긴다
   });
   return card;
 }
@@ -4252,7 +4252,7 @@ async function loadRect(job){
   } catch (e) { if (job.depth === 0) nearTiles.delete(job.key); } // 다음에 지도를 움직이면 다시 시도
 }
 // 이미 기록한 곳, 검색 결과로 이미 흰 핀이 있는 곳, 꺼 둔 종류는 점을 찍지 않는다
-const nearVisible = p => (NEAR_KIND[p.kind].always || state.nearKinds.has(p.kind)) && map.getZoom() >= NEAR_KIND[p.kind].zoom && !isRecorded(p) && !state.ext.results.some(x => x.id === p.id)
+const nearVisible = p => (!!NEAR_KIND[p.kind] && (NEAR_KIND[p.kind].always || state.nearKinds.has(p.kind))) && map.getZoom() >= NEAR_KIND[p.kind].zoom && !isRecorded(p) && !state.ext.results.some(x => x.id === p.id)
   && !(p.shop && (p.dup ??= shopDup(p))); // 겹침 검사는 가게마다 한 번만(카카오 점이 나중에 와도 크게 틀리지 않는다)
 function syncNearMarkers(){
   if (!map) return;
@@ -4271,8 +4271,9 @@ function renderNearMarkers(){
   const on = nearShown(), big = map.getZoom() >= 18; // 아주 가까이 보면 이름도 같이
   for (const [id, mk] of nearMarkers) {
     const p = state.near.get(id), sel = id === state.sel;
-    const always = NEAR_KIND[p.kind].always;
-    const show = sel || ((on || always) && nearVisible(p));
+    const always = !!(NEAR_KIND[p.kind] || {}).always; // 건물 카드(BLD)처럼 종류 목록에 없는 것도 있다
+    // 지도를 눌러 연 건물·가게는 건물 테두리로 이미 보이므로 핀을 따로 찍지 않는다(누른 자리에 핀이 생기면 핀을 찍은 것처럼 보인다)
+    const show = (sel && !p.ring) || (!sel && (on || always) && nearVisible(p));
     mk.setVisible(show);
     if (!show) continue;
     mk.setIcon(sel
