@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<script src="i18n.js?v=11"></script>
+<script src="i18n.js?v=12"></script>
 <title>공간실록 시제품</title>
 <meta name="description" content="입구 계단, 화장실, 소음, 콘센트처럼 다녀온 사람만 아는 사실을 평점 대신 남기고 함께 보는 공간 지도예요.">
 <!-- 카톡 등에 링크를 보냈을 때 미리보기 -->
@@ -506,6 +506,11 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
 .d-tbar span{font-size:11px;font-weight:700;border-radius:999px;padding:2px 8px;white-space:nowrap}
 .d-tbar .walk{background:var(--paper);color:var(--muted);font-weight:500}
 .d-tbar .ride{background:var(--c);color:#FFFFFF}
+/* 출발 시각 고르기, 그 시각에 운행하지 않는 경로(흐리게 아래에) */
+.d-when{display:flex;align-items:center;gap:8px;margin:6px 0 8px;font-size:13px;color:var(--muted)}
+.d-when select{font:inherit;font-size:16px;color:var(--ink);padding:5px 8px;border:1px solid var(--line);border-radius:8px;background:var(--panel)}
+.d-topt.off{opacity:.5}
+.d-toff-head{margin:10px 0 4px;font-size:12px;color:var(--muted)}
 .d-tsteps{margin:2px 0 0;padding:0;list-style:none;display:grid;gap:6px;font-size:13px}
 .d-tsteps li{padding-left:10px;border-left:3px solid var(--c)}
 .d-tsteps .muted{color:var(--muted);font-size:12px}
@@ -2997,7 +3002,7 @@ async function aiPost(path, body){
 }
 async function tmapTransit(p){
   const { from: o, to: d } = routeEnds(p);
-  const r = await proxyPost('/transit', { startX: String(o.lng), startY: String(o.lat), endX: String(d.lng), endY: String(d.lat), searchDttm: seoulNow().stamp });
+  const r = await proxyPost('/transit', { startX: String(o.lng), startY: String(o.lat), endX: String(d.lng), endY: String(d.lat), searchDttm: routeNow().stamp });
   if (!r.ok) return null; // 키 오류, 한도 초과 등
   const j = await r.json();
   const status = j && j.result && j.result.status;
@@ -3068,7 +3073,7 @@ function segRunning(s, now){
 }
 function runningRoutes(t){
   if (t.source !== 'odsay') return t.routes;
-  const now = seoulNow();
+  const now = routeNow(); // 고른 출발 시각(없으면 지금) 기준
   return t.routes.filter(r => r.segs.every(s => s.mode === 'walk' || segRunning(s, now)));
 }
 
@@ -3164,10 +3169,25 @@ async function searchOrigin(query){
     renderOriginList(all, all.length ? '' : '찾은 곳이 없어요. 역 이름이나 동네 이름으로도 찾아보세요.');
   } catch { renderOriginList(mine, '검색하지 못했어요. 잠시 뒤 다시 시도해 주세요.'); }
 }
+// 출발 시각: null이면 지금. 고르면 { stamp: yyyymmddhhmi, min: 하루 중 몇 분째, weekday, label: '오늘 23:30' }(한국 시간).
+// TMAP은 그 시각으로 경로를 찾고, ODsay 결과는 그 시각에 운행하는지로 나눈다. 실시간 도착은 '지금'일 때만
+state.departAt = null;
+const routeNow = () => state.departAt || seoulNow();
+function departOptions(){
+  const kst = new Date(Date.now() + 9 * 3600e3), today = kst.getUTCDate();
+  const start = Math.ceil(kst.getTime() / 1800e3) * 1800e3, out = [];
+  for (let i = 0; i < 48; i++) {
+    const d = new Date(start + i * 1800e3), p2 = n => String(n).padStart(2, '0');
+    const hh = d.getUTCHours(), mm = d.getUTCMinutes();
+    out.push({ stamp: `${d.getUTCFullYear()}${p2(d.getUTCMonth() + 1)}${p2(d.getUTCDate())}${p2(hh)}${p2(mm)}`, min: hh * 60 + mm, weekday: d.getUTCDay(),
+      label: `${d.getUTCDate() === today ? '오늘' : '내일'} ${p2(hh)}:${p2(mm)}` });
+  }
+  return out;
+}
 async function findTransit(p){
   const e = routeEnds(p); if (!e) return;
-  // 같은 장소, 비슷한 출발·도착(약 100m 안)이면 다시 부르지 않는다. 호출 횟수를 아끼기 위해서다.
-  const at = x => `${x.lat.toFixed(3)},${x.lng.toFixed(3)}`, key = `${p.id}|${at(e.from)}>${at(e.to)}`;
+  // 같은 장소, 비슷한 출발·도착(약 100m 안), 같은 출발 시각이면 다시 부르지 않는다. 호출 횟수를 아끼기 위해서다.
+  const at = x => `${x.lat.toFixed(3)},${x.lng.toFixed(3)}`, key = `${p.id}|${at(e.from)}>${at(e.to)}|${state.departAt ? state.departAt.stamp : 'now'}`;
   let result = transitCache.get(key);
   if (!result) {
     state.transit = { placeId: p.id, status: 'loading' }; renderDetail();
@@ -3211,12 +3231,15 @@ function routeKind(r){
   const sub = r.segs.some(s => s.mode === 'subway'), bus = r.segs.some(s => s.mode === 'bus');
   return sub && bus ? 'mixed' : sub ? 'subway' : bus ? 'bus' : 'walk';
 }
+// 탭 숫자는 그 시각에 탈 수 있는 경로 수. 운행하지 않는 경로도 버리지 않고 목록 아래에 흐리게(r.off) 붙인다(밤에 내일 계획을 짤 때 보려고)
 const tabCount = (t, tab) => { if (tab === 'walk') return 1; if (t.status !== 'ok') return 0; const list = runningRoutes(t); return tab === 'all' ? list.length : list.filter(x => routeKind(x) === tab).length; };
+const tabAny = (t, tab) => tab === 'walk' || (t.status === 'ok' && t.routes.some(x => tab === 'all' || routeKind(x) === tab));
 function tabRoutes(t, tab){
   if (t.status !== 'ok' || tab === 'walk') return [];
-  const run = runningRoutes(t);
-  const list = tab === 'all' ? run : run.filter(x => routeKind(x) === tab);
-  return [...list].sort((a, b) => (a.minutes || 999) - (b.minutes || 999)).slice(0, MAX_OPTIONS);
+  const run = new Set(runningRoutes(t)), fast = (a, b) => (a.minutes || 999) - (b.minutes || 999);
+  const inTab = t.routes.filter(x => tab === 'all' || routeKind(x) === tab);
+  for (const r of inTab) r.off = !run.has(r);
+  return [...inTab.filter(r => !r.off).sort(fast).slice(0, MAX_OPTIONS), ...inTab.filter(r => r.off).sort(fast).slice(0, 3)];
 }
 
 function renderTransit(d, p){
@@ -3256,6 +3279,18 @@ function renderTransit(d, p){
   acts.appendChild(chg);
   if (state.routeFrom) { const me = el('button','linkbtn', '내 위치로'); me.type = 'button'; me.addEventListener('click', () => setRouteFrom(null)); acts.appendChild(me); }
   box.appendChild(acts);
+  // 출발 시각: 지금 또는 오늘·내일 30분 단위(밤에 내일 아침 이동을 미리 짜는 사람을 위해). 바꾸면 그 시각으로 다시 찾는다
+  const tw = el('label','d-when'); tw.appendChild(el('span', null, '출발 시각'));
+  const sel = el('select'); sel.setAttribute('aria-label', '출발 시각');
+  sel.appendChild(new Option('지금', ''));
+  for (const o of departOptions()) sel.appendChild(new Option(o.label, o.stamp));
+  if (state.departAt && ![...sel.options].some(x => x.value === state.departAt.stamp)) state.departAt = null; // 지난 시각이면 지금으로
+  sel.value = state.departAt ? state.departAt.stamp : '';
+  sel.addEventListener('change', () => {
+    state.departAt = sel.value ? departOptions().find(o => o.stamp === sel.value) || null : null;
+    state.transit = null; clearRoute(); findTransit(p);
+  });
+  tw.appendChild(sel); box.appendChild(tw);
   if (auto) {
     box.appendChild(el('p','d-tnote','경로를 찾는 중이에요…'));
     setTimeout(() => { if (state.sel === p.id && !state.transit) findTransit(p); }, 0);
@@ -3268,25 +3303,30 @@ function renderTransit(d, p){
   }
   else {
     const hidden = t.status === 'ok' ? t.routes.length - runningRoutes(t).length : 0;
-    // 지금 탈 수 있는 경로가 하나도 없거나 고른 탭이 비면 알맞은 탭으로 옮긴다
-    if (!t.tab || (t.tab !== 'walk' && !tabCount(t, t.tab))) t.tab = t.status === 'near' || !tabCount(t, 'all') ? 'walk' : 'all';
+    // 고른 탭에 경로가 하나도 없으면 알맞은 탭으로 옮긴다(운행하지 않는 경로만 있어도 흐리게 보여 주려고 전체 탭에 둔다)
+    if (!t.tab || (t.tab !== 'walk' && !tabAny(t, t.tab))) t.tab = t.status === 'near' || !tabAny(t, 'all') ? 'walk' : 'all';
     if (t.tab === 'walk') loadWalk(p);
     const tabs = el('div','d-ttabs'); tabs.setAttribute('role','tablist'); tabs.setAttribute('aria-label','교통수단');
     for (const tb of TRANSIT_TABS) {
       const n = tabCount(t, tb.id);
       const b = el('button','d-ttab', tb.label); b.type = 'button'; b.setAttribute('role','tab');
-      b.setAttribute('aria-selected', String(t.tab === tb.id)); b.disabled = !n;
+      b.setAttribute('aria-selected', String(t.tab === tb.id)); b.disabled = !tabAny(t, tb.id);
       if (tb.id !== 'walk') b.appendChild(el('span','n', String(n)));
       b.addEventListener('click', () => { t.tab = tb.id; t.chosen = 0; renderDetail(); drawTransit(); });
       tabs.appendChild(b);
     }
     box.appendChild(tabs);
     if (t.tab === 'walk') box.appendChild(walkOption(p, t));
-    else tabRoutes(t, t.tab).forEach((r, i) => box.appendChild(routeOption(r, i, t)));
+    else {
+      const list = tabRoutes(t, t.tab), when = state.departAt ? '이 시각' : '지금';
+      if (hidden && !tabCount(t, 'all')) box.appendChild(el('p','d-tnote', `${when}은 운행하는 대중교통이 없어요. 출발 시각을 바꾸면 탈 수 있는 경로를 보여 줘요.`));
+      list.forEach((r, i) => {
+        if (r.off && (i === 0 || !list[i - 1].off)) box.appendChild(el('p','d-toff-head', `${when} 운행하지 않는 경로 (첫차·막차 시간 밖, 대략)`));
+        box.appendChild(routeOption(r, i, t));
+      });
+    }
     if (t.status === 'near') box.appendChild(el('p','d-tnote','가까운 거리라 대중교통 경로는 없어요. 걷는 게 가장 빨라요.'));
-    else if (hidden && !tabCount(t, 'all')) box.appendChild(el('p','d-tnote','지금은 운행하는 대중교통이 없어요.'));
-    if (hidden) box.appendChild(el('p','d-tnote', `지금 시간에 운행하지 않는 경로 ${hidden}개는 뺐어요.`));
-    box.appendChild(el('p','d-tsrc', t.source === 'tmap' ? '경로 정보: TMAP (지금 시각 기준)' : '경로 정보: ODsay (막차·첫차 시간은 대략적으로 걸렀어요)'));
+    box.appendChild(el('p','d-tsrc', t.source === 'tmap' ? `경로 정보: TMAP (${state.departAt ? state.departAt.label : '지금 시각'} 기준)` : '경로 정보: ODsay (막차·첫차 시간은 대략적으로 걸렀어요)'));
     // 안내: 지도가 나를 따라가며 도착지까지 남은 거리를 보여 주고, 도착하면 기록·확인으로 이어 준다.
     // 다른 곳에서 출발하는 경로여도 쓸 수 있다(출발지에 가서 누르면 된다). 도착지가 '내 위치'면 안내할 곳이 없다
     const to = e && e.to;
@@ -3340,7 +3380,7 @@ function walkOption(p, t){
 }
 function routeOption(r, i, t){
   const on = i === t.chosen;
-  const opt = el('button','d-topt'); opt.type = 'button'; opt.setAttribute('aria-pressed', String(on));
+  const opt = el('button', r.off ? 'd-topt off' : 'd-topt'); opt.type = 'button'; opt.setAttribute('aria-pressed', String(on));
   opt.addEventListener('click', () => { t.chosen = i; renderDetail(); drawTransit(); });
   const head = el('div','d-thead');
   head.append(el('b', null, `${r.minutes || '?'}분`), ` · ${r.fare.toLocaleString('ko-KR')}원 · 환승 ${r.transfers}회`);
@@ -3486,7 +3526,7 @@ function routeSteps(r){
     const facts = [`${s.stops}개 ${sub ? '역' : '정류장'}`, `${s.minutes}분`, s.way && `${s.way} 방면`, s.interval && `배차 약 ${s.interval}분`, s.ars && `정류장 번호 ${s.ars}`].filter(Boolean);
     li.append(el('br'), el('span','muted', facts.join(' · ')));
     // 실시간 도착(ODsay 경로에서 첫 탈것만: 지금 탈 것이라서. 갈아탈 것은 그때 가서 바뀌므로 배차 간격만)
-    if (r.source === 'odsay' && i === r.segs.findIndex(x => x.mode !== 'walk')) li.append(el('br'), liveArrival(s));
+    if (r.source === 'odsay' && !state.departAt && !r.off && i === r.segs.findIndex(x => x.mode !== 'walk')) li.append(el('br'), liveArrival(s));
     // 지하철에서 내려 걸어가야 하면 나갈 출구를 눈에 띄게
     if (sub && s.outExit) li.append(el('br'), el('span','t-exit', `${s.to}역 ${s.outExit}번 출구로 나가기`));
     // 지하철역 엘리베이터(타는 역·내리는 역): 휠체어·유아차로 갈 수 있는지

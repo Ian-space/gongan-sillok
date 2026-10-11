@@ -403,6 +403,7 @@ window.GS_EN = {
   '내리는 역': 'Getting off', '타는 역': 'Getting on', '승강장 엘리베이터 있음': 'Platform elevator', '지상으로 가는 엘리베이터 있음': 'Elevator to street level',
   '버스정류장': 'Bus stop', '실시간 도착': 'Live arrivals', '도착 정보 없음': 'no arrival info', '교통 > 버스정류장': 'Transport > Bus stop',
   '정류장: 국토교통부 전국 버스정류장 위치정보 · 도착: 서울특별시 버스도착정보': 'Stops: MOLIT national bus stop data · Arrivals: Seoul bus arrival info', '정류장: 국토교통부 전국 버스정류장 위치정보 · 도착: 경기도 버스도착정보': 'Stops: MOLIT national bus stop data · Arrivals: Gyeonggi bus arrival info',
+  '출발 시각': 'Departure time', '지금': 'Now',
   '원목·합판': 'Solid wood · plywood', '노출 콘크리트': 'Exposed concrete', '적벽돌': 'Red brick', '대리석·석재': 'Marble · stone', '통창·유리벽': 'Big windows · glass walls', '철제·스테인리스': 'Steel · stainless', '흰 벽 등': 'White walls, etc.',
   '엑셀 양식 안내': 'Excel format guide', '필수 열': 'Required columns', '선택 열': 'Optional columns', '이 페이지의 보안 처리': 'How this page handles security',
   '이름이 "(예시)"로 시작하는 줄은 건너뜁니다': 'Rows whose name starts with "(예시)" are skipped',
@@ -437,6 +438,12 @@ window.GS_EN_RULES = [
   [/^(\S+)번 (.+)$/, (m, tr) => `Bus ${m[1]}: ${tr(m[2])}`],
   [/^(.+) 방면 (.+)$/, (m, tr) => `toward ${m[1]}: ${tr(m[2])}`],
   [/^(\d[\d,]*)곳$/, m => `${m[1]} places`],
+  // 출발 시각·운행하지 않는 경로
+  [/^오늘 (\d\d:\d\d)$/, m => `Today ${m[1]}`],
+  [/^내일 (\d\d:\d\d)$/, m => `Tomorrow ${m[1]}`],
+  [/^(지금|이 시각) 운행하지 않는 경로 \(첫차·막차 시간 밖, 대략\)$/, m => `${m[1] === '지금' ? 'Not running now' : 'Not running at this time'} (outside first/last service, approx.)`],
+  [/^(지금|이 시각)은 운행하는 대중교통이 없어요\. .+$/, m => `No public transit is running ${m[1] === '지금' ? 'now' : 'at this time'}. Change the departure time to see routes you can take.`],
+  [/^경로 정보: TMAP \((.+) 기준\)$/, (m, tr) => `Route data: TMAP (as of ${m[1] === '지금 시각' ? 'now' : tr(m[1])})`],
   // 길찾기 단계
   [/^걷기 (\d+)분$/, m => `Walk ${m[1]} min`],
   [/^→ 도착$/, () => '→ Arrive'],
