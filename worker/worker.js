@@ -3,7 +3,8 @@
 //     TMAP_APP_KEY      : TMAP 대중교통·보행자 경로
 //     KAKAO_REST_KEY    : 카카오 로컬 장소 검색 (REST API 키)
 //     ANTHROPIC_API_KEY : AI 조건 찾기·사진 보고 채우기
-//     DATA_GO_KR_KEY    : 공공데이터포털 인증키(아파트 단지 공식 정보)
+//     DATA_GO_KR_KEY    : 공공데이터포털 인증키(아파트 단지 공식 정보, 건축물대장, 서울·경기 버스 도착)
+//     SEOUL_SUBWAY_KEY  : 서울 열린데이터광장 실시간 지하철 인증키
 // - 결과 저장: KV 바인딩 ROUTE_CACHE. 횟수 제한: 바인딩 LIMIT_ROUTE·LIMIT_PLACE (wrangler.toml)
 // - 공간실록 사이트에서 온 요청만 받는다. AI는 로그인한 사람만(Supabase 로그인 토큰을 확인한다).
 //
@@ -15,12 +16,13 @@
 //   POST /addr     { x, y }                                     → 그 자리의 도로명주소·건물명 (카카오 좌표→주소)
 //   POST /apt      { bjd, road?, lot?, name? }                  → 누른 아파트 단지의 공식 이름·주소·동수·세대수 (공공데이터포털)
 //   POST /bldreg   { pnu: 필지 번호 19자리 }                     → 그 필지 건물들의 승강기 수·층수·주용도 (건축물대장)
+//   POST /arrive   { type: bus|subway, city?, ars?, station? }     → 버스·지하철 실시간 도착 (서울 버스, 경기 버스, 서울 실시간 지하철)
 //   POST /nearby   { rect: "왼쪽X,아래Y,오른쪽X,위Y", code? }      → 지도 한 칸 안의 장소 (NEARBY의 업종 코드)
 //   POST /intent   { text }                                     → 글로 적은 목적을 기록 항목 조건으로 (로그인 필요)
 //   POST /photo    { images: [base64 JPEG, 최대 3장] }          → 사진에서 눈으로 확인되는 기록 항목 제안 (로그인 필요)
 
 const ALLOWED_ORIGINS = ['https://ian-space.github.io', 'http://localhost:8765'];
-const VERSION = '2026-10-12.2'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
+const VERSION = '2026-10-12.3'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
 // 로그인 확인용 Supabase 주소와 공개 키(사이트 코드에도 있는 공개 값)
 const SUPABASE_URL = 'https://qktrghajroxddrbpwtvn.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_j-kp8YKsQTczGcsQX74OxA_mfI7DoZw';
@@ -84,7 +86,7 @@ const TMAP = {
   transit: 'https://apis.openapi.sk.com/transit/routes',
   walk: 'https://apis.openapi.sk.com/tmap/routes/pedestrian?version=1&format=json',
 };
-const PLACE_KINDS = ['search', 'nearby', 'station', 'addr', 'apt', 'bldreg', 'probe'];
+const PLACE_KINDS = ['search', 'nearby', 'station', 'addr', 'apt', 'bldreg', 'arrive'];
 const AI_KINDS = ['intent', 'photo'];
 
 export default {
@@ -143,7 +145,7 @@ async function handle(kind, input, { request, env, ctx, send, reply }) {
   // KV 무료 한도는 저장(쓰기)이 하루 1,000번뿐이라, 하루 한도가 넉넉한(10만 번) 카카오 결과는 KV에 쓰지 않고
   // 이 서버 메모리에만 잠시 둔다(addr3·station·nearby2). KV에는 한도가 작거나 돈이 드는 것(TMAP 경로, AI, 공공데이터포털)만 쓴다
   const cached = async (key, ttl, make) => {
-    const store = !/^(addr[34]|station|nearby2|bldreg1):/.test(key); // 카카오 결과·건축물대장
+    const store = !/^(addr[34]|station|nearby2|bldreg1|arr):/.test(key); // 카카오 결과·건축물대장
     const m = memGet(key); if (m) return send(m, 200, { 'X-Cache': 'MEM' });
     if (kv && store) { const hit = await kv.get(key).catch(() => null); if (hit) { memPut(key, hit, ttl); return send(hit, 200, { 'X-Cache': 'HIT' }); } }
     await allow();
@@ -178,24 +180,45 @@ async function handle(kind, input, { request, env, ctx, send, reply }) {
     })) });
   }
 
-  /* 임시 점검(곧 지운다): 실시간 자료들의 주소가 맞는지 응답 앞부분만 본다. 키는 가려서 돌려준다 */
-  if (kind === 'probe') {
+  /* 실시간 도착: 길찾기에서 고른 경로의 버스·지하철이 언제 오는지. 20초 동안만 서버 메모리에 둔다(KV에 쓰지 않는다)
+     { type: 'bus', city: 'seoul', ars: '24101' }      → 서울 버스(정류소 고유번호, 공공데이터포털 서울특별시_정류소정보조회)
+     { type: 'bus', city: 'gg', station: '228000708' }  → 경기 버스(정류소 ID, 공공데이터포털 경기도_버스도착정보)
+     { type: 'subway', station: '천호' }                  → 지하철(역 이름, 서울 열린데이터광장 실시간 지하철)
+     → { list: [{ name, msg, min, next, low, dir, line }] } (버스: name=노선 번호, 지하철: line=노선 번호·dir=방면) */
+  if (kind === 'arrive') {
+    const type = String(input.type || '');
     const gk = env.DATA_GO_KR_KEY ? (/%[0-9A-Fa-f]{2}/.test(env.DATA_GO_KR_KEY) ? decodeURIComponent(env.DATA_GO_KR_KEY) : env.DATA_GO_KR_KEY) : '';
-    const sk = env.SEOUL_SUBWAY_KEY || '';
-    const enc = encodeURIComponent;
-    const urls = {
-      seoulBus: `http://ws.bus.go.kr/api/rest/stationinfo/getStationByUid?serviceKey=${enc(gk)}&arsId=24101&resultType=json`,
-      ggBusV2: `https://apis.data.go.kr/6410000/busarrivalservice/v2/getBusArrivalListv2?serviceKey=${enc(gk)}&stationId=228000708&format=json`,
-      ggBus: `https://apis.data.go.kr/6410000/busarrivalservice/getBusArrivalList?serviceKey=${enc(gk)}&stationId=228000708`,
-      subway: `http://swopenapi.seoul.go.kr/api/subway/${enc(sk)}/json/realtimeStationArrival/0/5/${enc('천호')}`,
-      elevA: `https://apis.data.go.kr/B553766/smt-elvt/getElvtInfo?serviceKey=${enc(gk)}&pageNo=1&numOfRows=3&dataType=JSON`,
-    };
-    const out = {};
-    for (const [k, u] of Object.entries(urls)) {
-      try { const r = await fetch(u, { signal: AbortSignal.timeout(7000) }); const t = await r.text(); out[k] = r.status + ' ' + t.slice(0, 500).split(gk).join('KEY').split(sk || '#none#').join('KEY'); }
-      catch (e) { out[k] = 'ERR ' + String(e).slice(0, 80); }
+    const get = async u => { const r = await fetch(u, { signal: AbortSignal.timeout(6000) }); const t = await r.text(); try { return JSON.parse(t); } catch { throw reply(502, { error: 'arrive upstream' }); } };
+    const arr = v => !v ? [] : Array.isArray(v) ? v : [v];
+    if (type === 'bus' && input.city === 'seoul') {
+      const ars = String(input.ars || ''); if (!/^\d{5}$/.test(ars) || !gk) return reply(400, { error: 'bad ars' });
+      return cached(`arr:sb:${ars}`, 20, async () => {
+        const j = await get(`http://ws.bus.go.kr/api/rest/stationinfo/getStationByUid?serviceKey=${encodeURIComponent(gk)}&arsId=${ars}&resultType=json`);
+        const items = arr(j && j.msgBody && j.msgBody.itemList);
+        // arrmsg: '3분12초후[2번째 전]', '곧 도착', '운행종료', '출발대기'. busType1: 1이면 저상버스
+        return JSON.stringify({ list: items.slice(0, 40).map(x => ({ name: String(x.rtNm || ''), msg: String(x.arrmsg1 || ''), next: String(x.arrmsg2 || ''), low: String(x.busType1) === '1' })) });
+      });
     }
-    return reply(200, { hasSubwayKey: !!sk, out });
+    if (type === 'bus' && input.city === 'gg') {
+      const st = String(input.station || ''); if (!/^\d{6,10}$/.test(st) || !gk) return reply(400, { error: 'bad station' });
+      return cached(`arr:gb:${st}`, 20, async () => {
+        const j = await get(`https://apis.data.go.kr/6410000/busarrivalservice/v2/getBusArrivalListv2?serviceKey=${encodeURIComponent(gk)}&stationId=${st}&format=json`);
+        const items = arr(j && j.response && j.response.msgBody && j.response.msgBody.busArrivalList);
+        const n = v => (v === '' || v == null) ? null : +v;
+        return JSON.stringify({ list: items.slice(0, 40).map(x => ({ name: String(x.routeName || ''), min: n(x.predictTime1), stops: n(x.locationNo1), next: n(x.predictTime2), low: String(x.lowPlate1) === '1', flag: String(x.flag || '') })) });
+      });
+    }
+    if (type === 'subway') {
+      const st = String(input.station || '').replace(/역$/, '').replace(/\(.*\)$/, '').trim();
+      if (!st || st.length > 20 || !env.SEOUL_SUBWAY_KEY) return reply(400, { error: 'bad station' });
+      return cached(`arr:sw:${st}`, 20, async () => {
+        const j = await get(`http://swopenapi.seoul.go.kr/api/subway/${encodeURIComponent(env.SEOUL_SUBWAY_KEY)}/json/realtimeStationArrival/0/20/${encodeURIComponent(st)}`);
+        // subwayId: 1001~1009 = 1~9호선 등. updnLine: 상행·하행·내선·외선. arvlMsg2: '전역 도착', '3분 후 (천호)'. barvlDt: 도착까지 초
+        return JSON.stringify({ list: arr(j && j.realtimeArrivalList).slice(0, 20).map(x => ({ line: String(x.subwayId || ''), updn: String(x.updnLine || ''), dir: String(x.trainLineNm || ''),
+          msg: String(x.arvlMsg2 || ''), sec: +x.barvlDt || 0, express: String(x.btrainSttus || '') })) });
+      });
+    }
+    return reply(400, { error: 'bad type' });
   }
 
   /* 좌표 → 주소(카카오): 지도에서 누른 자리의 건물(도로명주소·건물명). 주소는 잘 바뀌지 않아 약 1m 단위로 30일 저장 */
