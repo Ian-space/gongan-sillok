@@ -400,7 +400,7 @@ window.GS_EN = {
   '실시간 도착 확인 중…': 'Checking live arrivals…', '이 정류장은 실시간 도착 정보가 없어요': 'No live arrival data for this stop', '실시간 도착 정보를 불러오지 못했어요': 'Couldn’t load live arrivals',
   '지금 들어오는 열차 정보가 없어요': 'No trains approaching right now', '지금 도착 예정인 버스 정보가 없어요': 'No buses expected right now', '운행종료': 'service ended', '출발대기': 'waiting to depart', '저상': 'low-floor',
   '전역 도착': 'at the previous station', '전역 출발': 'left the previous station', '전역 진입': 'approaching the previous station', '곧 도착': 'arriving soon',
-  '내리는 역': 'Getting off', '타는 역': 'Getting on', '승강장↔대합실 엘리베이터 있음': 'Elevator between platform and concourse', '지상으로 가는 엘리베이터 있음': 'Elevator to street level',
+  '내리는 역': 'Getting off', '타는 역': 'Getting on', '승강장 엘리베이터 있음': 'Platform elevator', '지상으로 가는 엘리베이터 있음': 'Elevator to street level',
   '버스정류장': 'Bus stop', '실시간 도착': 'Live arrivals', '도착 정보 없음': 'no arrival info', '교통 > 버스정류장': 'Transport > Bus stop',
   '정류장: 국토교통부 전국 버스정류장 위치정보 · 도착: 서울특별시 버스도착정보': 'Stops: MOLIT national bus stop data · Arrivals: Seoul bus arrival info', '정류장: 국토교통부 전국 버스정류장 위치정보 · 도착: 경기도 버스도착정보': 'Stops: MOLIT national bus stop data · Arrivals: Gyeonggi bus arrival info',
   '원목·합판': 'Solid wood · plywood', '노출 콘크리트': 'Exposed concrete', '적벽돌': 'Red brick', '대리석·석재': 'Marble · stone', '통창·유리벽': 'Big windows · glass walls', '철제·스테인리스': 'Steel · stainless', '흰 벽 등': 'White walls, etc.',
