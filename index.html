@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<script src="i18n.js?v=13"></script>
+<script src="i18n.js?v=14"></script>
 <title>공간실록 시제품</title>
 <meta name="description" content="입구 계단, 화장실, 소음, 콘센트처럼 다녀온 사람만 아는 사실을 평점 대신 남기고 함께 보는 공간 지도예요.">
 <!-- 카톡 등에 링크를 보냈을 때 미리보기 -->
@@ -507,8 +507,19 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
 .d-tbar .walk{background:var(--paper);color:var(--muted);font-weight:500}
 .d-tbar .ride{background:var(--c);color:#FFFFFF}
 /* 출발 시각 고르기, 그 시각에 운행하지 않는 경로(흐리게 아래에) */
-.d-when{display:flex;align-items:center;gap:8px;margin:6px 0 8px;font-size:13px;color:var(--muted)}
-.d-when select{font:inherit;font-size:16px;color:var(--ink);padding:5px 8px;border:1px solid var(--line);border-radius:8px;background:var(--panel)}
+.d-when{display:flex;flex-wrap:wrap;align-items:stretch;gap:5px;margin:6px 0 8px;font-size:14px}
+.d-wseg{position:relative;display:inline-flex;align-items:stretch;border:1px solid var(--line);border-radius:8px;background:var(--panel)}
+.d-wseg button{padding:0;border:0;background:none;font:inherit;color:var(--ink);cursor:pointer}
+.d-wseg button:disabled{opacity:.3;cursor:default}
+.d-warr{width:21px;display:grid;place-items:center;color:var(--muted)!important}
+.d-wval{min-width:32px;padding:7px 0!important;font-variant-numeric:tabular-nums;text-align:center}
+.d-when.set .d-wval{color:var(--blue);font-weight:700}
+.d-chev{display:block;width:6px;height:6px;border:solid currentColor;border-width:0 1.5px 1.5px 0}
+.d-chev.l{transform:rotate(135deg);margin-left:2px}
+.d-chev.r{transform:rotate(-45deg);margin-right:2px}
+.d-wcal{position:absolute;left:0;bottom:0;width:1px;height:1px;opacity:0;pointer-events:none;border:0;padding:0}
+.d-wnow{padding:7px 9px;white-space:nowrap;border:1px solid var(--line);border-radius:8px;background:var(--panel);font:inherit;color:var(--ink);cursor:pointer}
+.d-wnow[aria-pressed="true"]{border-color:var(--blue);color:var(--blue);font-weight:700}
 .d-topt.off{opacity:.5}
 .d-toff-head{margin:10px 0 4px;font-size:12px;color:var(--muted)}
 .d-tsteps{margin:2px 0 0;padding:0;list-style:none;display:grid;gap:6px;font-size:13px}
@@ -2188,7 +2199,7 @@ function mapMessage(text){ $('mapmsgText').textContent = text; $('mapmsg').hidde
 // 로딩 화면은 지도가 준비되면 걷는다. 애니메이션이 끝나기 전에 사라지지 않도록 최소 시간을 두고, 늦어도 3.5초면 걷는다
 function hideSplash(){
   const s = $('splash'); if (!s || s.classList.contains('out')) return;
-  const min = matchMedia('(prefers-reduced-motion: reduce)').matches ? 300 : 1300;
+  const min = matchMedia('(prefers-reduced-motion: reduce)').matches ? 300 : 1700;
   setTimeout(() => { s.classList.add('out'); setTimeout(() => s.remove(), 400); }, Math.max(0, min - performance.now()));
 }
 
@@ -2253,7 +2264,7 @@ function initMap(){
   if (state.sel && isPhone()) centerAboveDetail(state.sel); // 새로고침 뒤 다시 열린 장소
   naver.maps.Event.once(map, 'tilesloaded', hideSplash);
   // 처음 온 사람 안내: 로딩 화면이 걷힌 뒤에 (로딩 화면은 최대 3.5초)
-  naver.maps.Event.once(map, 'tilesloaded', () => setTimeout(() => startTour(), $('splash') ? 1900 : 500));
+  naver.maps.Event.once(map, 'tilesloaded', () => setTimeout(() => startTour(), $('splash') ? 2300 : 500));
   setTimeout(() => startTour(), 4500); // 지도 그림이 늦게 와도
   focusSelected(); // 공유 링크로 연 장소
   // 지도 영역 크기가 바뀌면 지도에 알려 준다. 크기가 0이던 상태(숨겨진 탭 등)에서 처음 보이면 범위도 다시 맞춘다.
@@ -3182,16 +3193,66 @@ async function searchOrigin(query){
 // TMAP은 그 시각으로 경로를 찾고, ODsay 결과는 그 시각에 운행하는지로 나눈다. 실시간 도착은 '지금'일 때만
 state.departAt = null;
 const routeNow = () => state.departAt || seoulNow();
-function departOptions(){
-  const kst = new Date(Date.now() + 9 * 3600e3), today = kst.getUTCDate();
-  const start = Math.ceil(kst.getTime() / 1800e3) * 1800e3, out = [];
-  for (let i = 0; i < 48; i++) {
-    const d = new Date(start + i * 1800e3), p2 = n => String(n).padStart(2, '0');
-    const hh = d.getUTCHours(), mm = d.getUTCMinutes();
-    out.push({ stamp: `${d.getUTCFullYear()}${p2(d.getUTCMonth() + 1)}${p2(d.getUTCDate())}${p2(hh)}${p2(mm)}`, min: hh * 60 + mm, weekday: d.getUTCDay(),
-      label: `${d.getUTCDate() === today ? '오늘' : '내일'} ${p2(hh)}:${p2(mm)}` });
+// 출발 시각은 한국 시각을 UTC 칸에 담은 숫자(ms)로 다룬다(기기 시간대와 상관없게)
+const DAY = 864e5, p2 = n => String(n).padStart(2, '0');
+const kstNowMs = () => Date.now() + 9 * 3600e3;
+const kstToday = () => Math.floor(kstNowMs() / DAY) * DAY;
+const DEPART_DAYS = 30; // 앞으로 며칠까지 고를 수 있나
+function dayLabel(ms){
+  const t = new Date(ms), diff = Math.round((Math.floor(ms / DAY) * DAY - kstToday()) / DAY);
+  return diff === 0 ? '오늘' : diff === 1 ? '내일' : diff === 2 ? '모레' : `${t.getUTCMonth() + 1}.${t.getUTCDate()}(${'일월화수목금토'[t.getUTCDay()]})`;
+}
+function departFrom(ms){
+  const t = new Date(ms), hh = t.getUTCHours(), mm = t.getUTCMinutes();
+  return { t: ms, stamp: `${t.getUTCFullYear()}${p2(t.getUTCMonth() + 1)}${p2(t.getUTCDate())}${p2(hh)}${p2(mm)}`, min: hh * 60 + mm, weekday: t.getUTCDay(),
+    label: `${dayLabel(ms)} ${p2(hh)}:${p2(mm)}` };
+}
+// 출발 시각 고르기: [‹ 오늘 ›] [‹ 08시 ›] [‹ 30분 ›] [지금 출발]. 날짜 글자를 누르면 달력, 분은 5분씩.
+// 화살표를 여러 번 누를 수 있으니 멈춘 뒤 한 번만 다시 찾는다
+let departTimer = 0;
+function departPicker(p){
+  const box = el('div','d-when'), cur = () => state.departAt ? state.departAt.t : Math.floor(kstNowMs() / 60e3) * 60e3;
+  const seg = (label, onPrev, onNext) => {
+    const s = el('div','d-wseg'), prev = el('button','d-warr'), mid = el('button','d-wval'), next = el('button','d-warr');
+    for (const b of [prev, mid, next]) b.type = 'button';
+    prev.innerHTML = '<i class="d-chev l"></i>'; next.innerHTML = '<i class="d-chev r"></i>';
+    prev.setAttribute('aria-label', `${label} 앞으로`); next.setAttribute('aria-label', `${label} 뒤로`);
+    prev.addEventListener('click', onPrev); next.addEventListener('click', onNext);
+    s.append(prev, mid, next); box.appendChild(s); return { s, prev, mid, next };
+  };
+  const set = ms => {
+    const lo = Math.floor(kstNowMs() / 60e3) * 60e3, hi = kstToday() + (DEPART_DAYS + 1) * DAY - 60e3;
+    state.departAt = departFrom(Math.min(hi, Math.max(lo, ms)));
+    paint();
+    clearTimeout(departTimer);
+    departTimer = setTimeout(() => { if (state.sel !== p.id) return; state.transit = null; clearRoute(); findTransit(p); }, 700);
+  };
+  const dayStart = () => Math.floor(cur() / DAY) * DAY, hm = () => cur() - dayStart();
+  const day = seg('날짜', () => set(cur() - DAY), () => set(cur() + DAY));
+  const hour = seg('시', () => set(dayStart() + (hm() - 3600e3 + DAY) % DAY), () => set(dayStart() + (hm() + 3600e3) % DAY));
+  const step = 5 * 60e3, h0 = () => Math.floor(hm() / 3600e3) * 3600e3, m = () => hm() - h0();
+  const min = seg('분', () => set(dayStart() + h0() + ((Math.ceil(m() / step) - 1 + 12) % 12) * step),
+                        () => set(dayStart() + h0() + ((Math.floor(m() / step) + 1) % 12) * step));
+  // 날짜 글자를 누르면 달력
+  const cal = el('input','d-wcal'); cal.type = 'date'; cal.tabIndex = -1; cal.setAttribute('aria-hidden', 'true');
+  const iso = ms => new Date(ms).toISOString().slice(0, 10);
+  cal.min = iso(kstToday()); cal.max = iso(kstToday() + DEPART_DAYS * DAY);
+  cal.addEventListener('change', () => { if (cal.value) set(Date.parse(cal.value) + hm()); });
+  day.s.appendChild(cal);
+  day.mid.addEventListener('click', () => { cal.value = iso(cur()); try { cal.showPicker(); } catch { cal.focus(); cal.click(); } });
+  const now = el('button','d-wnow', '지금 출발'); now.type = 'button';
+  now.addEventListener('click', () => { if (!state.departAt) return; clearTimeout(departTimer); state.departAt = null; state.transit = null; clearRoute(); findTransit(p); });
+  box.appendChild(now);
+  function paint(){
+    const t = new Date(cur());
+    day.mid.textContent = dayLabel(cur()); hour.mid.textContent = `${p2(t.getUTCHours())}시`; min.mid.textContent = `${p2(t.getUTCMinutes())}분`;
+    day.prev.disabled = dayStart() <= kstToday();
+    day.next.disabled = dayStart() >= kstToday() + DEPART_DAYS * DAY;
+    now.setAttribute('aria-pressed', String(!state.departAt));
+    box.classList.toggle('set', !!state.departAt);
   }
-  return out;
+  paint();
+  return box;
 }
 async function findTransit(p){
   const e = routeEnds(p); if (!e) return;
@@ -3288,18 +3349,9 @@ function renderTransit(d, p){
   acts.appendChild(chg);
   if (state.routeFrom) { const me = el('button','linkbtn', '내 위치로'); me.type = 'button'; me.addEventListener('click', () => setRouteFrom(null)); acts.appendChild(me); }
   box.appendChild(acts);
-  // 출발 시각: 지금 또는 오늘·내일 30분 단위(밤에 내일 아침 이동을 미리 짜는 사람을 위해). 바꾸면 그 시각으로 다시 찾는다
-  const tw = el('label','d-when'); tw.appendChild(el('span', null, '출발 시각'));
-  const sel = el('select'); sel.setAttribute('aria-label', '출발 시각');
-  sel.appendChild(new Option('지금', ''));
-  for (const o of departOptions()) sel.appendChild(new Option(o.label, o.stamp));
-  if (state.departAt && ![...sel.options].some(x => x.value === state.departAt.stamp)) state.departAt = null; // 지난 시각이면 지금으로
-  sel.value = state.departAt ? state.departAt.stamp : '';
-  sel.addEventListener('change', () => {
-    state.departAt = sel.value ? departOptions().find(o => o.stamp === sel.value) || null : null;
-    state.transit = null; clearRoute(); findTransit(p);
-  });
-  tw.appendChild(sel); box.appendChild(tw);
+  // 출발 시각: 지금 또는 고른 날짜·시·분(밤에 내일 아침 이동을 미리 짜는 사람을 위해). 바꾸면 그 시각으로 다시 찾는다
+  if (state.departAt && state.departAt.t < kstNowMs() - 60e3) state.departAt = null; // 지난 시각이면 지금으로
+  box.appendChild(departPicker(p));
   if (auto) {
     box.appendChild(el('p','d-tnote','경로를 찾는 중이에요…'));
     setTimeout(() => { if (state.sel === p.id && !state.transit) findTransit(p); }, 0);
