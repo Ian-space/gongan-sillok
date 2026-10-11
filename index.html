@@ -3981,7 +3981,9 @@ function fetchRing(lat, lng){
     if (!f) return null;
     const ring = outer(f).slice(0, 300).map(([x, y]) => [+x, +y]).filter(([x, y]) => x > 124 && x < 132 && y > 33 && y < 39);
     const pr = f.properties || {}, num = v => { const n = parseInt(v, 10); return n > 0 ? n : 0; };
-    const name = cleanText([pr.bld_nm || pr.buld_nm || '', pr.dong_nm || ''].filter(Boolean).join(' '), 40);
+    // 건물 이름 + 동 이름. 동 이름이 건물 이름과 같거나 이미 들어 있으면('아트빌 아트빌') 한 번만
+    const bn = pr.bld_nm || pr.buld_nm || '', dn = pr.dong_nm || '';
+    const name = cleanText([bn, dn && !squash(bn).includes(squash(dn)) ? dn : ''].filter(Boolean).join(' '), 40);
     const yearOf = p => /^\d{8}$/.test(p.useapr_day || '') ? p.useapr_day.slice(0, 4) : '';
     if (ring.length < 3) return null;
     const out = { ring, floors: num(pr.grnd_flr || pr.gro_flo_co), under: num(pr.ugrnd_flr), use: BLD_USE[pr.usability] || '', year: yearOf(pr), name, dong: cleanText(pr.dong_nm || '', 20) };
