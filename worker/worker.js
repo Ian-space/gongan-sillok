@@ -17,12 +17,13 @@
 //   POST /apt      { bjd, road?, lot?, name? }                  → 누른 아파트 단지의 공식 이름·주소·동수·세대수 (공공데이터포털)
 //   POST /bldreg   { pnu: 필지 번호 19자리 }                     → 그 필지 건물들의 승강기 수·층수·주용도 (건축물대장)
 //   POST /arrive   { type: bus|subway, city?, ars?, station? }     → 버스·지하철 실시간 도착 (서울 버스, 경기 버스, 서울 실시간 지하철)
+//   POST /elev     { station }                                  → 지하철역 엘리베이터(출구·층·운행 상태, 서울교통공사 1~8호선)
 //   POST /nearby   { rect: "왼쪽X,아래Y,오른쪽X,위Y", code? }      → 지도 한 칸 안의 장소 (NEARBY의 업종 코드)
 //   POST /intent   { text }                                     → 글로 적은 목적을 기록 항목 조건으로 (로그인 필요)
 //   POST /photo    { images: [base64 JPEG, 최대 3장] }          → 사진에서 눈으로 확인되는 기록 항목 제안 (로그인 필요)
 
 const ALLOWED_ORIGINS = ['https://ian-space.github.io', 'http://localhost:8765'];
-const VERSION = '2026-10-12.4'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
+const VERSION = '2026-10-12.5'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
 // 로그인 확인용 Supabase 주소와 공개 키(사이트 코드에도 있는 공개 값)
 const SUPABASE_URL = 'https://qktrghajroxddrbpwtvn.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_j-kp8YKsQTczGcsQX74OxA_mfI7DoZw';
@@ -86,7 +87,7 @@ const TMAP = {
   transit: 'https://apis.openapi.sk.com/transit/routes',
   walk: 'https://apis.openapi.sk.com/tmap/routes/pedestrian?version=1&format=json',
 };
-const PLACE_KINDS = ['search', 'nearby', 'station', 'addr', 'apt', 'bldreg', 'arrive', 'probe'];
+const PLACE_KINDS = ['search', 'nearby', 'station', 'addr', 'apt', 'bldreg', 'arrive', 'elev'];
 const AI_KINDS = ['intent', 'photo'];
 
 export default {
@@ -221,15 +222,34 @@ async function handle(kind, input, { request, env, ctx, send, reply }) {
     return reply(400, { error: 'bad type' });
   }
 
-  /* 임시 점검(곧 지운다): 교통약자이용정보 응답 모양. 키는 가려서 돌려준다 */
-  if (kind === 'probe') {
+  /* 지하철역 엘리베이터(공공데이터포털 서울교통공사_교통약자이용정보, 1~8호선): 역 이름 → 그 역의 엘리베이터 목록
+     → { list: [{ line, exit, from, to, pos, ok }] } exit: 가까운 출입구 번호('8', 없으면 '내부'), from·to: 잇는 층('B1'·'1'), ok: 운행 상태 정상(M)인지.
+     운행 상태가 5분마다 바뀌어서 전체 목록을 5분 동안 서버 메모리에만 둔다(KV에 쓰지 않는다) */
+  if (kind === 'elev') {
+    const st = String(input.station || '').replace(/역$/, '').replace(/\(.*\)$/, '').trim();
+    if (!st || st.length > 20) return reply(400, { error: 'bad station' });
     const gk = /%[0-9A-Fa-f]{2}/.test(env.DATA_GO_KR_KEY || '') ? decodeURIComponent(env.DATA_GO_KR_KEY) : (env.DATA_GO_KR_KEY || '');
-    const out = {};
-    for (const [k, q] of Object.entries({ elvtr: 'getWksnElvtr?pageNo=1&numOfRows=3&dataType=JSON', elvtrJ: 'getWksnElvtr?pageNo=1&numOfRows=3&type=json', lift: 'getWksnWhcllift?pageNo=1&numOfRows=2&dataType=JSON' })) {
-      try { const r = await fetch(`https://apis.data.go.kr/B553766/wksn/${q}&serviceKey=${encodeURIComponent(gk)}`, { signal: AbortSignal.timeout(7000) }); const t = await r.text(); out[k] = r.status + ' ' + t.slice(0, 1500).split(gk).join('KEY'); }
-      catch (e) { out[k] = 'ERR ' + String(e).slice(0, 80); }
+    if (!gk) return reply(503, { error: 'elev off' });
+    let all = memGet('elev1:all');
+    if (!all) {
+      await allow();
+      const items = [];
+      for (let page = 1; page <= 3; page++) {
+        const r = await fetch(`https://apis.data.go.kr/B553766/wksn/getWksnElvtr?pageNo=${page}&numOfRows=1000&dataType=JSON&serviceKey=${encodeURIComponent(gk)}`, { signal: AbortSignal.timeout(8000) });
+        const j = await r.json().catch(() => null);
+        const b = j && j.response && j.response.body; if (!b) break;
+        const it = b.items && b.items.item; const list = !it ? [] : Array.isArray(it) ? it : [it];
+        items.push(...list);
+        if (list.length < 1000) break;
+      }
+      if (!items.length) return reply(502, { error: 'elev upstream' });
+      const flr = (se, f) => String(f || '').trim() ? (se === '지하' && !/^B/i.test(f) ? 'B' + f : String(f).trim()) : '';
+      all = JSON.stringify(items.map(x => ({ st: String(x.stnNm || '').replace(/\(.*\)$/, '').trim(), line: String(x.lineNm || ''), exit: String(x.vcntEntrcNo || '').trim(),
+        from: flr(x.bgngFlrGrndUdgdSe, x.bgngFlr), to: flr(x.endFlrGrndUdgdSe, x.endFlr), pos: String(x.dtlPstn || '').slice(0, 40), ok: String(x.oprtngSitu || '') === 'M', code: String(x.oprtngSitu || '') })));
+      memPut('elev1:all', all, 300);
     }
-    return reply(200, out);
+    const list = JSON.parse(all).filter(x => x.st === st).map(({ st: _, ...x }) => x);
+    return reply(200, { list, covered: list.length > 0 });
   }
 
   /* 좌표 → 주소(카카오): 지도에서 누른 자리의 건물(도로명주소·건물명). 주소는 잘 바뀌지 않아 약 1m 단위로 30일 저장 */
