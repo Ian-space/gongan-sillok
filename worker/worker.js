@@ -23,7 +23,7 @@
 //   POST /photo    { images: [base64 JPEG, 최대 3장] }          → 사진에서 눈으로 확인되는 기록 항목 제안 (로그인 필요)
 
 const ALLOWED_ORIGINS = ['https://ian-space.github.io', 'http://localhost:8765'];
-const VERSION = '2026-10-12.7'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
+const VERSION = '2026-10-12.8'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
 // 로그인 확인용 Supabase 주소와 공개 키(사이트 코드에도 있는 공개 값)
 const SUPABASE_URL = 'https://qktrghajroxddrbpwtvn.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_j-kp8YKsQTczGcsQX74OxA_mfI7DoZw';
@@ -87,7 +87,8 @@ const TMAP = {
   transit: 'https://apis.openapi.sk.com/transit/routes',
   walk: 'https://apis.openapi.sk.com/tmap/routes/pedestrian?version=1&format=json',
 };
-const PLACE_KINDS = ['search', 'nearby', 'station', 'addr', 'apt', 'bldreg', 'arrive', 'elev'];
+const PLACE_KINDS = ['search', 'nearby', 'station', 'addr', 'apt', 'bldreg', 'arrive', 'elev', 'odsay'];
+const ODSAY_WEB_KEY = 'vpfLJcZCiAwV7L5fibSQjA'; // 사이트(index.html)에도 공개된 웹 키. 따로 넣은 비밀값 ODSAY_API_KEY가 있으면 그걸 쓴다
 const AI_KINDS = ['intent', 'photo'];
 
 export default {
@@ -163,6 +164,32 @@ async function handle(kind, input, { request, env, ctx, send, reply }) {
     return j;
   };
   const xy = () => { const x = num(input.x), y = num(input.y); if (!inKorea(x, y)) throw reply(400, { error: 'coordinates out of range' }); return [x, y]; };
+
+  /* 대중교통 경로(ODsay searchPubTransPathT): 하루 호출 한도가 작아서, 같은 구간(약 10m 단위)은 여러 사람이 같이 쓰도록 하루 동안 저장해 둔다.
+     ODsay 결과는 출발 시각과 상관없다(첫차·막차는 사이트가 따로 거른다). 저장은 KV가 아닌 Cloudflare 캐시(쓰기 한도 없음, 지역 서버마다 따로)에.
+     { SX, SY, EX, EY } → ODsay 응답 그대로. 한도 초과 같은 오류 응답은 저장하지 않는다 */
+  if (kind === 'odsay') {
+    const sx = num(input.SX), sy = num(input.SY), ex = num(input.EX), ey = num(input.EY);
+    if (!inKorea(sx, sy) || !inKorea(ex, ey)) return reply(400, { error: 'coordinates out of range' });
+    const r4 = v => v.toFixed(4), q = `SX=${r4(sx)}&SY=${r4(sy)}&EX=${r4(ex)}&EY=${r4(ey)}`;
+    const key = `ods1:${q}`;
+    const m = memGet(key); if (m) return send(m, 200, { 'X-Cache': 'MEM' });
+    const edge = caches.default, ck = new Request('https://cache.gongan-sillok/odsay?' + q);
+    const hit = await edge.match(ck).catch(() => null);
+    if (hit) { const t = await hit.text(); memPut(key, t, 3600); return send(t, 200, { 'X-Cache': 'EDGE' }); }
+    await allow();
+    // ODsay 웹 키는 등록한 사이트 주소(Referer)로 확인한다
+    const up = await fetch(`https://api.odsay.com/v1/api/searchPubTransPathT?${q}&apiKey=${encodeURIComponent(env.ODSAY_API_KEY || ODSAY_WEB_KEY)}`,
+      { headers: { Referer: 'https://ian-space.github.io/gongan-sillok/' }, signal: AbortSignal.timeout(8000) });
+    const text = await up.text();
+    let j = null; try { j = JSON.parse(text); } catch {}
+    if (!up.ok || !j) return reply(502, { error: 'odsay upstream' });
+    if (!j.error && j.result) {
+      memPut(key, text, 3600);
+      ctx.waitUntil(edge.put(ck, new Response(text, { headers: { 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=86400' } })).catch(() => {}));
+    }
+    return send(text, 200, { 'X-Cache': 'MISS' });
+  }
 
   /* 카카오 장소 검색 */
   if (kind === 'search') {

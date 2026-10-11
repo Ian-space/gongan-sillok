@@ -3071,10 +3071,23 @@ function fromOdsay(path){
   });
   return { source: 'odsay', minutes: info.totalTime || 0, fare: Number(info.payment || 0), transfers: Math.max(0, (info.busTransitCount || 0) + (info.subwayTransitCount || 0) - 1), segs };
 }
+// ODsay 결과는 출발 시각과 상관없어서(운행 여부는 여기서 거른다) 시각만 바꿀 때는 다시 부르지 않는다
+const odsayCache = new Map();
 async function odsayTransit(p){
   const { from: o, to: d } = routeEnds(p);
-  const q = new URLSearchParams({ SX: o.lng, SY: o.lat, EX: d.lng, EY: d.lat });
-  const j = await fetch(`https://api.odsay.com/v1/api/searchPubTransPathT?${q}&apiKey=${encodeURIComponent(ODSAY_API_KEY)}`).then(r => r.json());
+  const k = [o.lng, o.lat, d.lng, d.lat].map(v => (+v).toFixed(4)).join(',');
+  if (odsayCache.has(k)) return odsayCache.get(k);
+  const r = await odsayRaw({ SX: String(o.lng), SY: String(o.lat), EX: String(d.lng), EY: String(d.lat) });
+  if (r.status === 'ok') odsayCache.set(k, r);
+  return r;
+}
+async function odsayRaw(q){
+  // 중계 서버를 거친다: 같은 구간 결과를 여러 사람이 같이 써서 하루 호출 한도를 아낀다. 서버가 안 되면 직접 부른다
+  let j = null;
+  if (ROUTE_PROXY) { try { const r = await proxyPost('/odsay', q); if (r.ok) j = await r.json(); } catch {} }
+  const ec = x => { const e = x && x.error; return e ? String((Array.isArray(e) ? e[0] : e).code) : ''; };
+  if (j && ec(j) && ec(j) !== '-98') j = null; // 서버 쪽 키 오류 등이면 직접 한 번 더
+  if (!j) j = await fetch(`https://api.odsay.com/v1/api/searchPubTransPathT?${new URLSearchParams(q)}&apiKey=${encodeURIComponent(ODSAY_API_KEY)}`).then(r => r.json());
   const e = j && j.error;
   if (e) {
     const x = Array.isArray(e) ? e[0] : e;
