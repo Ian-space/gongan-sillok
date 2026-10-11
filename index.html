@@ -3086,7 +3086,7 @@ async function odsayRaw(q){
   let j = null;
   if (ROUTE_PROXY) { try { const r = await proxyPost('/odsay', q); if (r.ok) j = await r.json(); } catch {} }
   const ec = x => { const e = x && x.error; return e ? String((Array.isArray(e) ? e[0] : e).code) : ''; };
-  if (j && ec(j) && ec(j) !== '-98') j = null; // 서버 쪽 키 오류 등이면 직접 한 번 더
+  if (j && ec(j) && !['-98', '429'].includes(ec(j))) j = null; // 서버 쪽 키 오류 등이면 직접 한 번 더(한도 초과는 같은 키라 그대로)
   if (!j) j = await fetch(`https://api.odsay.com/v1/api/searchPubTransPathT?${new URLSearchParams(q)}&apiKey=${encodeURIComponent(ODSAY_API_KEY)}`).then(r => r.json());
   const e = j && j.error;
   if (e) {
