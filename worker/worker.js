@@ -20,7 +20,7 @@
 //   POST /photo    { images: [base64 JPEG, 최대 3장] }          → 사진에서 눈으로 확인되는 기록 항목 제안 (로그인 필요)
 
 const ALLOWED_ORIGINS = ['https://ian-space.github.io', 'http://localhost:8765'];
-const VERSION = '2026-10-11.6'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
+const VERSION = '2026-10-12.1'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
 // 로그인 확인용 Supabase 주소와 공개 키(사이트 코드에도 있는 공개 값)
 const SUPABASE_URL = 'https://qktrghajroxddrbpwtvn.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_j-kp8YKsQTczGcsQX74OxA_mfI7DoZw';
@@ -143,7 +143,7 @@ async function handle(kind, input, { request, env, ctx, send, reply }) {
   // KV 무료 한도는 저장(쓰기)이 하루 1,000번뿐이라, 하루 한도가 넉넉한(10만 번) 카카오 결과는 KV에 쓰지 않고
   // 이 서버 메모리에만 잠시 둔다(addr3·station·nearby2). KV에는 한도가 작거나 돈이 드는 것(TMAP 경로, AI, 공공데이터포털)만 쓴다
   const cached = async (key, ttl, make) => {
-    const store = !/^(addr3|station|nearby2|bldreg1):/.test(key); // 카카오 결과·건축물대장
+    const store = !/^(addr[34]|station|nearby2|bldreg1):/.test(key); // 카카오 결과·건축물대장
     const m = memGet(key); if (m) return send(m, 200, { 'X-Cache': 'MEM' });
     if (kv && store) { const hit = await kv.get(key).catch(() => null); if (hit) { memPut(key, hit, ttl); return send(hit, 200, { 'X-Cache': 'HIT' }); } }
     await allow();
@@ -181,20 +181,24 @@ async function handle(kind, input, { request, env, ctx, send, reply }) {
   /* 좌표 → 주소(카카오): 지도에서 누른 자리의 건물(도로명주소·건물명). 주소는 잘 바뀌지 않아 약 1m 단위로 30일 저장 */
   if (kind === 'addr') {
     const [x, y] = xy();
-    return cached(`addr3:${x.toFixed(5)},${y.toFixed(5)}`, 30 * 86400, async () => {
+    return cached(`addr4:${x.toFixed(5)},${y.toFixed(5)}`, 30 * 86400, async () => {
       const j = await kakao('geo/coord2address', { x: x.toFixed(6), y: y.toFixed(6) });
       const d = (j.documents || [])[0] || {}, ra = d.road_address || null, ad = d.address || null;
-      let building = ra ? ra.building_name || '' : '';
-      // 아파트 단지는 건물명이 '112동'처럼 동 번호만 온다 → 같은 도로명주소의 아파트·주거시설을 찾아 단지 이름을 붙인다.
-      // 주소가 같은 곳만 쓴다(근처 다른 단지 이름이 빌라에 붙지 않게). 주소 앞의 '서울'/'서울특별시' 표기는 달라서 빼고 비교한다
+      let building = ra ? ra.building_name || '' : '', places = [];
+      // 건물 이름이 없거나 '112동'처럼 동 번호만 오면, 같은 도로명주소로 카카오 장소를 찾는다.
+      // 아파트 단지면 단지 이름을 붙이고, 아니면 그 주소의 장소들(places)을 함께 준다(상가정보에 없는 건물도 장소 이름으로 보이게).
+      // 주소가 같은 곳만 쓴다(근처 다른 건물 이름이 붙지 않게). 주소 앞의 '서울'/'서울특별시' 표기는 달라서 빼고 비교한다
       if (ra && ra.address_name && (!building || /^[\dA-Za-z가-힣]{0,4}\d+동$/.test(building))) {
         const tail = s => String(s || '').trim().split(/\s+/).slice(1).join(' ');
-        const kj = await kakao('search/keyword', { query: ra.address_name, x: x.toFixed(6), y: y.toFixed(6), radius: '500', sort: 'distance', size: '5' }).catch(() => null);
-        const apt = ((kj && kj.documents) || []).find(p => /아파트|주거시설|오피스텔/.test(p.category_name || '') && !/동$/.test(p.place_name) && tail(p.road_address_name) === tail(ra.address_name));
+        const kj = await kakao('search/keyword', { query: ra.address_name, x: x.toFixed(6), y: y.toFixed(6), radius: '500', sort: 'distance', size: '15' }).catch(() => null);
+        const same = ((kj && kj.documents) || []).filter(p => tail(p.road_address_name) === tail(ra.address_name));
+        const apt = same.find(p => /아파트|주거시설|오피스텔/.test(p.category_name || '') && !/동$/.test(p.place_name));
         if (apt && !building.includes(apt.place_name)) building = (apt.place_name + ' ' + building).trim();
+        if (!building) places = same.filter(p => !/주거시설|아파트/.test(p.category_name || '')).slice(0, 8).map(p => ({ name: p.place_name, category: p.category_name,
+          address: p.road_address_name, phone: p.phone, x: p.x, y: p.y, url: p.place_url }));
       }
       return JSON.stringify({ road: ra ? ra.address_name : '', building, jibun: ad ? ad.address_name : '',
-        roadName: ra ? ra.road_name : '', mainNo: ra ? ra.main_building_no : '', subNo: ra ? ra.sub_building_no : '' });
+        roadName: ra ? ra.road_name : '', mainNo: ra ? ra.main_building_no : '', subNo: ra ? ra.sub_building_no : '', places });
     });
   }
 
