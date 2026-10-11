@@ -391,6 +391,11 @@ window.GS_EN = {
   '건물 승강기 있음 (건축물대장)': 'Building has elevators (building register)', '건물 승강기 없음 (건축물대장)': 'No elevator in building (building register)',
   '건축물대장에 등록된 승용·비상용 승강기 수예요. 매장 층까지 닿는지는 직접 확인한 기록을 봐 주세요.': 'Number of passenger and emergency elevators in the building register. Check in-person records to see if one reaches the shop’s floor.',
   '가장 많이 찾는 사실': 'Facts people look for most', '+ 더 남기기 (좌석 간격·채광·콘센트·아이·반려동물·주차 등)': '+ Add more (table spacing, daylight, outlets, kids, pets, parking…)',
+  '장소: 카카오': 'Places: Kakao', '가게: 소상공인시장진흥공단 상가(상권)정보(2026년 6월)': 'Shops: SEMAS commercial data (June 2026)', '주소: 카카오': 'Address: Kakao',
+  '더 아는 게 있으면 이어서 골라 주세요. 모르는 건 비워 두면 돼요.': 'If you know more, keep going. Leave anything you don’t know empty.',
+  '정보가 다르거나 문제가 있나요?': 'Is something wrong or different?', '실제와 달라요 · 신고': 'Not accurate · Report', '실제와 달라요': 'Not accurate',
+  '사실이 달라요': 'The facts are different', '부적절한 기록 신고': 'Report an inappropriate record', '광고·홍보, 욕설, 개인정보 노출 등 · 관리자가 확인해요': 'Ads, abuse, personal info, etc. · an admin will review',
+  '신고할 기록 아래의 "신고"를 눌러 주세요.': 'Tap “Report” under the record you want to report.', '신고 그만하기': 'Stop reporting', '내 기록으로 바로잡기': 'Correct it with my record',
   '원목·합판': 'Solid wood · plywood', '노출 콘크리트': 'Exposed concrete', '적벽돌': 'Red brick', '대리석·석재': 'Marble · stone', '통창·유리벽': 'Big windows · glass walls', '철제·스테인리스': 'Steel · stainless', '흰 벽 등': 'White walls, etc.',
   '엑셀 양식 안내': 'Excel format guide', '필수 열': 'Required columns', '선택 열': 'Optional columns', '이 페이지의 보안 처리': 'How this page handles security',
   '이름이 "(예시)"로 시작하는 줄은 건너뜁니다': 'Rows whose name starts with "(예시)" are skipped',
@@ -410,6 +415,7 @@ window.GS_EN = {
 // 숫자가 들어간 문장: [정규식, 바꾸는 함수(일치, tr)]. 위에서부터 처음 맞는 것 하나만 쓴다
 window.GS_EN_RULES = [
   [/^(\d[\d,]*)곳$/, m => `${m[1]} places`],
+  [/^직접 본 대로 남기면 바로잡혀요 · (.+)$/, (m, tr) => `Record what you saw and it gets corrected · ${tr(m[1])}`],
   [/^건물 승강기 (\d+)대 \(건축물대장\)$/, m => `${m[1]} elevator${m[1] === '1' ? '' : 's'} in building (building register)`],
   [/^(\d[\d,]*)곳 중 (\d[\d,]*)곳$/, m => `${m[2]} of ${m[1]}`],
   [/^(.+?) (\d[\d,]*)곳, 지도에 표시$/, (m, tr) => `${tr(m[1])}: ${m[2]}, show on map`],

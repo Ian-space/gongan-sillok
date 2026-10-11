@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<script src="i18n.js?v=4"></script>
+<script src="i18n.js?v=6"></script>
 <title>공간실록 시제품</title>
 <meta name="description" content="입구 계단, 화장실, 소음, 콘센트처럼 다녀온 사람만 아는 사실을 평점 대신 남기고 함께 보는 공간 지도예요.">
 <!-- 카톡 등에 링크를 보냈을 때 미리보기 -->
@@ -435,6 +435,12 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
 .rec-vals{font-size:12px;color:var(--muted)}
 .rec-note{font-size:13px}
 .rec-fix{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 8px;margin-top:10px;padding-top:8px;border-top:1px dashed var(--line);font-size:12px;color:var(--muted)}
+/* "실제와 달라요 · 신고"를 펼친 두 갈래 */
+.rec-fix.open{display:grid;gap:8px;align-items:stretch}
+.fix-opt{display:grid;gap:2px;text-align:left;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--ink);font:inherit;cursor:pointer}
+.fix-opt b{font-size:14px}
+.fix-opt span{font-size:12px;color:var(--muted)}
+.fix-opt.rep-opt b{color:var(--seal-ink)}
 .rep{justify-self:start}
 .rep-open{font-size:12px;color:var(--muted)}
 .rep-done{font-size:12px;color:var(--muted)}
@@ -1820,7 +1826,7 @@ function renderDetail(){
     // 건물통합정보(브이월드): 층수·용도·사용승인 연도. 엘리베이터가 필요한지 가늠하는 데 쓰는 공공 사실
     const cx = p.complex; // 아파트 단지: 동을 묶어서
     const bf = cx ? [`${cx.count}개 동`, p.aptUnits && `${p.aptUnits.toLocaleString()}세대`, cx.floors && `최고 ${cx.floors}층`, '공동주택', cx.year && `${cx.year}년 사용승인`, cx.tapped && `누른 곳 ${cx.tapped}`].filter(Boolean)
-      : [p.floorsAbove && `지상 ${p.floorsAbove}층`, p.floorsUnder && `지하 ${p.floorsUnder}층`, p.bldUse, p.bldYear && `${p.bldYear}년 사용승인`].filter(Boolean);
+      : [p.bldDong ? dongLabel(p.bldDong) : '', p.floorsAbove && `지상 ${p.floorsAbove}층`, p.floorsUnder && `지하 ${p.floorsUnder}층`, p.bldUse, p.bldYear && `${p.bldYear}년 사용승인`].filter(Boolean);
     if (bf.length) box.appendChild(el('p','ext-phone', `${bf.join(' · ')} (건물통합정보${p.aptUnits ? '·공동주택관리정보' : ''})`));
     if (!cx) box.appendChild(elevatorNote(p)); // 아파트 단지는 동마다 달라서 뺀다
     if (p.shops.length) {
@@ -1873,12 +1879,7 @@ function renderDetail(){
         try {
           const r = await proxyPost('/search', { query: text, x: String(p.lng), y: String(p.lat), sort: 'distance' });
           const j = r.ok ? await r.json() : {};
-          return (j.places || []).filter(x => bkeys.has(roadKey(x.address))).slice(0, 10).map(x => {
-            const m = KAKAO_PLACE.exec(String(x.url || '')), lat = toNum(x.y), lng = toNum(x.x);
-            return { id: 'k' + (m ? m[1] : `${lat}-${lng}`), ext: true, name: cleanText(x.name, 40), category: cleanText(x.category, 60),
-              type: cleanText(String(x.category || '').split('>').pop(), 20), addr: cleanText(x.address, 60), phone: cleanText(x.phone, 20),
-              url: m ? `https://place.map.kakao.com/${m[1]}` : '', lat, lng };
-          });
+          return (j.places || []).filter(x => bkeys.has(roadKey(x.address))).slice(0, 10).map(kakaoExt);
         } catch { return []; }
       };
       if (p.shops.length > 12) {
@@ -1925,7 +1926,7 @@ function renderDetail(){
       box.appendChild(el('p','add-hint', '입구 계단, 엘리베이터를 남기면 이 건물 안 가게 모두에 함께 보여요.'));
     }
     box.appendChild(acts);
-    box.appendChild(el('p','add-src', '주소: 카카오' + (p.shops.length ? ' · 가게: 소상공인시장진흥공단 상가(상권)정보(2026년 6월)' : '')));
+    box.appendChild(el('p','add-src', '주소: 카카오' + (p.shops.some(s => s.shop) ? ' · 가게: 소상공인시장진흥공단 상가(상권)정보(2026년 6월)' : '') + (p.shops.some(s => !s.shop) ? ' · 장소: 카카오' : '')));
     d.appendChild(box);
   } else if (p.ext) { // 카카오에서 찾은, 아직 기록 안 된 장소
     const box = el('div','ext-info');
@@ -1934,6 +1935,8 @@ function renderDetail(){
     // 상가정보의 층: 사람이 확인한 사실이 아니라 참고로만 (층 이동 기록을 남길 때 도움)
     if (p.floor) box.appendChild(el('p','ext-phone', `상가정보 기준 ${/^\d+$/.test(p.floor) ? p.floor + '층' : p.floor === '지' ? '지하' : p.floor} (참고)`));
     box.appendChild(elevatorNote(p)); // 건물에 승강기가 있는지(건축물대장)
+    // 상가정보 층이 실제와 다르면(1·2층을 함께 쓰는 가게 등) 바로 기록으로 바로잡게
+    if (p.floor) box.appendChild(fixReportUI(p, () => startAdd({ name: p.name, category: p.category, address: p.addr, lat: p.lat, lng: p.lng, kid: /^\d+$/.test(p.id.slice(1)) ? p.id.slice(1) : '' }), null, '이 장소 기록하기'));
     const acts = el('div','ext-acts');
     const rec = el('button','btn add rec','이 장소 기록하기'); rec.type = 'button';
     rec.addEventListener('click', () => startAdd({ name: p.name, category: p.category, address: p.addr, lat: p.lat, lng: p.lng, kid: /^\d+$/.test(p.id.slice(1)) ? p.id.slice(1) : '' }));
@@ -2008,21 +2011,20 @@ function renderDetail(){
         r.photos.forEach((x, i) => strip.appendChild(photoImg(x, `이 기록의 사진 ${i + 1}`, 'small', r.photos, i)));
         li.appendChild(strip);
       }
-      if (auth.user && !r.mineRec) li.appendChild(reportUI(r));
+      // 신고는 '실제와 달라요 · 신고'에서 '부적절한 기록 신고'를 고른 뒤에만 기록마다 보인다(평소엔 목록이 깔끔하게)
+      if (auth.user && !r.mineRec && (state.reportMode === p.id || state.reportFor === r.rid || state.reported.has(r.rid))) li.appendChild(reportUI(r));
       list.appendChild(li);
     }
     box.appendChild(list); fillPhotos(list);
-    // '사실과 다름'은 신고 대신 내 기록을 더해 바로잡는다 (가장 많은 값으로 모아 보여 주므로)
-    const fix = el('div','rec-fix');
-    fix.appendChild(el('span', null, '실제와 다르다면 내 기록을 더해 바로잡아 주세요.'));
-    const fb = el('button','linkbtn', p.mine ? '내 기록 고치기' : '나도 기록하기'); fb.type = 'button';
-    fb.addEventListener('click', () => {
+    // '실제와 달라요 · 신고' 한 버튼: 누르면 두 갈래로 나눈다.
+    // 사실이 다르면 신고가 아니라 내 기록을 더해 바로잡고(가장 많이 고른 값으로 모아 보여 주므로), 광고·욕설·개인정보는 기록을 골라 신고한다
+    const others = (p.recs || []).some(r => !r.mineRec);
+    box.appendChild(fixReportUI(p, () => {
       if (!auth.user && sb && p.mine) return login();
       if (!auth.user && sb) { choicePrefill = { name: p.name, category: p.type, address: p.addr, lat: p.lat, lng: p.lng, kid: p.kid, pid: p.pid }; return loginThenAdd(); }
       if (p.mine) return openEdit(p.id);
       openAdd({ name: p.name, category: p.type, address: p.addr, lat: p.lat, lng: p.lng, kid: p.kid, pid: p.pid });
-    });
-    fix.appendChild(fb); box.appendChild(fix);
+    }, others ? () => { if (!auth.user && sb) return login(); state.reportMode = p.id; state.fixOpen = null; renderDetail(); } : null, p.mine ? '내 기록 고치기' : '내 기록으로 바로잡기'));
     d.appendChild(box);
   }
   // 지금도 맞나요? 서버에 있는 장소만(예시·이 브라우저 기록은 빼고). 최종 확인일과 일치율을 함께 보여 준다
@@ -3587,6 +3589,13 @@ function pumpNear(){
   }
 }
 // 상가정보 한 줄 → 지도 장소(기록 안 된 곳). 검색·모든 가게·지도 누르기가 함께 쓴다
+// 카카오 장소 검색 결과 하나 → 기록 안 된 장소(ext)
+function kakaoExt(x){
+  const m = KAKAO_PLACE.exec(String(x.url || '')), lat = toNum(x.y), lng = toNum(x.x);
+  return { id: 'k' + (m ? m[1] : `${lat}-${lng}`), ext: true, name: cleanText(x.name, 40), category: cleanText(x.category, 60),
+    type: cleanText(String(x.category || '').split('>').pop(), 20), addr: cleanText(x.address, 60), phone: cleanText(x.phone, 20),
+    url: m ? `https://place.map.kakao.com/${m[1]}` : '', lat, lng };
+}
 function shopPlace(s){
   const c = SHOP_CAT[s.cat1] || {};
   return { id: 's' + s.id, ext: true, near: true, shop: true, kind: 'SHP', name: cleanText([s.name, s.branch].filter(Boolean).join(' '), 40),
@@ -3731,6 +3740,8 @@ async function buildingAt(a, lat, lng, single, ring){
   const kak = [...state.near.values()].filter(q => !q.shop && !q.building && ((q.addr && keys.has(roadKey(q.addr))) || (ring && inRing(q.lng, q.lat, ring)))
     && !shops.some(s => squash(s.name) === squash(q.name)));
   shops = [...kak, ...shops];
+  // 상가정보에도, 지도에 뜬 카카오 점에도 없으면(주택가의 이삿짐센터·부동산 등) 중계 서버가 같은 도로명주소로 찾아 준 카카오 장소를 쓴다
+  if (!shops.length && Array.isArray(a.places)) shops = a.places.slice(0, 8).map(kakaoExt).filter(s => s.lat && s.lng);
   if (single && shops.length === 1) return shops[0];
   if (!a.road && !shops.length && !ring) return null; // 길·공원 등: 건물이 아니다
   const short = a.road ? a.road.split(/\s+/).slice(-2).join(' ') : a.jibun;
@@ -4249,6 +4260,10 @@ function renderAdd(){
   const openMore = () => { moreBox.hidden = false; moreBtn.hidden = true; moreBtn.setAttribute('aria-expanded', 'true'); };
   moreBtn.addEventListener('click', openMore); moreBtn.hidden = !moreBox.hidden;
   addUI.openMore = openMore; // 사진 AI가 펼쳐진 곳에 없는 항목을 채울 때 연다
+  // 처음 보이는 4가지를 다 고르면('모름' 포함) 나머지를 저절로 펼친다. 접혀 있어서 지나치지 않게
+  const answered = new Set(CORE_KEYS.filter(c => addState.values[c]));
+  const noteCore = k => { if (bld || !CORE_KEYS.includes(k)) return; answered.add(k); if (moreBox.hidden && CORE_KEYS.every(c => answered.has(c))) openMore(); };
+  moreBox.appendChild(el('p','add-hint', '더 아는 게 있으면 이어서 골라 주세요. 모르는 건 비워 두면 돼요.'));
   if (!bld) body.appendChild(el('h3','add-group', '가장 많이 찾는 사실'));
   for (const k of bld ? Object.keys(ENUMS) : [...CORE_KEYS, ...moreKeys]) {
     const def = ENUMS[k];
@@ -4268,16 +4283,16 @@ function renderAdd(){
     if (def.grill) w.appendChild(el('span','add-hint tag-hint', '불판 둘레·아래로 빨아들이면 하향식, 테이블 위 후드로 빨아올리면 상향식'));
     const chips = el('div','chips'); chips.setAttribute('role','group'); chips.setAttribute('aria-label', def.label);
     // 접근·동반(과 배기)은 물어보지 않으면 모를 때가 많아 '모름'을 함께 둔다. 모름은 값 없음('')으로 저장한다(기록 안 함과 같다)
-    const unknown = groupOf(k) === 'access' || def.grill;
+    const unknown = groupOf(k) === 'access' || def.grill || CORE_KEYS.includes(k); // 처음 보이는 4가지는 '모름'도 골라야 다 고른 것으로 친다
     const sync = () => chips.querySelectorAll('.chip').forEach(c => c.setAttribute('aria-pressed', String(c.dataset.v === (addState.values[k] || ''))));
     for (const v of def.values) {
       const b = el('button','chip', v); b.type = 'button'; b.dataset.v = v;
-      b.addEventListener('click', () => { addState.values[k] = addState.values[k] === v ? '' : v; sync(); });
+      b.addEventListener('click', () => { addState.values[k] = addState.values[k] === v ? '' : v; sync(); noteCore(k); });
       chips.appendChild(b);
     }
     if (unknown) {
       const b = el('button','chip unknown', '모름'); b.type = 'button'; b.dataset.v = '';
-      b.addEventListener('click', () => { addState.values[k] = ''; sync(); });
+      b.addEventListener('click', () => { addState.values[k] = ''; sync(); noteCore(k); });
       chips.appendChild(b);
     }
     sync(); addUI.enums[k] = sync; // 사진 AI 제안을 적용할 때 칩 표시를 다시 맞춘다
@@ -4288,7 +4303,7 @@ function renderAdd(){
       const showSaved = () => { saved.replaceChildren(); if (addState.nums.noiseDb === '') return;
         saved.append(`저장할 측정값: 약 ${addState.nums.noiseDb}dB `);
         const x = el('button','linkbtn', '빼기'); x.type = 'button'; x.addEventListener('click', () => { addState.nums.noiseDb = ''; showSaved(); }); saved.appendChild(x); };
-      w.appendChild(noiseMeter((v, db) => { addState.values[k] = v; sync(); if (db >= 20 && db <= 130) addState.nums.noiseDb = db;
+      w.appendChild(noiseMeter((v, db) => { addState.values[k] = v; sync(); noteCore(k); if (db >= 20 && db <= 130) addState.nums.noiseDb = db;
         if (addState.nums.visitHour === '') { addState.nums.visitHour = Math.floor(seoulNow().min / 60); if (hourI) hourI.value = String(addState.nums.visitHour); } // 잰 시각이 곧 방문 시각
         showSaved(); }));
       w.appendChild(saved); showSaved();
@@ -4854,7 +4869,30 @@ function noiseMeter(onPick){
 /* ---------- 신고 (3단계) ---------- */
 // '사실과 다름'은 신고 이유에 넣지 않는다(내 기록을 더해 바로잡는다)
 const REPORT_REASONS = ['광고·홍보', '욕설·불쾌한 내용', '개인정보 노출', '기타'];
-state.reportFor = null; state.reported = new Set();
+state.reportFor = null; state.reported = new Set(); state.fixOpen = null; state.reportMode = null;
+// '실제와 달라요 · 신고' 한 버튼 → 누르면 두 갈래: 사실이 달라요(onFix: 내 기록으로 바로잡기) / 부적절한 기록 신고(onReport: 기록을 골라 신고).
+// 신고할 다른 사람 기록이 없으면(onReport 없음) '실제와 달라요'만
+function fixReportUI(p, onFix, onReport, fixLabel){
+  const w = el('div','rec-fix');
+  if (state.reportMode === p.id) {
+    w.append(el('span', null, '신고할 기록 아래의 "신고"를 눌러 주세요.'));
+    const x = el('button','linkbtn','신고 그만하기'); x.type = 'button';
+    x.addEventListener('click', () => { state.reportMode = null; state.reportFor = null; renderDetail(); });
+    w.appendChild(x); return w;
+  }
+  if (state.fixOpen !== p.id) {
+    const b = el('button','linkbtn', onReport ? '실제와 달라요 · 신고' : '실제와 달라요'); b.type = 'button';
+    b.addEventListener('click', () => { state.fixOpen = p.id; renderDetail(); });
+    w.append(el('span', null, '정보가 다르거나 문제가 있나요?'), b); return w;
+  }
+  w.classList.add('open');
+  const opt = (title, sub, cls, fn) => { const b = el('button','fix-opt' + cls); b.type = 'button'; b.append(el('b', null, title), el('span', null, sub)); b.addEventListener('click', fn); return b; };
+  w.appendChild(opt('사실이 달라요', `직접 본 대로 남기면 바로잡혀요 · ${fixLabel}`, '', () => { state.fixOpen = null; onFix(); }));
+  if (onReport) w.appendChild(opt('부적절한 기록 신고', '광고·홍보, 욕설, 개인정보 노출 등 · 관리자가 확인해요', ' rep-opt', onReport));
+  const x = el('button','linkbtn','닫기'); x.type = 'button'; x.addEventListener('click', () => { state.fixOpen = null; renderDetail(); });
+  w.appendChild(x);
+  return w;
+}
 function reportUI(r){
   const w = el('div','rep');
   if (state.reported.has(r.rid)) { w.appendChild(el('span','rep-done','신고했어요. 관리자가 확인할게요.')); return w; }
