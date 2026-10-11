@@ -398,6 +398,8 @@ button.stat[aria-pressed="true"] span{color:#FFFFFF}
 .near-dot{position:relative;width:20px;height:20px;cursor:pointer}
 .near-dot i{position:absolute;inset:0;display:grid;place-items:center;border-radius:50%;background:var(--nc,#7A8494);border:1.5px solid #FFFFFF;box-shadow:0 1px 3px rgba(15,20,40,.35);transition:transform .1s ease-out}
 .near-dot i svg{width:12px;height:12px}
+/* 버스정류장: 정류장 표지판처럼 둥근 네모 */
+.near-dot.stop i{border-radius:5px}
 /* 범례 아래 줄: 주변 장소 종류 켜고 끄기 */
 .near-row{flex-basis:100%;display:flex;flex-wrap:wrap;align-items:center;gap:4px 6px;padding-top:6px;margin-top:1px;border-top:1px solid var(--line)}
 .near-row b{margin-right:2px}
@@ -3692,8 +3694,9 @@ const NEAR_KINDS = [
   // 모든 가게: 카카오가 아니라 우리 DB(소상공인시장진흥공단 상가정보, supabase/12_shops.sql)에서. 지금은 강동·송파·성동만 있다.
   // 가게가 아주 많아서 많이 확대했을 때만. 업종 대분류마다 색과 그림을 바꾼다(SHOP_CAT)
   { code: 'SHP', label: '모든 가게', color: '#868E96', zoom: 18, shop: true, icon: 'M4 10h16 M5 10V19h14v-9 M4 10l2-5h12l2 5 M10 19v-5h4v5' },
-  // 버스정류장: 우리 DB(국토교통부 전국 버스정류장 위치정보, supabase/23_bus_stops.sql, 수도권). 누르면 실시간 도착
-  { code: 'BUS', label: '버스정류장', color: '#2B6CB0', zoom: 17, on: true, icon: 'M6 4h12a1 1 0 0 1 1 1v11H5V5a1 1 0 0 1 1-1z M5 11h14 M8 19v-3 M16 19v-3 M8.5 14h.01 M15.5 14h.01' },
+  // 버스정류장: 우리 DB(국토교통부 전국 버스정류장 위치정보, supabase/23_bus_stops.sql, 수도권). 누르면 실시간 도착.
+  // always: '주변 장소'를 켜지 않아도, 조건으로 거르는 중에도 늘 보인다(길처럼 지도의 기본 정보). 네모 표지판 모양, 이름은 골랐을 때만
+  { code: 'BUS', label: '버스정류장', color: '#2B6CB0', zoom: 17, always: true, icon: 'M6 4h12a1 1 0 0 1 1 1v11H5V5a1 1 0 0 1 1-1z M5 11h14 M8 19v-3 M16 19v-3 M8.5 14h.01 M15.5 14h.01' },
 ];
 const SHOP_CAT = {
   '음식':       { color: '#E8742C', icon: NEAR_KINDS[2].icon },
@@ -3705,15 +3708,16 @@ const SHOP_CAT = {
   '수리·개인':   { color: '#868E96', icon: 'M14 6a4 4 0 0 0-5 5l-5 5 3 3 5-5a4 4 0 0 0 5-5l-2.5 2.5-2-2z' }
 };
 const NEAR_KIND = Object.fromEntries(NEAR_KINDS.map(k => [k.code, k]));
+const NEAR_TOGGLE = NEAR_KINDS.filter(k => !k.always); // '주변 장소'에서 켜고 끄는 종류(버스정류장처럼 늘 보이는 것은 빼고)
 const NEAR_TW = 0.006, NEAR_TH = 0.0045, NEAR_MAX_TILES = 24, NEAR_MAX_DEPTH = 2, NEAR_PARALLEL = 4;
-const NEAR_PREF = 'gongan-sillok:near4'; // 처음 켜지는 종류가 바뀌면 번호를 올린다. near3(예전)에 기억한 값이 있으면 버스정류장만 더해 이어 쓴다
+const NEAR_PREF = 'gongan-sillok:near4'; // 처음 켜지는 종류가 바뀌면 번호를 올린다. near3(예전)에 기억한 값이 있으면 이어 쓴다
 state.near = new Map(); // id → 장소
 // 주변 장소는 처음에는 꺼 둔다(내 기록 핀이 잘 보이도록). '주변 장소'를 직접 눌러야 켜지고,
 // 켤 때는 지난번에 골라 둔 종류(NEAR_PREF)를 쓴다
 state.nearKinds = new Set();
 const nearPref = () => { try {
   const v = JSON.parse(localStorage.getItem(NEAR_PREF)); if (Array.isArray(v)) { const s = v.filter(c => NEAR_KIND[c]); if (s.length) return s; }
-  const old = JSON.parse(localStorage.getItem('gongan-sillok:near3')); if (Array.isArray(old)) { const s = old.filter(c => NEAR_KIND[c]); if (s.length) return [...new Set([...s, 'BUS'])]; }
+  const old = JSON.parse(localStorage.getItem('gongan-sillok:near3')); if (Array.isArray(old)) { const s = old.filter(c => NEAR_KIND[c]); if (s.length) return s; }
 } catch {} return NEAR_KINDS.filter(k => k.on).map(k => k.code); };
 const nearTiles = new Map(); // 종류:칸 → 'loading' | 'done'
 const nearMarkers = new Map();
@@ -3725,14 +3729,15 @@ function queueNearby(){ clearTimeout(nearTimer); nearTimer = setTimeout(loadNear
 function toggleNearKind(code){
   if (state.nearKinds.has(code)) state.nearKinds.delete(code); else state.nearKinds.add(code);
   if (state.nearKinds.size) try { localStorage.setItem(NEAR_PREF, JSON.stringify([...state.nearKinds])); } catch {} // 켜 둔 종류만 기억한다
-  if (state.sel && state.near.has(state.sel) && !state.nearKinds.has(state.near.get(state.sel).kind)) select(null);
+  if (state.sel && state.near.has(state.sel) && !NEAR_KIND[state.near.get(state.sel).kind].always && !state.nearKinds.has(state.near.get(state.sel).kind)) select(null);
   renderAll(); renderNearMarkers(); loadNearby();
 }
 function loadNearby(){
   renderNearMarkers();
-  if (nearOff || !ROUTE_PROXY || !nearShown()) return;
-  const z = map.getZoom();
-  const kinds = NEAR_KINDS.filter(k => state.nearKinds.has(k.code) && z >= k.zoom);
+  if (!map || !ROUTE_PROXY) return;
+  const z = map.getZoom(), on = !nearOff && nearShown();
+  // 늘 보이는 종류(버스정류장)는 '주변 장소'·조건과 상관없이, 나머지는 주변 장소를 켰을 때만
+  const kinds = NEAR_KINDS.filter(k => z >= k.zoom && (k.always || (on && state.nearKinds.has(k.code))));
   if (!kinds.length) return;
   const b = map.getBounds(), sw = b.getSW(), ne = b.getNE();
   const x0 = Math.floor(sw.lng() / NEAR_TW), x1 = Math.floor(ne.lng() / NEAR_TW), y0 = Math.floor(sw.lat() / NEAR_TH), y1 = Math.floor(ne.lat() / NEAR_TH);
@@ -4245,7 +4250,7 @@ async function loadRect(job){
   } catch (e) { if (job.depth === 0) nearTiles.delete(job.key); } // 다음에 지도를 움직이면 다시 시도
 }
 // 이미 기록한 곳, 검색 결과로 이미 흰 핀이 있는 곳, 꺼 둔 종류는 점을 찍지 않는다
-const nearVisible = p => state.nearKinds.has(p.kind) && map.getZoom() >= NEAR_KIND[p.kind].zoom && !isRecorded(p) && !state.ext.results.some(x => x.id === p.id)
+const nearVisible = p => (NEAR_KIND[p.kind].always || state.nearKinds.has(p.kind)) && map.getZoom() >= NEAR_KIND[p.kind].zoom && !isRecorded(p) && !state.ext.results.some(x => x.id === p.id)
   && !(p.shop && (p.dup ??= shopDup(p))); // 겹침 검사는 가게마다 한 번만(카카오 점이 나중에 와도 크게 틀리지 않는다)
 function syncNearMarkers(){
   if (!map) return;
@@ -4264,11 +4269,14 @@ function renderNearMarkers(){
   const on = nearShown(), big = map.getZoom() >= 18; // 아주 가까이 보면 이름도 같이
   for (const [id, mk] of nearMarkers) {
     const p = state.near.get(id), sel = id === state.sel;
-    const show = sel || (on && nearVisible(p));
+    const always = NEAR_KIND[p.kind].always;
+    const show = sel || ((on || always) && nearVisible(p));
     mk.setVisible(show);
     if (!show) continue;
     mk.setIcon(sel
       ? { content: `<div class="pin ext sel"><span class="pin-head"></span><span class="pin-label notranslate">${esc(p.name)}</span></div>`, anchor: new naver.maps.Point(14, 29) }
+      // 버스정류장: 정류장 표지판처럼 네모. 이름은 골랐을 때만(지도가 복잡해지지 않게)
+      : always ? { content: `<div class="near-dot stop" style="--nc:${NEAR_KIND[p.kind].color}"><i>${nearIcon(p.kind)}</i></div>`, anchor: new naver.maps.Point(10, 10) }
       : { content: `<div class="near-dot${big ? ' named' : ''}" style="--nc:${p.color || NEAR_KIND[p.kind].color}"><i>${nearIcon(p.kind, p.icon)}</i>${big ? `<span class="notranslate">${esc(p.name)}</span>` : ''}</div>`, anchor: new naver.maps.Point(10, 10) });
     mk.setZIndex(sel ? 300 : 50);
   }
@@ -4279,7 +4287,7 @@ function nearLegendRow(lg){
   const row = el('div','near-row'); row.appendChild(el('b', null, '주변'));
   const z = map.getZoom();
   const hint = z < NEAR_ZOOM_BASE ? el('span','near-hint', '한 번 더 확대하면 보여요') : null;
-  for (const k of NEAR_KINDS) {
+  for (const k of NEAR_TOGGLE) {
     const b = el('button','near-chip'); b.type = 'button';
     const on = state.nearKinds.has(k.code);
     b.setAttribute('aria-pressed', String(on));
@@ -5592,7 +5600,7 @@ function renderQuickChips(){
   nrow.hidden = !showRow; nrow.replaceChildren();
   if (!showRow) { box.appendChild(nb); return; }
   nrow.appendChild(nb);
-  for (const k of NEAR_KINDS) {
+  for (const k of NEAR_TOGGLE) {
     const b = el('button','qchip nk'); b.type = 'button'; b.setAttribute('aria-pressed', String(state.nearKinds.has(k.code)));
     const i = el('i'); i.style.setProperty('--nc', k.color); b.append(i, k.label);
     b.addEventListener('click', () => { const on = !state.nearKinds.has(k.code); toggleNearKind(k.code); if (on) nearZoomHint(k); });
@@ -5669,7 +5677,7 @@ function renderFilterExtras(){
   }
   const fn = $('fdNear'); fn.replaceChildren();
   const nrow = el('div','fd-chips');
-  for (const k of NEAR_KINDS) {
+  for (const k of NEAR_TOGGLE) {
     const b = el('button','near-chip'); b.type = 'button'; b.setAttribute('aria-pressed', String(state.nearKinds.has(k.code)));
     const i = el('i'); i.style.setProperty('--nc', k.color); b.append(i, k.label);
     b.addEventListener('click', () => toggleNearKind(k.code));
