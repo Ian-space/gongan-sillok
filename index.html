@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<script src="i18n.js?v=2"></script>
+<script src="i18n.js?v=3"></script>
 <title>공간실록 시제품</title>
 <meta name="description" content="입구 계단, 화장실, 소음, 콘센트처럼 다녀온 사람만 아는 사실을 평점 대신 남기고 함께 보는 공간 지도예요.">
 <!-- 카톡 등에 링크를 보냈을 때 미리보기 -->
@@ -1817,6 +1817,7 @@ function renderDetail(){
     const bf = cx ? [`${cx.count}개 동`, p.aptUnits && `${p.aptUnits.toLocaleString()}세대`, cx.floors && `최고 ${cx.floors}층`, '공동주택', cx.year && `${cx.year}년 사용승인`, cx.tapped && `누른 곳 ${cx.tapped}`].filter(Boolean)
       : [p.floorsAbove && `지상 ${p.floorsAbove}층`, p.floorsUnder && `지하 ${p.floorsUnder}층`, p.bldUse, p.bldYear && `${p.bldYear}년 사용승인`].filter(Boolean);
     if (bf.length) box.appendChild(el('p','ext-phone', `${bf.join(' · ')} (건물통합정보${p.aptUnits ? '·공동주택관리정보' : ''})`));
+    if (!cx) box.appendChild(elevatorNote(p)); // 아파트 단지는 동마다 달라서 뺀다
     if (p.shops.length) {
       box.appendChild(el('h3','sec-title', `이 건물 가게 ${p.shops.length >= 300 ? '300곳 넘게' : p.shops.length + '곳'}`));
       // 층별로 묶어 보여 준다(지하 → 1층 → 2층 … → 층 정보 없음). 가게가 많으면 이름으로 거르는 칸과 층 고르기를 단다
@@ -1927,6 +1928,7 @@ function renderDetail(){
     if (p.phone) { const ph = el('p','ext-phone'); ph.append('전화 ', el('span', null, p.phone)); box.appendChild(ph); }
     // 상가정보의 층: 사람이 확인한 사실이 아니라 참고로만 (층 이동 기록을 남길 때 도움)
     if (p.floor) box.appendChild(el('p','ext-phone', `상가정보 기준 ${/^\d+$/.test(p.floor) ? p.floor + '층' : p.floor === '지' ? '지하' : p.floor} (참고)`));
+    box.appendChild(elevatorNote(p)); // 건물에 승강기가 있는지(건축물대장)
     const acts = el('div','ext-acts');
     const rec = el('button','btn add rec','이 장소 기록하기'); rec.type = 'button';
     rec.addEventListener('click', () => startAdd({ name: p.name, category: p.category, address: p.addr, lat: p.lat, lng: p.lng, kid: /^\d+$/.test(p.id.slice(1)) ? p.id.slice(1) : '' }));
@@ -3642,6 +3644,41 @@ function closedNote(p, box){
     box.appendChild(n);
   });
 }
+// 건물 승강기(건축물대장 표제부, 중계 서버 /bldreg): 그 자리 필지(브이월드 연속지적도)의 건물 중 주건축물의 승강기 수.
+// 한 필지에 건물이 여럿이면 동 이름(dong)이 맞는 건물, 못 고르면 모두 있거나 모두 없을 때만 보여 준다. 사람이 확인한 기록이 아니라 공공 기록으로
+const pnuCache = new Map(), regCache = new Map();
+function pnuAt(lat, lng){
+  const k = lat.toFixed(5) + ',' + lng.toFixed(5);
+  if (!pnuCache.has(k)) pnuCache.set(k, vworldBldg(`POINT(${lng.toFixed(7)} ${lat.toFixed(7)})`, 1, 'LP_PA_CBND_BUBUN')
+    .then(fs => { const v = String(((fs[0] || {}).properties || {}).pnu || ''); if (!v) pnuCache.delete(k); return v; }).catch(() => { pnuCache.delete(k); return ''; }));
+  return pnuCache.get(k);
+}
+function elevatorOf(p){
+  return pnuAt(p.lat, p.lng).then(pnu => {
+    if (!/^\d{19}$/.test(pnu) || !ROUTE_PROXY) return null;
+    if (!regCache.has(pnu)) regCache.set(pnu, proxyPost('/bldreg', { pnu }).then(r => r.ok ? r.json() : Promise.reject()).then(d => d.blds || [])
+      .catch(() => { regCache.delete(pnu); return []; }));
+    return regCache.get(pnu);
+  }).then(blds => {
+    const main = (blds || []).filter(b => b.main !== '부속건축물' && (b.floors || b.under));
+    if (!main.length) return null;
+    const dong = String(p.bldDong || '').replace(/\s/g, '');
+    const one = main.length === 1 ? main[0] : dong && main.find(b => b.dong.replace(/\s/g, '') === dong);
+    if (one) return { elev: one.elev };
+    return main.every(b => b.elev > 0) ? { elev: -1 } : main.every(b => !b.elev) ? { elev: 0 } : null; // -1: 여러 건물 모두 있음
+  }).catch(() => null);
+}
+// 자리를 먼저 잡아 두고(비어 있으면 안 보임) 답이 오면 채운다
+function elevatorNote(p){
+  const n = el('p','ext-phone'); n.hidden = true;
+  elevatorOf(p).then(r => {
+    if (!r) return;
+    n.textContent = `${r.elev > 0 ? `건물 승강기 ${r.elev}대` : r.elev < 0 ? '건물 승강기 있음' : '건물 승강기 없음'} (건축물대장)`;
+    n.title = '건축물대장에 등록된 승용·비상용 승강기 수예요. 매장 층까지 닿는지는 직접 확인한 기록을 봐 주세요.';
+    n.hidden = false;
+  });
+  return n;
+}
 const roadKey = a => { const t = String(a || '').trim().split(/\s+/); return t.length >= 3 ? `${t[1]} ${t[t.length - 2]} ${t[t.length - 1]}` : ''; }; // '구 도로명 번호'
 async function placeAt(at){ // at: 누른 자리(네이버 좌표)
   if (!map || !at || map.getZoom() < 17 || !ROUTE_PROXY) return null;
@@ -3756,7 +3793,7 @@ function fetchRing(lat, lng){
     const name = cleanText([pr.bld_nm || pr.buld_nm || '', pr.dong_nm || ''].filter(Boolean).join(' '), 40);
     const yearOf = p => /^\d{8}$/.test(p.useapr_day || '') ? p.useapr_day.slice(0, 4) : '';
     if (ring.length < 3) return null;
-    const out = { ring, floors: num(pr.grnd_flr || pr.gro_flo_co), under: num(pr.ugrnd_flr), use: BLD_USE[pr.usability] || '', year: yearOf(pr), name };
+    const out = { ring, floors: num(pr.grnd_flr || pr.gro_flo_co), under: num(pr.ugrnd_flr), use: BLD_USE[pr.usability] || '', year: yearOf(pr), name, dong: cleanText(pr.dong_nm || '', 20) };
     // 아파트 단지(공동주택, '509동' 같은 동이 있는 곳): 그 동이 선 필지와 같은 단지 이름의 동을 모두 받아 단지 하나로 묶는다.
     // 필지는 누른 자리 대신 그 동의 가운데로 찾는다(단지 안 공원·도로 필지를 누른 경우를 피하려고)
     // 동 대신 경비실·관리동·노인정처럼 단지 안 부속 건물을 눌렀어도(휴대폰에서 흔하다) 그 필지의 동들로 묶는다
@@ -3867,7 +3904,7 @@ function withRing(card, ringP){
   });
   if (card) ringP.then(b => {
     if (!b) return;
-    Object.assign(card, { ring: b.ring, floorsAbove: b.floors, floorsUnder: b.under, bldUse: b.use, bldYear: b.year });
+    Object.assign(card, { ring: b.ring, floorsAbove: b.floors, floorsUnder: b.under, bldUse: b.use, bldYear: b.year, bldDong: b.dong });
     // 아파트 단지: 동을 모두 묶어 칠하고, 제목도 단지 이름으로(카카오는 '선사현대아파트 112동'처럼 누른 동을 준다)
     // 이름은 카카오가 준 단지 이름(동을 뺀 것)이 있으면 그것을 쓴다(브이월드는 동마다 '주공아파트', '잠실아파트'처럼 다를 때가 있다)
     if (card.building && b.complex) named(b.complex);

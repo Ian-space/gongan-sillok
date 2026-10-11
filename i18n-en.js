@@ -388,6 +388,8 @@ window.GS_EN = {
   '공개 기록에서': 'From public records', '익명 기록': 'Anonymous record', '날짜 없음': 'no date', '메뉴': 'Menu',
   '예시 데이터 (가상의 장소 14곳)': 'Sample data (14 made-up places)', '예시 데이터로 되돌렸어요.': 'Reset to sample data.',
   '성수동1가 일대': 'Seongsu-dong 1-ga area', '성수동2가 일대': 'Seongsu-dong 2-ga area',
+  '건물 승강기 있음 (건축물대장)': 'Building has elevators (building register)', '건물 승강기 없음 (건축물대장)': 'No elevator in building (building register)',
+  '건축물대장에 등록된 승용·비상용 승강기 수예요. 매장 층까지 닿는지는 직접 확인한 기록을 봐 주세요.': 'Number of passenger and emergency elevators in the building register. Check in-person records to see if one reaches the shop’s floor.',
   '원목·합판': 'Solid wood · plywood', '노출 콘크리트': 'Exposed concrete', '적벽돌': 'Red brick', '대리석·석재': 'Marble · stone', '통창·유리벽': 'Big windows · glass walls', '철제·스테인리스': 'Steel · stainless', '흰 벽 등': 'White walls, etc.',
   '엑셀 양식 안내': 'Excel format guide', '필수 열': 'Required columns', '선택 열': 'Optional columns', '이 페이지의 보안 처리': 'How this page handles security',
   '이름이 "(예시)"로 시작하는 줄은 건너뜁니다': 'Rows whose name starts with "(예시)" are skipped',
@@ -407,6 +409,7 @@ window.GS_EN = {
 // 숫자가 들어간 문장: [정규식, 바꾸는 함수(일치, tr)]. 위에서부터 처음 맞는 것 하나만 쓴다
 window.GS_EN_RULES = [
   [/^(\d[\d,]*)곳$/, m => `${m[1]} places`],
+  [/^건물 승강기 (\d+)대 \(건축물대장\)$/, m => `${m[1]} elevator${m[1] === '1' ? '' : 's'} in building (building register)`],
   [/^(\d[\d,]*)곳 중 (\d[\d,]*)곳$/, m => `${m[2]} of ${m[1]}`],
   [/^(.+?) (\d[\d,]*)곳, 지도에 표시$/, (m, tr) => `${tr(m[1])}: ${m[2]}, show on map`],
   [/^(\d[\d,]*)곳 보기$/, m => `Show ${m[1]} places`],
