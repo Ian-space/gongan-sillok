@@ -123,6 +123,7 @@ window.GS_EN = {
   'AI에게 묻지 못했어요. 잠시 뒤 다시 시도해 주세요.': 'Couldn’t reach the AI. Please try again shortly.',
   'AI도 기록 항목에서 맞는 조건을 찾지 못했어요. 다르게 적어 보세요.': 'The AI couldn’t find matching conditions either. Try wording it differently.',
   '오늘 쓸 수 있는 AI 횟수를 다 썼어요. 내일 다시 시도해 주세요.': 'You’ve used today’s AI requests. Please try again tomorrow.',
+  '오늘 쓸 수 있는 경로 찾기 횟수를 다 썼어요. 내일 다시 되니, 지금은 아래 네이버 지도로 이어 봐 주세요.': 'Today’s route searches are used up. They’ll work again tomorrow; for now, continue in Naver Map below.',
   'AI가 적은 글을 기록 항목으로 바꿔 봤어요. 맞는 것만 남겨 주세요.': 'The AI turned your text into conditions. Keep only the ones that fit.',
   '적은 글에서 조건을 찾지 못했어요.': 'Couldn’t find conditions in what you typed.',
   '노트북보다는 대화나 독서에 맞는 곳': 'Better for talking or reading than laptops', '나무와 식물이 많은 곳': 'Lots of wood and plants',
