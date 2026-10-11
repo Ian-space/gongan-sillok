@@ -22,7 +22,7 @@
 //   POST /photo    { images: [base64 JPEG, 최대 3장] }          → 사진에서 눈으로 확인되는 기록 항목 제안 (로그인 필요)
 
 const ALLOWED_ORIGINS = ['https://ian-space.github.io', 'http://localhost:8765'];
-const VERSION = '2026-10-12.3'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
+const VERSION = '2026-10-12.4'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
 // 로그인 확인용 Supabase 주소와 공개 키(사이트 코드에도 있는 공개 값)
 const SUPABASE_URL = 'https://qktrghajroxddrbpwtvn.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_j-kp8YKsQTczGcsQX74OxA_mfI7DoZw';
@@ -86,7 +86,7 @@ const TMAP = {
   transit: 'https://apis.openapi.sk.com/transit/routes',
   walk: 'https://apis.openapi.sk.com/tmap/routes/pedestrian?version=1&format=json',
 };
-const PLACE_KINDS = ['search', 'nearby', 'station', 'addr', 'apt', 'bldreg', 'arrive'];
+const PLACE_KINDS = ['search', 'nearby', 'station', 'addr', 'apt', 'bldreg', 'arrive', 'probe'];
 const AI_KINDS = ['intent', 'photo'];
 
 export default {
@@ -219,6 +219,17 @@ async function handle(kind, input, { request, env, ctx, send, reply }) {
       });
     }
     return reply(400, { error: 'bad type' });
+  }
+
+  /* 임시 점검(곧 지운다): 교통약자이용정보 응답 모양. 키는 가려서 돌려준다 */
+  if (kind === 'probe') {
+    const gk = /%[0-9A-Fa-f]{2}/.test(env.DATA_GO_KR_KEY || '') ? decodeURIComponent(env.DATA_GO_KR_KEY) : (env.DATA_GO_KR_KEY || '');
+    const out = {};
+    for (const [k, q] of Object.entries({ elvtr: 'getWksnElvtr?pageNo=1&numOfRows=3&dataType=JSON', elvtrJ: 'getWksnElvtr?pageNo=1&numOfRows=3&type=json', lift: 'getWksnWhcllift?pageNo=1&numOfRows=2&dataType=JSON' })) {
+      try { const r = await fetch(`https://apis.data.go.kr/B553766/wksn/${q}&serviceKey=${encodeURIComponent(gk)}`, { signal: AbortSignal.timeout(7000) }); const t = await r.text(); out[k] = r.status + ' ' + t.slice(0, 1500).split(gk).join('KEY'); }
+      catch (e) { out[k] = 'ERR ' + String(e).slice(0, 80); }
+    }
+    return reply(200, out);
   }
 
   /* 좌표 → 주소(카카오): 지도에서 누른 자리의 건물(도로명주소·건물명). 주소는 잘 바뀌지 않아 약 1m 단위로 30일 저장 */
