@@ -390,6 +390,7 @@ window.GS_EN = {
   '성수동1가 일대': 'Seongsu-dong 1-ga area', '성수동2가 일대': 'Seongsu-dong 2-ga area',
   '건물 승강기 있음 (건축물대장)': 'Building has elevators (building register)', '건물 승강기 없음 (건축물대장)': 'No elevator in building (building register)',
   '건축물대장에 등록된 승용·비상용 승강기 수예요. 매장 층까지 닿는지는 직접 확인한 기록을 봐 주세요.': 'Number of passenger and emergency elevators in the building register. Check in-person records to see if one reaches the shop’s floor.',
+  '가장 많이 찾는 사실': 'Facts people look for most', '+ 더 남기기 (좌석 간격·채광·콘센트·아이·반려동물·주차 등)': '+ Add more (table spacing, daylight, outlets, kids, pets, parking…)',
   '원목·합판': 'Solid wood · plywood', '노출 콘크리트': 'Exposed concrete', '적벽돌': 'Red brick', '대리석·석재': 'Marble · stone', '통창·유리벽': 'Big windows · glass walls', '철제·스테인리스': 'Steel · stainless', '흰 벽 등': 'White walls, etc.',
   '엑셀 양식 안내': 'Excel format guide', '필수 열': 'Required columns', '선택 열': 'Optional columns', '이 페이지의 보안 처리': 'How this page handles security',
   '이름이 "(예시)"로 시작하는 줄은 건너뜁니다': 'Rows whose name starts with "(예시)" are skipped',
