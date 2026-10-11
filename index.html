@@ -524,6 +524,8 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
 .d-tsteps .t-elev{display:block;margin-top:3px;font-size:12px;color:var(--ink)}
 .d-tsteps .t-elev[hidden]{display:none}
 .d-tsteps .t-pass{padding:0;border:0;background:none;font:inherit;font-size:12px;color:var(--muted);text-decoration:underline dotted;text-underline-offset:3px;cursor:pointer}
+.d-tsteps .t-caret{display:inline-block;width:5px;height:5px;margin:0 2px 2px 6px;border:solid currentColor;border-width:0 1.5px 1.5px 0;transform:rotate(45deg);vertical-align:middle;transition:transform .15s}
+.d-tsteps .t-pass[aria-expanded="true"] .t-caret{transform:rotate(-135deg);margin-bottom:-1px}
 .d-tsteps .t-passlist{margin:6px 0 2px;padding:0 0 0 2px;list-style:none;display:grid;gap:4px;font-size:12px;color:var(--ink)}
 .d-tsteps .t-passlist[hidden]{display:none}
 .d-tsteps .t-passlist li{border:0;padding-left:16px;position:relative}
@@ -3537,14 +3539,15 @@ function routeSteps(r){
     // 지나는 역·정류장: 'N개 역 이동 ▾'을 누르면 이름이 펼쳐진다(어디쯤인지 세면서 갈 수 있게)
     if (pass.length) {
       const key = `${i}`, open = !!(r.openPass && r.openPass.has(key));
-      const tog = el('button','t-pass', `${count} 이동 ${open ? '▴' : '▾'}`); tog.type = 'button'; tog.setAttribute('aria-expanded', String(open));
+      // 화살표는 글자(▾▴)가 아닌 같은 모양을 돌려서 그린다(글꼴마다 ▾와 ▴ 크기가 달라서)
+      const tog = el('button','t-pass', `${count} 이동`); tog.type = 'button'; tog.setAttribute('aria-expanded', String(open));
+      tog.appendChild(el('span','t-caret')); tog.lastChild.setAttribute('aria-hidden', 'true');
       const list = el('ol','t-passlist'); list.hidden = !open; list.style.setProperty('--c', s.color);
       for (const n of pass) list.appendChild(el('li', null, n));
       tog.addEventListener('click', e => {
         e.stopPropagation();
         r.openPass = r.openPass || new Set();
         const now = list.hidden; list.hidden = !now; tog.setAttribute('aria-expanded', String(now));
-        tog.textContent = `${count} 이동 ${now ? '▴' : '▾'}`;
         if (now) r.openPass.add(key); else r.openPass.delete(key);
       });
       li.append(tog, el('span','muted', ' · ' + facts.join(' · ')), list);
