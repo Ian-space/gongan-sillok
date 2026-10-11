@@ -399,7 +399,9 @@ button.stat[aria-pressed="true"] span{color:#FFFFFF}
 .near-dot i{position:absolute;inset:0;display:grid;place-items:center;border-radius:50%;background:var(--nc,#7A8494);border:1.5px solid #FFFFFF;box-shadow:0 1px 3px rgba(15,20,40,.35);transition:transform .1s ease-out}
 .near-dot i svg{width:12px;height:12px}
 /* 버스정류장: 정류장 표지판처럼 둥근 네모 */
-.near-dot.stop i{border-radius:5px}
+.near-dot.stop{width:17px;height:17px}
+.near-dot.stop i{border-radius:4px;border-width:1px;box-shadow:0 1px 2px rgba(15,20,40,.2);opacity:.92}
+.near-dot.stop i svg{width:11px;height:11px}
 /* 범례 아래 줄: 주변 장소 종류 켜고 끄기 */
 .near-row{flex-basis:100%;display:flex;flex-wrap:wrap;align-items:center;gap:4px 6px;padding-top:6px;margin-top:1px;border-top:1px solid var(--line)}
 .near-row b{margin-right:2px}
@@ -3696,7 +3698,7 @@ const NEAR_KINDS = [
   { code: 'SHP', label: '모든 가게', color: '#868E96', zoom: 18, shop: true, icon: 'M4 10h16 M5 10V19h14v-9 M4 10l2-5h12l2 5 M10 19v-5h4v5' },
   // 버스정류장: 우리 DB(국토교통부 전국 버스정류장 위치정보, supabase/23_bus_stops.sql, 수도권). 누르면 실시간 도착.
   // always: '주변 장소'를 켜지 않아도, 조건으로 거르는 중에도 늘 보인다(길처럼 지도의 기본 정보). 네모 표지판 모양, 이름은 골랐을 때만
-  { code: 'BUS', label: '버스정류장', color: '#2B6CB0', zoom: 17, always: true, icon: 'M6 4h12a1 1 0 0 1 1 1v11H5V5a1 1 0 0 1 1-1z M5 11h14 M8 19v-3 M16 19v-3 M8.5 14h.01 M15.5 14h.01' },
+  { code: 'BUS', label: '버스정류장', color: '#8A9AAE', zoom: 17, always: true, icon: 'M6 4h12a1 1 0 0 1 1 1v11H5V5a1 1 0 0 1 1-1z M5 11h14 M8 19v-3 M16 19v-3 M8.5 14h.01 M15.5 14h.01' },
 ];
 const SHOP_CAT = {
   '음식':       { color: '#E8742C', icon: NEAR_KINDS[2].icon },
@@ -4276,7 +4278,7 @@ function renderNearMarkers(){
     mk.setIcon(sel
       ? { content: `<div class="pin ext sel"><span class="pin-head"></span><span class="pin-label notranslate">${esc(p.name)}</span></div>`, anchor: new naver.maps.Point(14, 29) }
       // 버스정류장: 정류장 표지판처럼 네모. 이름은 골랐을 때만(지도가 복잡해지지 않게)
-      : always ? { content: `<div class="near-dot stop" style="--nc:${NEAR_KIND[p.kind].color}"><i>${nearIcon(p.kind)}</i></div>`, anchor: new naver.maps.Point(10, 10) }
+      : always ? { content: `<div class="near-dot stop" style="--nc:${NEAR_KIND[p.kind].color}"><i>${nearIcon(p.kind)}</i></div>`, anchor: new naver.maps.Point(8, 8) }
       : { content: `<div class="near-dot${big ? ' named' : ''}" style="--nc:${p.color || NEAR_KIND[p.kind].color}"><i>${nearIcon(p.kind, p.icon)}</i>${big ? `<span class="notranslate">${esc(p.name)}</span>` : ''}</div>`, anchor: new naver.maps.Point(10, 10) });
     mk.setZIndex(sel ? 300 : 50);
   }
