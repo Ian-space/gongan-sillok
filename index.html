@@ -3369,7 +3369,7 @@ function liveArrival(s){
     : s.city === 'seoul' ? (s.ars ? { type: 'bus', city: 'seoul', ars: s.ars } : null)
     : (/^\d{6,10}$/.test(s.localId) ? { type: 'bus', city: 'gg', station: s.localId } : null);
   if (!body) { box.textContent = '이 정류장은 실시간 도착 정보가 없어요'; return box; }
-  const short = m => String(m || '').replace(/(\d+)분\d+초후/, '$1분 후').replace(/(\d+)초후/, '곧 도착').trim();
+  const short = m => String(m || '').replace(/(\d+)분(\d+초)?후/, '$1분 후').replace(/(\d+)초후/, '곧 도착').trim();
   const draw = list => {
     if (!box.isConnected) return false; // 상세를 다시 그렸으면(새 줄이 따로 부른다) 멈춘다
     if (list === null) { box.textContent = '실시간 도착 정보를 불러오지 못했어요'; return true; }
@@ -3403,7 +3403,7 @@ function stopArrivals(p){
   const body = p.city === 'seoul' && p.ars ? { type: 'bus', city: 'seoul', ars: p.ars } : p.city === 'gg' && p.sid ? { type: 'bus', city: 'gg', station: p.sid } : null;
   if (!body) { ul.replaceChildren(el('li','muted','이 정류장은 실시간 도착 정보가 없어요')); return ul; }
   const minOf = x => p.city === 'seoul' ? (/곧 도착/.test(x.msg) ? 0 : (/(\d+)분/.exec(x.msg) || [])[1] ?? (/(\d+)초/.test(x.msg) ? 0 : 999)) : x.min ?? 999;
-  const short = m => String(m || '').replace(/(\d+)분\d+초후/, '$1분 후').replace(/(\d+)초후/, '곧 도착').trim();
+  const short = m => String(m || '').replace(/(\d+)분(\d+초)?후/, '$1분 후').replace(/(\d+)초후/, '곧 도착').trim();
   const draw = list => {
     if (!ul.isConnected) return false;
     ul.replaceChildren();
