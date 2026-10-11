@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<script src="i18n.js?v=12"></script>
+<script src="i18n.js?v=13"></script>
 <title>공간실록 시제품</title>
 <meta name="description" content="입구 계단, 화장실, 소음, 콘센트처럼 다녀온 사람만 아는 사실을 평점 대신 남기고 함께 보는 공간 지도예요.">
 <!-- 카톡 등에 링크를 보냈을 때 미리보기 -->
@@ -523,6 +523,11 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
 /* 지하철역 엘리베이터 한 줄(문제가 있으면 인주색) */
 .d-tsteps .t-elev{display:block;margin-top:3px;font-size:12px;color:var(--ink)}
 .d-tsteps .t-elev[hidden]{display:none}
+.d-tsteps .t-pass{padding:0;border:0;background:none;font:inherit;font-size:12px;color:var(--muted);text-decoration:underline dotted;text-underline-offset:3px;cursor:pointer}
+.d-tsteps .t-passlist{margin:6px 0 2px;padding:0 0 0 2px;list-style:none;display:grid;gap:4px;font-size:12px;color:var(--ink)}
+.d-tsteps .t-passlist[hidden]{display:none}
+.d-tsteps .t-passlist li{border:0;padding-left:16px;position:relative}
+.d-tsteps .t-passlist li::before{content:"";position:absolute;left:2px;top:50%;width:7px;height:7px;margin-top:-4px;border:2px solid var(--c);border-radius:50%;background:var(--paper);box-sizing:border-box}
 .d-tsteps .t-elev.warn{color:var(--seal-ink);font-weight:600}
 /* 정류장 실시간 도착 목록, 저상버스 표시 */
 .stop-arr{list-style:none;margin:4px 0 8px;padding:0;display:grid;gap:6px;font-size:14px}
@@ -2987,7 +2992,8 @@ function fromTmap(it){
       mode, minutes, raw: route, shape,
       name: mode === 'subway' ? subwayLabel(route) : mode === 'bus' ? busLabel(route.includes(':') ? route.split(':').pop() : route) : cleanText(route, 20) || '기타',
       color: safeColor(l.routeColor, mode === 'subway' ? '#5B6475' : '#1F5EFF'),
-      from: cleanText(l.start && l.start.name, 30), to: cleanText(l.end && l.end.name, 30), stops: Math.max(0, stations.length - 1)
+      from: cleanText(l.start && l.start.name, 30), to: cleanText(l.end && l.end.name, 30), stops: Math.max(0, stations.length - 1),
+      pass: stations.slice(1, -1).map(x => cleanText(x.stationName, 30)).filter(Boolean)
     };
   });
   return { source: 'tmap', minutes: Math.round((it.totalTime || 0) / 60), fare: Number((it.fare && it.fare.regular && it.fare.regular.totalFare) || 0), transfers: it.transferCount || 0, segs };
@@ -3035,6 +3041,7 @@ function fromOdsay(path){
       name: subway ? subwayLabel(lane.name) : busLabel(String(lane.busNo || '')),
       color: subway ? (SUBWAY_COLORS[lane.subwayCode] || '#5B6475') : (BUS_COLORS[lane.type] || '#1F5EFF'),
       from: cleanText(s.startName, 30), to: cleanText(s.endName, 30), stops: s.stationCount || 0,
+      pass: stops.slice(1, -1).map(x => cleanText(x.stationName, 30)).filter(Boolean), // 지나는 역·정류장 이름(타고 내리는 곳 빼고)
       // 자세히: 같은 정류장에서 탈 수 있는 다른 버스, 배차 간격(분), 지하철 방면·들어갈/나갈 출구, 버스 정류장 번호(실시간 도착 조회용)
       alts: subway ? [] : (s.lane || []).slice(1, 6).map(l => busLabel(String(l.busNo || ''))).filter(Boolean),
       interval: +s.intervalTime || 0, way: subway ? cleanText(s.way, 20) : '',
@@ -3380,8 +3387,9 @@ function walkOption(p, t){
 }
 function routeOption(r, i, t){
   const on = i === t.chosen;
-  const opt = el('button', r.off ? 'd-topt off' : 'd-topt'); opt.type = 'button'; opt.setAttribute('aria-pressed', String(on));
-  opt.addEventListener('click', () => { t.chosen = i; renderDetail(); drawTransit(); });
+  // 고른 경로는 안에 누를 것(지나는 역 펼치기)이 있어서 버튼이 아닌 상자로 그린다
+  const opt = el(on ? 'div' : 'button', r.off ? 'd-topt off' : 'd-topt'); if (!on) opt.type = 'button'; opt.setAttribute('aria-pressed', String(on));
+  if (!on) opt.addEventListener('click', () => { t.chosen = i; renderDetail(); drawTransit(); });
   const head = el('div','d-thead');
   head.append(el('b', null, `${r.minutes || '?'}분`), ` · ${r.fare.toLocaleString('ko-KR')}원 · 환승 ${r.transfers}회`);
   opt.appendChild(head);
@@ -3523,8 +3531,24 @@ function routeSteps(r){
     const name = el('b', null, s.name); li.appendChild(name);
     if (s.alts && s.alts.length) li.appendChild(el('span','muted', ` 또는 ${s.alts.join(', ')}`));
     li.append(el('br'), `${s.from} 승차 → ${s.to} 하차`);
-    const facts = [`${s.stops}개 ${sub ? '역' : '정류장'}`, `${s.minutes}분`, s.way && `${s.way} 방면`, s.interval && `배차 약 ${s.interval}분`, s.ars && `정류장 번호 ${s.ars}`].filter(Boolean);
-    li.append(el('br'), el('span','muted', facts.join(' · ')));
+    const count = `${s.stops}개 ${sub ? '역' : '정류장'}`, pass = s.pass || [];
+    const facts = [!pass.length && count, `${s.minutes}분`, s.way && `${s.way} 방면`, s.interval && `배차 약 ${s.interval}분`, s.ars && `정류장 번호 ${s.ars}`].filter(Boolean);
+    li.append(el('br'));
+    // 지나는 역·정류장: 'N개 역 이동 ▾'을 누르면 이름이 펼쳐진다(어디쯤인지 세면서 갈 수 있게)
+    if (pass.length) {
+      const key = `${i}`, open = !!(r.openPass && r.openPass.has(key));
+      const tog = el('button','t-pass', `${count} 이동 ${open ? '▴' : '▾'}`); tog.type = 'button'; tog.setAttribute('aria-expanded', String(open));
+      const list = el('ol','t-passlist'); list.hidden = !open; list.style.setProperty('--c', s.color);
+      for (const n of pass) list.appendChild(el('li', null, n));
+      tog.addEventListener('click', e => {
+        e.stopPropagation();
+        r.openPass = r.openPass || new Set();
+        const now = list.hidden; list.hidden = !now; tog.setAttribute('aria-expanded', String(now));
+        tog.textContent = `${count} 이동 ${now ? '▴' : '▾'}`;
+        if (now) r.openPass.add(key); else r.openPass.delete(key);
+      });
+      li.append(tog, el('span','muted', ' · ' + facts.join(' · ')), list);
+    } else li.append(el('span','muted', facts.join(' · ')));
     // 실시간 도착(ODsay 경로에서 첫 탈것만: 지금 탈 것이라서. 갈아탈 것은 그때 가서 바뀌므로 배차 간격만)
     if (r.source === 'odsay' && !state.departAt && !r.off && i === r.segs.findIndex(x => x.mode !== 'walk')) li.append(el('br'), liveArrival(s));
     // 지하철에서 내려 걸어가야 하면 나갈 출구를 눈에 띄게
@@ -3626,6 +3650,17 @@ function queueExtSearch(q){
   if (query.length < 2) { if (state.ext.query) setExt({ query: '', status: '', results: [] }); return; }
   extTimer = setTimeout(() => runExtSearch(query), 500); // 입력이 멈추면 한 번만 찾는다
 }
+// 숫자만 적었을 때('201') 이름에 그 숫자가 없거나 아파트 '201동'·'201호'처럼 동·호수에만 든 곳은 뺀다('조광201'처럼 상호에 든 곳만 남긴다)
+// 순위: 0 숫자가 딱 맞음('조광201'), 1 앞부분이 맞음('2014컴퍼니', 덜 적었을 수 있어서 뒤에), 2 뺌('2201'·'201동'), -1 숫자 검색 아님
+function numRank(name, q){
+  const w = String(q || '').replace(/\s+/g, '');
+  if (!/^\d+$/.test(w)) return -1;
+  const n = String(name || '').replace(/\d+(-\d+)?\s*(동|호|층)(?![가-힣])/g, ' ');
+  return new RegExp(`(^|\\D)${w}(\\D|$)`).test(n) ? 0 : new RegExp(`(^|\\D)${w}`).test(n) ? 1 : 2;
+}
+const dongHoOnly = (name, q) => numRank(name, q) === 2;
+// 숫자 검색이면 딱 맞는 상호를 앞으로(나머지 순서는 그대로)
+const byNum = (list, q) => list.map((r, i) => [r, i]).sort((a, b) => Math.max(0, numRank(a[0].name, q)) - Math.max(0, numRank(b[0].name, q)) || a[1] - b[1]).map(x => x[0]);
 async function runExtSearch(query){
   // 지금 보고 있는 지도 가운데 근처부터 찾는다(지도가 없으면 내 위치)
   const c = map && map.getCenter();
@@ -3671,7 +3706,7 @@ async function runExtSearch(query){
       return { id: 'k' + (m ? m[1] : `${i}-${lat}`), ext: true, name: cleanText(x.name, 40), category: cleanText(x.category, 60),
         type: cleanText(String(x.category || '').split('>').pop(), 20), addr: cleanText(x.address, 60), phone: cleanText(x.phone, 20),
         url: m ? `https://place.map.kakao.com/${m[1]}` : '', lat, lng };
-    }).filter(x => x.name && x.lat >= 33 && x.lat <= 39 && x.lng >= 124 && x.lng <= 132);
+    }).filter(x => x.name && x.lat >= 33 && x.lat <= 39 && x.lng >= 124 && x.lng <= 132 && !dongHoOnly(x.name, query));
   } catch (e) {
     if (state.ext.query === query) setExt({ query, status: 'error', results: [] });
     return;
@@ -3679,7 +3714,7 @@ async function runExtSearch(query){
   // (저장은 상가 DB 결과까지 합친 뒤에 한다)
   if (state.ext.query !== query) return; // 그사이 다른 검색어로 바뀌었다
   // 지도에 이미 불러온 주변 장소(회색 점) 중 이름이 맞는 곳을 앞에 붙인다
-  const hits = [...state.near.values()].filter(p => fuzzyHas(p.name, query)).slice(0, 10);
+  const hits = [...state.near.values()].filter(p => fuzzyHas(p.name, query) && !dongHoOnly(p.name, query)).slice(0, 10);
   // 상가 DB에서 찾은 곳: 카카오 결과에 같은 가게(가깝고 이름 앞 두 글자 같음)가 없을 때만 더한다
   const sameShop = (a, b) => Math.abs(a.lat - b.lat) < 0.0005 && Math.abs(a.lng - b.lng) < 0.0006 && nameKey(a.name) === nameKey(b.name);
   // 카카오가 적은 말을 이름에 담은 곳을 찾았는지('계돈이네'에 '우면산계돈불백'만 왔으면 못 찾은 것)
@@ -3689,12 +3724,12 @@ async function runExtSearch(query){
     phone: '', url: '', floor: cleanText(s.floor, 4), lat: +s.lat, lng: +s.lng }))
     // 지도에서 먼(15km 넘는) DB 가게는 카카오도 지도 위 점도 이름이 맞는 곳을 못 찾았을 때만 보여 준다
     // (동탄에서 찾을 때 서울 가게가 앞에 끼지 않게, 그래도 서울 화면에서 카카오에 없는 동탄 '계돈이네'를 찾으면 나오게)
-    .filter(s => s.lat >= 33 && s.lat <= 39 && (!near || (!kakaoHit && !hits.length) || distM(near, s) < 15000) && !results.some(r => sameShop(r, s)) && !hits.some(h => sameShop(h, s)));
+    .filter(s => s.lat >= 33 && s.lat <= 39 && !dongHoOnly(s.name, query) && (!near || (!kakaoHit && !hits.length) || distM(near, s) < 15000) && !results.some(r => sameShop(r, s)) && !hits.some(h => sameShop(h, s)));
   if (state.ext.query !== query) return;
   // 카카오가 적은 말을 이름에 담은 곳을 못 찾았으면 상가 DB 결과를 앞에, 아니면 뒤에
-  const merged = kakaoHit ? [...results, ...shops.slice(0, 8)] : [...shops.slice(0, 10), ...results];
+  const merged = byNum(kakaoHit ? [...results, ...shops.slice(0, 8)] : [...shops.slice(0, 10), ...results], query);
   extCache.set(key, { results: merged, fixed });
-  const fresh = [...hits, ...merged.filter(r => !hits.some(h => h.id === r.id))].filter(r => !isRecorded(r));
+  const fresh = byNum([...hits, ...merged.filter(r => !hits.some(h => h.id === r.id))].filter(r => !isRecorded(r)), query);
   setExt({ query, fixed, status: fresh.length ? '' : 'none', results: fresh });
   // 휴대폰: 결과가 보이도록 목록 패널을 반쯤 올린다 (검색 결과는 패널 맨 위에 있다)
   if (fresh.length && isPhone() && listSheet && !state.sel && (listSheet.height || 0) < vh(0.5) - 10) listSheet.set(vh(0.5), true);
