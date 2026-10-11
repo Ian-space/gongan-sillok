@@ -20,7 +20,7 @@
 //   POST /photo    { images: [base64 JPEG, 최대 3장] }          → 사진에서 눈으로 확인되는 기록 항목 제안 (로그인 필요)
 
 const ALLOWED_ORIGINS = ['https://ian-space.github.io', 'http://localhost:8765'];
-const VERSION = '2026-10-12.1'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
+const VERSION = '2026-10-12.2'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
 // 로그인 확인용 Supabase 주소와 공개 키(사이트 코드에도 있는 공개 값)
 const SUPABASE_URL = 'https://qktrghajroxddrbpwtvn.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_j-kp8YKsQTczGcsQX74OxA_mfI7DoZw';
@@ -84,7 +84,7 @@ const TMAP = {
   transit: 'https://apis.openapi.sk.com/transit/routes',
   walk: 'https://apis.openapi.sk.com/tmap/routes/pedestrian?version=1&format=json',
 };
-const PLACE_KINDS = ['search', 'nearby', 'station', 'addr', 'apt', 'bldreg'];
+const PLACE_KINDS = ['search', 'nearby', 'station', 'addr', 'apt', 'bldreg', 'probe'];
 const AI_KINDS = ['intent', 'photo'];
 
 export default {
@@ -176,6 +176,26 @@ async function handle(kind, input, { request, env, ctx, send, reply }) {
       name: d.place_name, category: d.category_name, address: d.road_address_name || d.address_name,
       phone: d.phone, x: d.x, y: d.y, url: d.place_url, distance: d.distance,
     })) });
+  }
+
+  /* 임시 점검(곧 지운다): 실시간 자료들의 주소가 맞는지 응답 앞부분만 본다. 키는 가려서 돌려준다 */
+  if (kind === 'probe') {
+    const gk = env.DATA_GO_KR_KEY ? (/%[0-9A-Fa-f]{2}/.test(env.DATA_GO_KR_KEY) ? decodeURIComponent(env.DATA_GO_KR_KEY) : env.DATA_GO_KR_KEY) : '';
+    const sk = env.SEOUL_SUBWAY_KEY || '';
+    const enc = encodeURIComponent;
+    const urls = {
+      seoulBus: `http://ws.bus.go.kr/api/rest/stationinfo/getStationByUid?serviceKey=${enc(gk)}&arsId=24101&resultType=json`,
+      ggBusV2: `https://apis.data.go.kr/6410000/busarrivalservice/v2/getBusArrivalListv2?serviceKey=${enc(gk)}&stationId=228000708&format=json`,
+      ggBus: `https://apis.data.go.kr/6410000/busarrivalservice/getBusArrivalList?serviceKey=${enc(gk)}&stationId=228000708`,
+      subway: `http://swopenapi.seoul.go.kr/api/subway/${enc(sk)}/json/realtimeStationArrival/0/5/${enc('천호')}`,
+      elevA: `https://apis.data.go.kr/B553766/smt-elvt/getElvtInfo?serviceKey=${enc(gk)}&pageNo=1&numOfRows=3&dataType=JSON`,
+    };
+    const out = {};
+    for (const [k, u] of Object.entries(urls)) {
+      try { const r = await fetch(u, { signal: AbortSignal.timeout(7000) }); const t = await r.text(); out[k] = r.status + ' ' + t.slice(0, 500).split(gk).join('KEY').split(sk || '#none#').join('KEY'); }
+      catch (e) { out[k] = 'ERR ' + String(e).slice(0, 80); }
+    }
+    return reply(200, { hasSubwayKey: !!sk, out });
   }
 
   /* 좌표 → 주소(카카오): 지도에서 누른 자리의 건물(도로명주소·건물명). 주소는 잘 바뀌지 않아 약 1m 단위로 30일 저장 */
