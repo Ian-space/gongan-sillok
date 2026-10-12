@@ -27,7 +27,7 @@
 //   POST /photo    { images: [base64 JPEG, 최대 3장] }          → 사진에서 눈으로 확인되는 기록 항목 제안 (로그인 필요)
 
 const ALLOWED_ORIGINS = ['https://ian-space.github.io', 'http://localhost:8765'];
-const VERSION = '2026-10-12.15'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
+const VERSION = '2026-10-12.16'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
 // 로그인 확인용 Supabase 주소와 공개 키(사이트 코드에도 있는 공개 값)
 const SUPABASE_URL = 'https://qktrghajroxddrbpwtvn.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_j-kp8YKsQTczGcsQX74OxA_mfI7DoZw';
@@ -91,7 +91,7 @@ const TMAP = {
   transit: 'https://apis.openapi.sk.com/transit/routes',
   walk: 'https://apis.openapi.sk.com/tmap/routes/pedestrian?version=1&format=json',
 };
-const PLACE_KINDS = ['search', 'nearby', 'station', 'addr', 'apt', 'bldreg', 'arrive', 'elev', 'odsay', 'fstexit', 'sched'];
+const PLACE_KINDS = ['search', 'nearby', 'station', 'addr', 'apt', 'bldreg', 'arrive', 'elev', 'odsay', 'fstexit', 'sched', 'probe'];
 const ODSAY_WEB_KEY = 'vpfLJcZCiAwV7L5fibSQjA'; // 사이트(index.html)에도 공개된 웹 키. 따로 넣은 비밀값 ODSAY_API_KEY가 있으면 그걸 쓴다
 const AI_KINDS = ['intent', 'photo'];
 
@@ -312,6 +312,16 @@ async function handle(kind, input, { request, env, ctx, send, reply }) {
       return reply(200, { first: show(rows[0][0]), last: show(lastRow[0]), lastTo: both ? '' : lastRow[2], rough: both });
     }
     return reply(400, { error: 'bad type' });
+  }
+
+  /* 임시 확인용(PROBE): TAGO 지하철정보 응답 모양 보기. 확인 뒤 지운다 */
+  if (kind === 'probe') {
+    const gk = dataKey(), e = encodeURIComponent, op = String(input.op || '');
+    if (!/^Get[A-Za-z]+$/.test(op)) return reply(400, { error: 'op' });
+    const qs = Object.entries(input.q || {}).map(([k, v]) => `${e(k)}=${e(String(v))}`).join('&');
+    const r = await fetch(`https://apis.data.go.kr/1613000/SubwayInfo/${op}?serviceKey=${e(gk)}&_type=json&${qs}`, { signal: AbortSignal.timeout(8000) });
+    let t = await r.text(); for (const k of [gk, e(gk)].filter(x => x.length > 8)) t = t.split(k).join('KEY');
+    return reply(200, { status: r.status, body: t.slice(0, 5000) });
   }
 
   /* 카카오 장소 검색 */
