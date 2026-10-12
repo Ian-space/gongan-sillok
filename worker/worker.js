@@ -29,7 +29,7 @@
 //   POST /photoplace { image: base64 JPEG 1장, x, y }        → 사진+위치로 그 자리의 가게 후보(간판 글자, AI가 고른 곳, 가까운 곳) (로그인 필요)
 
 const ALLOWED_ORIGINS = ['https://ian-space.github.io', 'http://localhost:8765'];
-const VERSION = '2026-10-13.10'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
+const VERSION = '2026-10-13.11'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
 // 로그인 확인용 Supabase 주소와 공개 키(사이트 코드에도 있는 공개 값)
 const SUPABASE_URL = 'https://qktrghajroxddrbpwtvn.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_j-kp8YKsQTczGcsQX74OxA_mfI7DoZw';
@@ -54,7 +54,7 @@ const NEARBY = {
 };
 
 // 글로 적은 목적 → 조건(/intent): 사이트의 기록 항목과 같아야 한다(index.html ENUMS, TAGS)
-const AI_MODEL = 'claude-haiku-4-5-20251001';
+const AI_MODEL = 'claude-haiku-5-5';
 const AI_FIELDS = {
   noise:    { label: '소음', values: ['조용함', '보통', '시끄러움'] },
   spacing:  { label: '좌석 간격', values: ['넓음', '보통', '좁음'] },
@@ -93,7 +93,7 @@ const TMAP = {
   transit: 'https://apis.openapi.sk.com/transit/routes',
   walk: 'https://apis.openapi.sk.com/tmap/routes/pedestrian?version=1&format=json',
 };
-const PLACE_KINDS = ['search', 'nearby', 'station', 'addr', 'apt', 'bldreg', 'arrive', 'elev', 'odsay', 'fstexit', 'sched'];
+const PLACE_KINDS = ['search', 'nearby', 'station', 'addr', 'apt', 'bldreg', 'arrive', 'elev', 'odsay', 'fstexit', 'sched', 'clienterr'];
 const ODSAY_WEB_KEY = 'vpfLJcZCiAwV7L5fibSQjA'; // 사이트(index.html)에도 공개된 웹 키. 따로 넣은 비밀값 ODSAY_API_KEY가 있으면 그걸 쓴다
 const AI_KINDS = ['intent', 'photo', 'photoplace'];
 
@@ -119,6 +119,14 @@ export default {
     if (request.method !== 'POST') return reply(405, { error: 'POST only' });
 
     const kind = new URL(request.url).pathname.replace(/^\/+/, '');
+    // 임시 확인용: 새 AI 모델 요청 모양이 통하는지 정해진 문장 하나로(이용자 입력 없음). 확인 뒤 지운다
+    if (kind === 'aitest' && env.ANTHROPIC_API_KEY) {
+      const t0 = Date.now();
+      const up = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', headers: { 'x-api-key': env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+        body: JSON.stringify({ model: AI_MODEL, max_tokens: 2048, output_config: { effort: 'low' }, system: '사용자 문장을 조건으로 바꾼다. 출력은 JSON 하나만: {"conds":{"noise":["조용함"]}}', messages: [{ role: 'user', content: '유모차로 갈 조용한 카페' }] }) });
+      const j = await up.json().catch(() => null);
+      return reply(200, { status: up.status, ms: Date.now() - t0, stop: j && j.stop_reason, blocks: j && (j.content || []).map(c => c.type), text: j && (j.content || []).filter(c => c.type === 'text').map(c => c.text).join('').slice(0, 200), usage: j && j.usage, err: j && j.error });
+    }
     if (!TMAP[kind] && !PLACE_KINDS.includes(kind) && !AI_KINDS.includes(kind)) return reply(404, { error: 'unknown path' });
 
     let input;
@@ -217,6 +225,14 @@ async function handle(kind, input, { request, env, ctx, send, reply }) {
   };
   const dataKey = () => /%[0-9A-Fa-f]{2}/.test(env.DATA_GO_KR_KEY || '') ? decodeURIComponent(env.DATA_GO_KR_KEY) : (env.DATA_GO_KR_KEY || '');
   const stName = v => String(v || '').replace(/\(.*\)$/, '').replace(/역$/, '').trim();
+
+  /* 사이트 화면에서 난 스크립트 오류: 대시보드 로그에 한 줄만 남긴다(IP·입력 내용은 남기지 않는다) */
+  if (kind === 'clienterr') {
+    await allow();
+    const s = (v, n) => String(v || '').replace(/[\u0000-\u001F\u007F]/g, ' ').slice(0, n);
+    console.log(JSON.stringify({ clienterr: s(input.msg, 200), where: s(input.where, 120), ua: s(input.ua, 10), b: s(input.b, 10), lang: s(input.lang, 5) }));
+    return new Response(null, { status: 204, headers: { 'Access-Control-Allow-Origin': request.headers.get('Origin') || '' } });
+  }
 
   /* 빠른하차(공공데이터포털 서울교통공사_빠른하차정보, 1~8호선): 역 이름 → 그 역의 방면별 '이 문에서 내리면 엘리베이터·에스컬레이터·계단이 가깝다'
      → { list: [{ line: '8호선', dir: '다음 역 이름(방면)', door: '4-4', fac: '엘리베이터' }] }. 전체(약 2,400줄)를 하루 동안 저장해 두고 역별로 나눠 준다 */
@@ -665,11 +681,14 @@ async function handle(kind, input, { request, env, ctx, send, reply }) {
       const up = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: { 'x-api-key': env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-        body: JSON.stringify({ model: AI_MODEL, max_tokens: 500, temperature: 0, system, messages: [{ role: 'user', content }] }),
+        // Claude Haiku 5.5: temperature 등 표본 추출 값은 보내면 400. 생각(thinking)이 기본으로 켜져 있어 답 앞에 생각 블록이 올 수 있고
+        // 그만큼 max_tokens를 쓴다 → 생각은 짧게(effort low), 한도는 넉넉히
+        body: JSON.stringify({ model: AI_MODEL, max_tokens: 2048, output_config: { effort: 'low' }, system, messages: [{ role: 'user', content }] }),
       });
       const j = await up.json().catch(() => null);
-      if (!up.ok || !j) throw reply(502, { error: 'ai error' });
-      const out = String((j.content || []).map(c => c.text || '').join(''));
+      if (!up.ok || !j) { console.log(JSON.stringify({ ai: 'error', status: up.status, type: j && j.error && j.error.type })); throw reply(502, { error: 'ai error' }); }
+      if (j.stop_reason === 'refusal') throw reply(422, { error: 'ai refusal' }); // 안전 분류기가 거절한 경우(답 없음)
+      const out = String((j.content || []).filter(c => c.type === 'text').map(c => c.text || '').join('')); // 생각 블록은 건너뛰고 답 글자만
       let parsed = null;
       try { parsed = JSON.parse(out.slice(out.indexOf('{'), out.lastIndexOf('}') + 1)); } catch {}
       if (!parsed || typeof parsed !== 'object') throw reply(502, { error: 'ai parse', stop: j.stop_reason, raw: out.slice(0, 300) }); // 원인 확인용(AI 답의 앞부분만, 키·사진은 없음)
@@ -690,7 +709,7 @@ async function handle(kind, input, { request, env, ctx, send, reply }) {
     if (kind === 'intent') {
       const text = String(input.text || '').replace(/[\u0000-\u001F\u007F]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60);
       if (text.length < 2) return reply(400, { error: 'empty text' });
-      const cacheKey = 'intent4:' + text; // 지시문을 바꾸면 번호를 올려 예전 저장 결과를 쓰지 않게 한다
+      const cacheKey = 'intent5:' + text; // (5: Haiku 5.5로 바꿈) 지시문이나 모델을 바꾸면 번호를 올려 예전 저장 결과를 쓰지 않게 한다
       if (kv) { const hit = await kv.get(cacheKey).catch(() => null); if (hit) return send(hit, 200, { 'X-Cache': 'HIT' }); }
       await count();
       const list = Object.entries(AI_FIELDS).map(([k, f]) => `${k} (${f.label}): ${f.values.join(' | ')}`).join('\n');

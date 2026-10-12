@@ -1080,7 +1080,6 @@ html{touch-action:manipulation}
 </dialog>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script>
 /* ===== 설정: 네이버 클라우드 플랫폼에서 발급받은 Client ID를 따옴표 안에 넣으세요 ===== */
 const NAVER_CLIENT_ID = 'ffqv2bmvwg';
@@ -1090,6 +1089,21 @@ const SHOW_TOUR = true;
 const SHOW_SAMPLE = true;
 /* ===== 설정: TMAP 경로 중계 서버 주소 (TMAP 키는 이 서버의 비밀 변수에만 있다, 코드는 worker/worker.js) ===== */
 const ROUTE_PROXY = 'https://gongan-sillok-route.spddlqj20.workers.dev';
+// 이용자 화면에서 난 스크립트 오류를 중계 서버 로그에 한 줄씩 남긴다(무엇이 어디서 깨졌는지만: 오류 문구·파일 줄·브라우저 종류).
+// 실제 사이트에서만, 한 화면에 최대 5번, 같은 오류는 한 번만. 개인정보(입력한 글, 위치 등)는 보내지 않는다
+(() => {
+  if (location.hostname !== 'ian-space.github.io') return;
+  const sent = new Set(); let n = 0;
+  const report = (msg, where) => {
+    msg = String(msg || '').replace(/\s+/g, ' ').slice(0, 200); where = String(where || '').replace(/^https?:\/\/[^/]+/, '').slice(0, 120);
+    const k = msg + where; if (!msg || sent.has(k) || n >= 5) return; sent.add(k); n++;
+    const ua = /iPhone|iPad/.test(navigator.userAgent) ? 'ios' : /Android/.test(navigator.userAgent) ? 'android' : 'desktop';
+    const b = /SamsungBrowser/.test(navigator.userAgent) ? 'samsung' : /KAKAOTALK/.test(navigator.userAgent) ? 'kakao' : /NAVER/.test(navigator.userAgent) ? 'naver' : /CriOS|Chrome/.test(navigator.userAgent) ? 'chrome' : /Safari/.test(navigator.userAgent) ? 'safari' : 'other';
+    try { fetch(ROUTE_PROXY + '/clienterr', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ msg, where, ua, b, lang: document.documentElement.lang }), keepalive: true }).catch(() => {}); } catch {}
+  };
+  addEventListener('error', e => { if (e.message) report(e.message, `${e.filename || ''}:${e.lineno || 0}:${e.colno || 0}`); });
+  addEventListener('unhandledrejection', e => { const r = e.reason; report((r && (r.message || r.name)) || r, (r && r.stack ? String(r.stack).split('\n')[1] : '') || 'promise'); });
+})();
 /* ===== 설정: Supabase (계정, 서버 저장). 공개용 주소와 공개 키만 넣는다. 데이터는 DB 권한 규칙(supabase/01_schema.sql)으로 보호된다 ===== */
 const SUPABASE_URL = 'https://qktrghajroxddrbpwtvn.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_j-kp8YKsQTczGcsQX74OxA_mfI7DoZw';
@@ -1432,7 +1446,16 @@ function textOf(el){ // 서식이 섞인 글자(r/t)만 모으고 발음 표기(
   }
   return s;
 }
+// 엑셀 해석 도구(JSZip, 약 95KB)는 엑셀 파일을 불러올 때만 받는다(첫 화면을 가볍게)
+let jszipP = null;
+const loadJSZip = () => jszipP || (jszipP = new Promise(res => {
+  if (typeof JSZip !== 'undefined') return res();
+  const s = document.createElement('script'); s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
+  s.onload = () => res(); s.onerror = () => { jszipP = null; res(); };
+  document.head.appendChild(s);
+}));
 async function parseXlsx(buf){
+  await loadJSZip();
   if (typeof JSZip === 'undefined') throw new Error('엑셀 해석 도구를 불러오지 못했어요. 인터넷 연결을 확인하거나 .csv로 저장해 불러오세요.');
   const zip = await JSZip.loadAsync(buf);
   let total = 0;
