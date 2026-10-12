@@ -23,7 +23,7 @@
 //   POST /photo    { images: [base64 JPEG, 최대 3장] }          → 사진에서 눈으로 확인되는 기록 항목 제안 (로그인 필요)
 
 const ALLOWED_ORIGINS = ['https://ian-space.github.io', 'http://localhost:8765'];
-const VERSION = '2026-10-12.10'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
+const VERSION = '2026-10-12.11'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
 // 로그인 확인용 Supabase 주소와 공개 키(사이트 코드에도 있는 공개 값)
 const SUPABASE_URL = 'https://qktrghajroxddrbpwtvn.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_j-kp8YKsQTczGcsQX74OxA_mfI7DoZw';
@@ -201,6 +201,7 @@ async function handle(kind, input, { request, env, ctx, send, reply }) {
       gbr: `https://apis.data.go.kr/6410000/busrouteservice/v2/getBusRouteInfoItemv2?serviceKey=${e(gk)}&routeId=${e(a)}&format=json`,
       stn: `http://openapi.seoul.go.kr:8088/${e(sk)}/json/SearchInfoBySubwayNameService/1/10/${e(a)}`,
       stt: `http://openapi.seoul.go.kr:8088/${e(sk)}/json/SearchSTNTimeTableByIDService/1/${e(c || '5')}/${e(a)}/${b.replace(/[^0-9/]/g, '')}`,
+      sbu: `http://ws.bus.go.kr/api/rest/stationinfo/getStationByUid?serviceKey=${e(gk)}&arsId=${e(a)}&resultType=json`,
       sbl: `http://ws.bus.go.kr/api/rest/busRouteInfo/getBusRouteList?serviceKey=${e(gk)}&strSrch=${e(a)}&resultType=json`,
     }[String(input.u)];
     if (!U) return reply(400, { error: 'u' });
