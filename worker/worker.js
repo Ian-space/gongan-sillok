@@ -5,6 +5,7 @@
 //     ANTHROPIC_API_KEY : AI 조건 찾기·사진 보고 채우기
 //     DATA_GO_KR_KEY    : 공공데이터포털 인증키(아파트 단지 공식 정보, 건축물대장, 서울·경기 버스 도착)
 //     SEOUL_SUBWAY_KEY  : 서울 열린데이터광장 실시간 지하철 인증키
+//     SEOUL_OPEN_KEY    : 서울 열린데이터광장 일반 인증키(지하철 역별 시간표)
 // - 결과 저장: KV 바인딩 ROUTE_CACHE. 횟수 제한: 바인딩 LIMIT_ROUTE·LIMIT_PLACE (wrangler.toml)
 // - 공간실록 사이트에서 온 요청만 받는다. AI는 로그인한 사람만(Supabase 로그인 토큰을 확인한다).
 //
@@ -18,12 +19,15 @@
 //   POST /bldreg   { pnu: 필지 번호 19자리 }                     → 그 필지 건물들의 승강기 수·층수·주용도 (건축물대장)
 //   POST /arrive   { type: bus|subway, city?, ars?, station? }     → 버스·지하철 실시간 도착 (서울 버스, 경기 버스, 서울 실시간 지하철)
 //   POST /elev     { station }                                  → 지하철역 엘리베이터(출구·층·운행 상태, 서울교통공사 1~8호선)
+//   POST /odsay    { SX, SY, EX, EY }                           → ODsay 대중교통 경로(같은 구간은 하루 동안 같이 쓴다)
+//   POST /fstexit  { station }                                  → 빠른하차(엘리베이터·에스컬레이터·계단 가까운 문, 서울교통공사 1~8호선)
+//   POST /sched    { type: bus|subway, ... }                    → 첫차·막차(서울·경기 버스, 서울 지하철 역별 시간표)
 //   POST /nearby   { rect: "왼쪽X,아래Y,오른쪽X,위Y", code? }      → 지도 한 칸 안의 장소 (NEARBY의 업종 코드)
 //   POST /intent   { text }                                     → 글로 적은 목적을 기록 항목 조건으로 (로그인 필요)
 //   POST /photo    { images: [base64 JPEG, 최대 3장] }          → 사진에서 눈으로 확인되는 기록 항목 제안 (로그인 필요)
 
 const ALLOWED_ORIGINS = ['https://ian-space.github.io', 'http://localhost:8765'];
-const VERSION = '2026-10-12.11'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
+const VERSION = '2026-10-12.12'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
 // 로그인 확인용 Supabase 주소와 공개 키(사이트 코드에도 있는 공개 값)
 const SUPABASE_URL = 'https://qktrghajroxddrbpwtvn.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_j-kp8YKsQTczGcsQX74OxA_mfI7DoZw';
@@ -87,7 +91,7 @@ const TMAP = {
   transit: 'https://apis.openapi.sk.com/transit/routes',
   walk: 'https://apis.openapi.sk.com/tmap/routes/pedestrian?version=1&format=json',
 };
-const PLACE_KINDS = ['search', 'nearby', 'station', 'addr', 'apt', 'bldreg', 'arrive', 'elev', 'odsay', 'probe'];
+const PLACE_KINDS = ['search', 'nearby', 'station', 'addr', 'apt', 'bldreg', 'arrive', 'elev', 'odsay', 'fstexit', 'sched'];
 const ODSAY_WEB_KEY = 'vpfLJcZCiAwV7L5fibSQjA'; // 사이트(index.html)에도 공개된 웹 키. 따로 넣은 비밀값 ODSAY_API_KEY가 있으면 그걸 쓴다
 const AI_KINDS = ['intent', 'photo'];
 
@@ -191,23 +195,115 @@ async function handle(kind, input, { request, env, ctx, send, reply }) {
     return send(text, 200, { 'X-Cache': 'MISS' });
   }
 
-  /* 임시 확인용(PROBE): 새 API 응답 모양 보기. 확인 뒤 지운다 */
-  if (kind === 'probe') {
-    const gk = /%[0-9A-Fa-f]{2}/.test(env.DATA_GO_KR_KEY || '') ? decodeURIComponent(env.DATA_GO_KR_KEY) : (env.DATA_GO_KR_KEY || '');
-    const sk = env.SEOUL_OPEN_KEY || '', e = encodeURIComponent, a = String(input.a || ''), b = String(input.b || ''), c = String(input.c || '');
-    const U = {
-      fst: `https://apis.data.go.kr/B553766/inout/getFstExit?serviceKey=${e(gk)}&pageNo=1&numOfRows=${e(b || '5')}&dataType=JSON${a}`,
-      sbr: `http://ws.bus.go.kr/api/rest/busRouteInfo/getRouteInfo?serviceKey=${e(gk)}&busRouteId=${e(a)}&resultType=json`,
-      gbr: `https://apis.data.go.kr/6410000/busrouteservice/v2/getBusRouteInfoItemv2?serviceKey=${e(gk)}&routeId=${e(a)}&format=json`,
-      stn: `http://openapi.seoul.go.kr:8088/${e(sk)}/json/SearchInfoBySubwayNameService/1/10/${e(a)}`,
-      stt: `http://openapi.seoul.go.kr:8088/${e(sk)}/json/SearchSTNTimeTableByIDService/1/${e(c || '5')}/${e(a)}/${b.replace(/[^0-9/]/g, '')}`,
-      sbu: `http://ws.bus.go.kr/api/rest/stationinfo/getStationByUid?serviceKey=${e(gk)}&arsId=${e(a)}&resultType=json`,
-      sbl: `http://ws.bus.go.kr/api/rest/busRouteInfo/getBusRouteList?serviceKey=${e(gk)}&strSrch=${e(a)}&resultType=json`,
-    }[String(input.u)];
-    if (!U) return reply(400, { error: 'u' });
-    const r = await fetch(U, { signal: AbortSignal.timeout(8000) }); let t = await r.text();
-    for (const k of [gk, sk, e(gk), e(sk)].filter(x => x && x.length > 8)) t = t.split(k).join('KEY');
-    return reply(200, { status: r.status, hasSeoulKey: !!sk, body: t.slice(0, 6000) });
+  // Cloudflare 캐시(쓰기 한도 없음, 지역 서버마다 따로)에 ttl초 저장. 하루에 한 번이면 되는 시간표·빠른하차 자료용
+  const edgeCached = async (key, ttl, make) => {
+    const m = memGet(key); if (m) return m;
+    const ck = new Request('https://cache.gongan-sillok/' + encodeURIComponent(key));
+    const hit = await caches.default.match(ck).catch(() => null);
+    if (hit) { const t = await hit.text(); memPut(key, t, Math.min(ttl, 3600)); return t; }
+    await allow();
+    const t = await make();
+    if (t == null) return null; // 실패는 저장하지 않는다
+    memPut(key, t, Math.min(ttl, 3600));
+    ctx.waitUntil(caches.default.put(ck, new Response(t, { headers: { 'Cache-Control': `public, max-age=${ttl}` } })).catch(() => {}));
+    return t;
+  };
+  const dataKey = () => /%[0-9A-Fa-f]{2}/.test(env.DATA_GO_KR_KEY || '') ? decodeURIComponent(env.DATA_GO_KR_KEY) : (env.DATA_GO_KR_KEY || '');
+  const stName = v => String(v || '').replace(/\(.*\)$/, '').replace(/역$/, '').trim();
+
+  /* 빠른하차(공공데이터포털 서울교통공사_빠른하차정보, 1~8호선): 역 이름 → 그 역의 방면별 '이 문에서 내리면 엘리베이터·에스컬레이터·계단이 가깝다'
+     → { list: [{ line: '8호선', dir: '다음 역 이름(방면)', door: '4-4', fac: '엘리베이터' }] }. 전체(약 2,400줄)를 하루 동안 저장해 두고 역별로 나눠 준다 */
+  if (kind === 'fstexit') {
+    const st = stName(input.station);
+    if (!st || st.length > 20) return reply(400, { error: 'bad station' });
+    const gk = dataKey(); if (!gk) return reply(503, { error: 'fstexit off' });
+    const all = await edgeCached('fst1:all', 86400, async () => {
+      const rows = [];
+      for (let page = 1; page <= 4; page++) {
+        const r = await fetch(`https://apis.data.go.kr/B553766/inout/getFstExit?serviceKey=${encodeURIComponent(gk)}&pageNo=${page}&numOfRows=1000&dataType=JSON`, { signal: AbortSignal.timeout(8000) });
+        const j = await r.json().catch(() => null);
+        const b = j && j.response && j.response.body; if (!b) return rows.length ? JSON.stringify(rows) : null;
+        const it = b.items && b.items.item; const list = !it ? [] : Array.isArray(it) ? it : [it];
+        for (const x of list) rows.push([stName(x.stnNm), String(x.lineNm || ''), stName(x.drtnInfo), String(x.qckgffVhclDoorNo || ''), String(x.plfmCmgFac || '')]);
+        if (rows.length >= +b.totalCount || list.length < 1000) break;
+      }
+      return JSON.stringify(rows);
+    });
+    if (!all) return reply(502, { error: 'fstexit upstream' });
+    const list = JSON.parse(all).filter(x => x[0] === st).map(([, line, dir, door, fac]) => ({ line, dir, door, fac }));
+    return reply(200, { list });
+  }
+
+  /* 첫차·막차
+     { type: 'bus', city: 'seoul', ars }   → 그 정류장에 서는 서울 버스들의 첫차·막차(차고지 출발 기준, 서울특별시_정류소정보조회) { list: [{ name, first, last }] }
+     { type: 'bus', city: 'gg', route }    → 경기 버스 한 노선의 평일·토·일 첫차·막차(경기도_버스노선 조회) { wd, sat, sun: { first: [상행, 하행], last: [상행, 하행] } }
+     { type: 'subway', station, line, next, week } → 그 역에서 그 방향(다음 역 쪽)으로 가는 열차의 첫차·막차(서울 열린데이터광장 역별 시간표)
+       line: 1~9, week: 1 평일·2 토요일·3 휴일 → { first, last, lastTo } */
+  if (kind === 'sched') {
+    const hm = v => { const m = /^(\d{1,2}):?(\d{2})/.exec(String(v || '').trim()); return m ? `${m[1].padStart(2, '0')}:${m[2]}` : ''; };
+    if (input.type === 'bus' && input.city === 'seoul') {
+      const ars = String(input.ars || ''); if (!/^\d{5}$/.test(ars)) return reply(400, { error: 'bad ars' });
+      const gk = dataKey(); if (!gk) return reply(503, { error: 'off' });
+      const t = await edgeCached(`sch1:sb:${ars}`, 86400, async () => {
+        const r = await fetch(`http://ws.bus.go.kr/api/rest/stationinfo/getStationByUid?serviceKey=${encodeURIComponent(gk)}&arsId=${ars}&resultType=json`, { signal: AbortSignal.timeout(6000) });
+        const j = await r.json().catch(() => null); const it = j && j.msgBody && j.msgBody.itemList; if (!it) return null;
+        return JSON.stringify({ list: (Array.isArray(it) ? it : [it]).map(x => ({ name: String(x.rtNm || ''), first: hm(x.firstTm), last: hm(x.lastTm) })) });
+      });
+      return t ? send(t, 200) : reply(502, { error: 'sched upstream' });
+    }
+    if (input.type === 'bus' && input.city === 'gg') {
+      const route = String(input.route || ''); if (!/^\d{6,10}$/.test(route)) return reply(400, { error: 'bad route' });
+      const gk = dataKey(); if (!gk) return reply(503, { error: 'off' });
+      const t = await edgeCached(`sch1:gb:${route}`, 86400, async () => {
+        const r = await fetch(`https://apis.data.go.kr/6410000/busrouteservice/v2/getBusRouteInfoItemv2?serviceKey=${encodeURIComponent(gk)}&routeId=${route}&format=json`, { signal: AbortSignal.timeout(6000) });
+        const j = await r.json().catch(() => null); const x = j && j.response && j.response.msgBody && j.response.msgBody.busRouteInfoItem; if (!x) return null;
+        const pair = (p, q) => [hm(x[p]), hm(x[q])];
+        return JSON.stringify({ name: String(x.routeName || ''),
+          wd: { first: pair('upFirstTime', 'downFirstTime'), last: pair('upLastTime', 'downLastTime') },
+          sat: { first: pair('satUpFirstTime', 'satDownFirstTime'), last: pair('satUpLastTime', 'satDownLastTime') },
+          sun: { first: pair('sunUpFirstTime', 'sunDownFirstTime'), last: pair('sunUpLastTime', 'sunDownLastTime') } });
+      });
+      return t ? send(t, 200) : reply(502, { error: 'sched upstream' });
+    }
+    if (input.type === 'subway') {
+      const st = stName(input.station), nx = stName(input.next), line = String(input.line || ''), week = String(input.week || '1');
+      if (!st || !nx || st.length > 20 || nx.length > 20 || !/^[1-9]$/.test(line) || !/^[123]$/.test(week)) return reply(400, { error: 'bad subway' });
+      const sk = env.SEOUL_OPEN_KEY; if (!sk) return reply(503, { error: 'off' });
+      const base = `http://openapi.seoul.go.kr:8088/${encodeURIComponent(sk)}/json`;
+      // 역 이름 → 그 노선의 역 코드(30일 저장)
+      const code = async name => {
+        const t = await edgeCached(`sch1:stc:${name}`, 30 * 86400, async () => {
+          const r = await fetch(`${base}/SearchInfoBySubwayNameService/1/20/${encodeURIComponent(name)}`, { signal: AbortSignal.timeout(6000) });
+          const j = await r.json().catch(() => null); const s = j && j.SearchInfoBySubwayNameService; if (!s) return null;
+          return JSON.stringify((s.row || []).map(x => [String(x.LINE_NUM || ''), String(x.STATION_CD || '')]));
+        });
+        const hit = t && JSON.parse(t).find(([l]) => l === `0${line}호선`);
+        return hit ? hit[1] : '';
+      };
+      const [cur, nxt] = await Promise.all([code(st), code(nx)]);
+      if (!cur || !nxt) return reply(200, { none: true });
+      // 두 방향(1·2) 시간표 중 다음 역 쪽으로 가는 것: 역 코드가 노선을 따라 커지거나 작아지는 것을 이용한다(종착역 코드와 비교)
+      const table = async dir => {
+        const t = await edgeCached(`sch1:stt:${cur}:${week}:${dir}`, 86400, async () => {
+          const r = await fetch(`${base}/SearchSTNTimeTableByIDService/1/600/${cur}/${week}/${dir}`, { signal: AbortSignal.timeout(8000) });
+          const j = await r.json().catch(() => null); const s = j && j.SearchSTNTimeTableByIDService; if (!s) return null;
+          return JSON.stringify((s.row || []).map(x => [hm(x.LEFTTIME || x.ARRIVETIME), String(x.DESTSTATION || ''), String(x.SUBWAYENAME || '')]));
+        });
+        return t ? JSON.parse(t) : [];
+      };
+      const [t1, t2] = await Promise.all([table(1), table(2)]);
+      const want = Math.sign(+nxt - +cur);
+      const side = rows => Math.sign(rows.reduce((a, [, d]) => a + Math.sign(+d - +cur), 0));
+      const pick = side(t1) === want && side(t2) !== want ? t1 : side(t2) === want && side(t1) !== want ? t2 : null;
+      if (!pick || !pick.length) return reply(200, { none: true });
+      // 하루 운행 순서로(새벽 3시 전은 전날 밤의 연장)
+      const key = v => { const [h, m] = v.split(':').map(Number); return (h < 3 ? h + 24 : h) * 60 + m; };
+      const rows = pick.filter(r => r[0]).sort((a, b) => key(a[0]) - key(b[0]));
+      if (!rows.length) return reply(200, { none: true });
+      const lastRow = rows[rows.length - 1];
+      return reply(200, { first: rows[0][0], last: lastRow[0], lastTo: lastRow[2] });
+    }
+    return reply(400, { error: 'bad type' });
   }
 
   /* 카카오 장소 검색 */
