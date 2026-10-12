@@ -29,7 +29,7 @@
 //   POST /photoplace { image: base64 JPEG 1장, x, y }        → 사진+위치로 그 자리의 가게 후보(간판 글자, AI가 고른 곳, 가까운 곳) (로그인 필요)
 
 const ALLOWED_ORIGINS = ['https://ian-space.github.io', 'http://localhost:8765'];
-const VERSION = '2026-10-13.11'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
+const VERSION = '2026-10-13.12'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
 // 로그인 확인용 Supabase 주소와 공개 키(사이트 코드에도 있는 공개 값)
 const SUPABASE_URL = 'https://qktrghajroxddrbpwtvn.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_j-kp8YKsQTczGcsQX74OxA_mfI7DoZw';
@@ -119,14 +119,6 @@ export default {
     if (request.method !== 'POST') return reply(405, { error: 'POST only' });
 
     const kind = new URL(request.url).pathname.replace(/^\/+/, '');
-    // 임시 확인용: 새 AI 모델 요청 모양이 통하는지 정해진 문장 하나로(이용자 입력 없음). 확인 뒤 지운다
-    if (kind === 'aitest' && env.ANTHROPIC_API_KEY) {
-      const t0 = Date.now();
-      const up = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', headers: { 'x-api-key': env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-        body: JSON.stringify({ model: AI_MODEL, max_tokens: 2048, output_config: { effort: 'low' }, system: '사용자 문장을 조건으로 바꾼다. 출력은 JSON 하나만: {"conds":{"noise":["조용함"]}}', messages: [{ role: 'user', content: '유모차로 갈 조용한 카페' }] }) });
-      const j = await up.json().catch(() => null);
-      return reply(200, { status: up.status, ms: Date.now() - t0, stop: j && j.stop_reason, blocks: j && (j.content || []).map(c => c.type), text: j && (j.content || []).filter(c => c.type === 'text').map(c => c.text).join('').slice(0, 200), usage: j && j.usage, err: j && j.error });
-    }
     if (!TMAP[kind] && !PLACE_KINDS.includes(kind) && !AI_KINDS.includes(kind)) return reply(404, { error: 'unknown path' });
 
     let input;
