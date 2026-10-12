@@ -29,7 +29,7 @@
 //   POST /photoplace { image: base64 JPEG 1장, x, y }        → 사진+위치로 그 자리의 가게 후보(간판 글자, AI가 고른 곳, 가까운 곳) (로그인 필요)
 
 const ALLOWED_ORIGINS = ['https://ian-space.github.io', 'http://localhost:8765'];
-const VERSION = '2026-10-13.3'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
+const VERSION = '2026-10-13.4'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
 // 로그인 확인용 Supabase 주소와 공개 키(사이트 코드에도 있는 공개 값)
 const SUPABASE_URL = 'https://qktrghajroxddrbpwtvn.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_j-kp8YKsQTczGcsQX74OxA_mfI7DoZw';
@@ -119,14 +119,6 @@ export default {
     if (request.method !== 'POST') return reply(405, { error: 'POST only' });
 
     const kind = new URL(request.url).pathname.replace(/^\/+/, '');
-    // 임시 확인용: 관리자 키가 통하는지 응답 코드만(내용은 돌려주지 않는다). 확인 뒤 지운다
-    if (kind === 'findscheck') {
-      const key = env.SUPABASE_SERVICE_KEY || '';
-      const h = { apikey: key, ...(/^eyJ/.test(key) && { Authorization: 'Bearer ' + key }) };
-      const a = key ? await fetch(`${SUPABASE_URL}/rest/v1/find_photos?select=id&limit=1`, { headers: h }).then(r => r.status).catch(() => 0) : 0;
-      const b = key ? await fetch(`${SUPABASE_URL}/storage/v1/object/list/finds`, { method: 'POST', headers: { ...h, 'Content-Type': 'application/json' }, body: JSON.stringify({ prefix: '', limit: 1 }) }).then(r => r.status).catch(() => 0) : 0;
-      return reply(200, { hasKey: !!key, keyType: /^sb_secret_/.test(key) ? 'secret' : /^eyJ/.test(key) ? 'jwt' : key ? 'other' : '', rest: a, storage: b });
-    }
     if (!TMAP[kind] && !PLACE_KINDS.includes(kind) && !AI_KINDS.includes(kind)) return reply(404, { error: 'unknown path' });
 
     let input;
