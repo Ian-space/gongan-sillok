@@ -332,7 +332,7 @@ window.GS_EN = {
   '← 다시 찾기': '← Search again', '이름': 'Name', '주소': 'Address', '위도': 'Latitude', '경도': 'Longitude',
   '사진 고르기': 'Choose photos', '추가': 'Add', '빼기': 'Remove', '대표': 'Cover',
   '입구, 계단, 좌석, 화장실처럼 기록을 보여 주는 사진을 골라 주세요. 사진 아래에서 무엇을 찍었는지 골라 주시면 찾는 사람에게 맞는 사진을 먼저 보여 줘요. 첫 장이 대표 사진이 돼요. 사람 얼굴이나 차량 번호가 나오지 않게 찍어 주세요. 촬영 위치 정보는 지우고 올려요. 공개한 기록이면 사진도 함께 공개돼요.': 'Choose photos that show the facts — entrance, steps, seats, toilet. Pick what each photo shows below it so the right photo is shown first. The first is the cover photo. Avoid faces and license plates. Location data is removed before upload. Photos of public records are public too.',
-  '내부': 'Inside', '외관': 'Exterior', '안내문': 'Signs', '종류 고르기': 'What is it?',
+  '내부': 'Inside', '외관': 'Exterior', '안내문': 'Signs', '종류 고르기': 'What is it?', '종류': 'Type',
   '로그인하면 사진도 함께 올릴 수 있어요(최대 5장). 사진을 올리면 AI가 항목을 미리 채워 줘요.': 'Log in to add photos too (up to 5). AI can pre-fill items from them.',
   'AI로 사진 보고 항목 채우기': 'Fill items from photos with AI', '사진을 보는 중이에요…': 'Looking at the photos…', '사진을 줄이는 중이에요…': 'Resizing photos…',
   '사진에서 눈으로 확인되는 것(입구 계단, 좌석 종류, 마감 등)만 제안해요. 고른 것만 채워지고, 잰 숫자는 채우지 않아요.': 'Only suggests what’s visible in photos (entrance steps, seating, finishes…). Only what you pick is filled; measured numbers aren’t.',
