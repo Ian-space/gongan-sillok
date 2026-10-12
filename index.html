@@ -3650,6 +3650,7 @@ function schedNote(s, at){ // at: { min, weekday } 그 구간을 탈 무렵(한�
       // 시간표가 있으면 경로의 지나는 역에서 끝나는 열차(내리는 역까지 안 가는 열차)를 빼고 첫차·막차를 다시 고른다
       times = Array.isArray(d.times) && d.times.length ? d.times : null;
       const nm = v => String(v || '').replace(/\(.*\)$/, '').replace(/역$/, '').trim(), pass = new Set((s.pass || []).map(nm));
+      if (s.lineCode === 2) pass.delete('성수'); // 2호선 순환 열차는 시간표에 '성수행'으로 적혀도 성수를 지나 계속 돈다
       if (times && pass.size) { const ok = times.filter(([, to]) => !pass.has(nm(to))); if (ok.length) times = ok; }
       const lastTo = times ? times[times.length - 1][1] : d.lastTo;
       first = times ? times[0][0] : d.first; last = times ? times[times.length - 1][0] : d.last;

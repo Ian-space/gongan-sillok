@@ -29,7 +29,7 @@
 //   POST /photoplace { image: base64 JPEG 1장, x, y }        → 사진+위치로 그 자리의 가게 후보(간판 글자, AI가 고른 곳, 가까운 곳) (로그인 필요)
 
 const ALLOWED_ORIGINS = ['https://ian-space.github.io', 'http://localhost:8765'];
-const VERSION = '2026-10-13.9'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
+const VERSION = '2026-10-13.10'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
 // 로그인 확인용 Supabase 주소와 공개 키(사이트 코드에도 있는 공개 값)
 const SUPABASE_URL = 'https://qktrghajroxddrbpwtvn.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_j-kp8YKsQTczGcsQX74OxA_mfI7DoZw';
@@ -388,7 +388,17 @@ async function handle(kind, input, { request, env, ctx, send, reply }) {
           const idOf = async nm => nm ? ((await ids(stName(nm))).find(([r]) => r === route) || [])[1] || '' : '';
           const [e1, e2] = await Promise.all([idOf(term(t1)), idOf(term(t2))]);
           const d1 = e1 ? Math.sign(numOf(e1) - numOf(cur)) : 0, d2 = e2 ? Math.sign(numOf(e2) - numOf(cur)) : 0;
-          if (want && d1 && d2 && d1 !== d2) return { rows: d1 === want ? t1 : t2, reach: null };
+          // 방향별 표가 제대로 나뉘었을 때만(가장 많은 종착역 쪽 열차가 대부분일 때) 이 방법을 믿는다
+          const pure = (rows, e) => { const s = e ? Math.sign(numOf(e) - numOf(cur)) : 0; return s !== 0 && rows.filter(r => r[1] && Math.sign(numOf(r[1]) - numOf(cur)) === s).length >= rows.length * 0.8; };
+          if (want && d1 && d2 && d1 !== d2 && pure(t1, e1) && pure(t2, e2)) return { rows: d1 === want ? t1 : t2, reach: null };
+          // 방향 구분 없이 두 방향 열차가 섞여 오는 노선(신림선 등): 열차마다 종착역이 다음 역 쪽에 있는 것만 모은다
+          if (want) {
+            const names = [...new Set([...t1, ...t2].map(r => r[2]).filter(Boolean))].slice(0, 12);
+            const side = new Map(await Promise.all(names.map(async nm => { const id = await idOf(nm); return [nm, id ? Math.sign(numOf(id) - numOf(cur)) : 0]; })));
+            const seen = new Set(), rows = [];
+            for (const r of [...t1, ...t2]) { const k = r[0] + '|' + r[2]; if (r[0] && side.get(r[2]) === want && !seen.has(k)) { seen.add(k); rows.push(r); } }
+            if (rows.length >= 10) return { rows, reach: null };
+          }
           const [n1, n2] = await Promise.all([table(nxt, 'U'), table(nxt, 'D')]);
           const score = (a, b) => { const bs = new Set(b.filter(r => r[0]).map(r => key(r[0]))); const as = a.filter(r => r[0]); if (as.length < 10) return 0;
             return as.filter(r => [1, 2, 3].some(k => bs.has(key(r[0]) + k))).length / as.length; };
