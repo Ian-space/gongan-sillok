@@ -27,7 +27,7 @@
 //   POST /photo    { images: [base64 JPEG, 최대 3장] }          → 사진에서 눈으로 확인되는 기록 항목 제안 (로그인 필요)
 
 const ALLOWED_ORIGINS = ['https://ian-space.github.io', 'http://localhost:8765'];
-const VERSION = '2026-10-12.14'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
+const VERSION = '2026-10-12.15'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
 // 로그인 확인용 Supabase 주소와 공개 키(사이트 코드에도 있는 공개 값)
 const SUPABASE_URL = 'https://qktrghajroxddrbpwtvn.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_j-kp8YKsQTczGcsQX74OxA_mfI7DoZw';
@@ -267,7 +267,7 @@ async function handle(kind, input, { request, env, ctx, send, reply }) {
     }
     if (input.type === 'subway') {
       const st = stName(input.station), nx = stName(input.next), line = String(input.line || ''), week = String(input.week || '1');
-      if (!st || !nx || st.length > 20 || nx.length > 20 || !/^([1-9]|[가-힣A-Za-z0-9]{2,10})$/.test(line) || !/^[123]$/.test(week)) return reply(400, { error: 'bad subway' });
+      if (!st || !nx || st.length > 20 || nx.length > 20 || !/^([1-9]|[가-힣A-Za-z0-9-]{2,10})$/.test(line) || !/^[123]$/.test(week)) return reply(400, { error: 'bad subway' });
       const sk = env.SEOUL_OPEN_KEY; if (!sk) return reply(503, { error: 'off' });
       const base = `http://openapi.seoul.go.kr:8088/${encodeURIComponent(sk)}/json`;
       // 역 이름 → 그 노선의 역 코드(30일 저장)
@@ -307,7 +307,7 @@ async function handle(kind, input, { request, env, ctx, send, reply }) {
       const key = v => { const [h, m] = v.split(':').map(Number); return (h < 3 ? h + 24 : h) * 60 + m; };
       const show = v => { const [h, m] = v.split(':'); return `${String(+h % 24).padStart(2, '0')}:${m}`; };
       const rows = use.filter(r => r[0]).sort((a, b) => key(a[0]) - key(b[0]));
-      if (!rows.length) return reply(200, { none: true });
+      if (!rows.length) return reply(200, { none: true, n: [t1.length, t2.length, side(t1), side(t2), want, cur, nxt] }); // n: 확인용
       const lastRow = rows[rows.length - 1];
       return reply(200, { first: show(rows[0][0]), last: show(lastRow[0]), lastTo: both ? '' : lastRow[2], rough: both });
     }
