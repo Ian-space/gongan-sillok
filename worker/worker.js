@@ -29,7 +29,7 @@
 //   POST /photoplace { image: base64 JPEG 1장, x, y }        → 사진+위치로 그 자리의 가게 후보(간판 글자, AI가 고른 곳, 가까운 곳) (로그인 필요)
 
 const ALLOWED_ORIGINS = ['https://ian-space.github.io', 'http://localhost:8765'];
-const VERSION = '2026-10-13.5'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
+const VERSION = '2026-10-13.6'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
 // 로그인 확인용 Supabase 주소와 공개 키(사이트 코드에도 있는 공개 값)
 const SUPABASE_URL = 'https://qktrghajroxddrbpwtvn.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_j-kp8YKsQTczGcsQX74OxA_mfI7DoZw';
@@ -277,21 +277,23 @@ async function handle(kind, input, { request, env, ctx, send, reply }) {
       const st = stName(input.station), nx = stName(input.next), line = String(input.line || ''), week = String(input.week || '1');
       if (!st || !nx || st.length > 20 || nx.length > 20 || !/^([1-9]|[가-힣A-Za-z0-9-]{2,10})$/.test(line) || !/^[123]$/.test(week)) return reply(400, { error: 'bad subway' });
       const to = stName(input.to).slice(0, 20), hint = String(input.lineName || '').slice(0, 20);
-      // 두 방향 시간표(rows: [출발 'HH:MM', 종착역 코드, 종착역 이름]) 중 다음 역 쪽으로 가는 것을 골라 첫차·막차를 낸다.
-      // 역 코드의 숫자가 노선을 따라 커지거나 작아지는 것을 이용한다(종착역 코드와 비교). num: 코드 → 숫자
-      const finish = (t1, t2, cur, nxt, end, num) => {
+      // 하루 운행 순서의 분(새벽 3시 전은 전날 밤의 연장). 시간표의 '24:46'은 '00:46'으로 보여 준다
+      const key = v => { const [h, m] = String(v).split(':').map(Number); return (h < 3 ? h + 24 : h) * 60 + m; };
+      const show = v => { const [h, m] = v.split(':'); return `${String(+h % 24).padStart(2, '0')}:${m}`; };
+      // 두 방향 시간표(rows: [출발 'HH:MM', 종착역 코드, 종착역 이름, (열차 번호)]) 중 다음 역 쪽으로 가는 것을 골라 첫차·막차·시간표를 낸다.
+      // 먼저 역 코드의 숫자가 노선을 따라 커지거나 작아지는 것으로 가리고(num: 코드 → 숫자), 그걸로 안 되면(2호선 순환, 신림선 등)
+      // resolve()가 다음 역 시간표와 맞춰 본다: 내 역을 떠난 열차가 몇 분 뒤 다음 역에 나타나는 쪽이 가는 방향
+      const finish = async (t1, t2, cur, nxt, end, num, resolve) => {
         const want = Math.sign(num(nxt) - num(cur));
         const side = rows => Math.sign(rows.reduce((a, [, d]) => a + Math.sign(num(d) - num(cur)), 0));
-        // 2호선 순환처럼 방향을 못 가리면 두 방향을 합친다(가장 이른 첫차·가장 늦은 막차, 대략)
-        const pick = side(t1) === want && side(t2) !== want ? t1 : side(t2) === want && side(t1) !== want ? t2 : null;
-        const both = !pick;
+        let pick = side(t1) === want && side(t2) !== want ? t1 : side(t2) === want && side(t1) !== want ? t2 : null;
         // 내리는 역까지 가는 열차만(중간 역에서 끝나는 열차는 막차가 아니다): 종착역이 내리는 역이거나 그 너머
-        const reach = r => !end || r[1] === end || Math.sign(num(r[1]) - num(end)) === want;
+        let reach = r => !end || r[1] === end || Math.sign(num(r[1]) - num(end)) === want;
+        if (!pick && resolve) { const got = await resolve().catch(() => null); if (got) { pick = got.rows; reach = got.reach || (() => true); } }
+        // 그래도 못 가리면 두 방향을 합친다(가장 이른 첫차·가장 늦은 막차, 대략)
+        const both = !pick;
         const far = pick ? pick.filter(reach) : [];
         const use = pick ? (far.length ? far : pick) : [...t1, ...t2]; // 갈래가 있는 노선(5호선 마천·상일동)에서 다 걸러지면 거르지 않는다
-        // 하루 운행 순서로(새벽 3시 전은 전날 밤의 연장). 시간표의 '24:46'은 '00:46'으로 보여 준다
-        const key = v => { const [h, m] = v.split(':').map(Number); return (h < 3 ? h + 24 : h) * 60 + m; };
-        const show = v => { const [h, m] = v.split(':'); return `${String(+h % 24).padStart(2, '0')}:${m}`; };
         const rows = use.filter(r => r[0]).sort((a, b) => key(a[0]) - key(b[0]));
         if (!rows.length) return null;
         const lastRow = rows[rows.length - 1];
@@ -315,16 +317,32 @@ async function handle(kind, input, { request, env, ctx, send, reply }) {
         };
         const [cur, nxt, end] = await Promise.all([code(st), code(nx), to ? code(to) : '']);
         if (!cur || !nxt) return null;
-        const table = async dir => {
-          const t = await edgeCached(`sch1:stt:${cur}:${week}:${dir}`, 86400, async () => {
-            const r = await fetch(`${base}/SearchSTNTimeTableByIDService/1/600/${cur}/${week}/${dir}`, { signal: AbortSignal.timeout(8000) });
+        const table = async (at, dir) => { // 역 코드·방향(1·2) → [출발, 종착역 코드, 종착역 이름, 열차 번호]
+          const t = await edgeCached(`sch2:stt:${at}:${week}:${dir}`, 86400, async () => {
+            const r = await fetch(`${base}/SearchSTNTimeTableByIDService/1/600/${at}/${week}/${dir}`, { signal: AbortSignal.timeout(8000) });
             const j = await r.json().catch(() => null); const s = j && j.SearchSTNTimeTableByIDService; if (!s) return null;
-            return JSON.stringify((s.row || []).map(x => [hm(x.LEFTTIME || x.ARRIVETIME), String(x.DESTSTATION || ''), String(x.SUBWAYENAME || '')]));
+            return JSON.stringify((s.row || []).map(x => [hm(x.LEFTTIME || x.ARRIVETIME), String(x.DESTSTATION || ''), String(x.SUBWAYENAME || ''), String(x.TRAIN_NO || '')]));
           });
           return t ? JSON.parse(t) : [];
         };
-        const [t1, t2] = await Promise.all([table(1), table(2)]);
-        return finish(t1, t2, cur, nxt, end, v => +v);
+        const [t1, t2] = await Promise.all([table(cur, 1), table(cur, 2)]);
+        // 열차 번호로 맞춰 보기: 같은 번호의 열차가 0~6분 뒤 다음 역 시간표(같은 방향)에 있는 쪽
+        const resolve = async () => {
+          const [n1, n2] = await Promise.all([table(nxt, 1), table(nxt, 2)]);
+          const score = (a, b) => { const at = new Map(b.map(r => [r[3], key(r[0])])); let n = 0;
+            for (const r of a) { const t = at.get(r[3]); if (r[3] && t != null && t - key(r[0]) >= 0 && t - key(r[0]) <= 6) n++; } return n; };
+          const s1 = score(t1, n1), s2 = score(t2, n2);
+          if (Math.max(s1, s2) < 5 || s1 === s2) return null;
+          const dir = s1 > s2 ? 1 : 2, rows = dir === 1 ? t1 : t2;
+          // 내리는 역까지 가는지도 열차 번호로: 그 열차가 내 역보다 뒤에 내리는 역 시간표에 있으면
+          let reachBy = null;
+          if (end) {
+            const at = new Map((await table(end, dir)).map(r => [r[3], key(r[0])]));
+            if (at.size) reachBy = r => at.has(r[3]) && at.get(r[3]) > key(r[0]);
+          }
+          return { rows, reach: reachBy };
+        };
+        return finish(t1, t2, cur, nxt, end, v => +v, resolve);
       };
 
       // 2) 그 밖의 노선(수인분당·신분당·공항철도·경의중앙·서해·신림선·인천1호선·경전철 등): 공공데이터포털 국토교통부_(TAGO)_지하철정보
@@ -348,17 +366,26 @@ async function handle(kind, input, { request, env, ctx, send, reply }) {
         const [route, cur] = common.find(([r]) => hint && (core(hint).includes(core(r)) || core(r).includes(core(hint)))) || common[0];
         const nxt = b.find(([r]) => r === route)[1], end = (c.find(([r]) => r === route) || [])[1] || '';
         const day = { 1: '01', 2: '02', 3: '03' }[week];
-        const table = async ud => {
-          const t = await edgeCached(`sch1:tgt:${cur}:${day}:${ud}`, 86400, async () => {
-            const r = await fetch(T('GetSubwaySttnAcctoSchdulList', { subwayStationId: cur, dailyTypeCode: day, upDownTypeCode: ud, numOfRows: 1000, pageNo: 1 }), { signal: AbortSignal.timeout(8000) });
+        const table = async (at, ud) => {
+          const t = await edgeCached(`sch1:tgt:${at}:${day}:${ud}`, 86400, async () => {
+            const r = await fetch(T('GetSubwaySttnAcctoSchdulList', { subwayStationId: at, dailyTypeCode: day, upDownTypeCode: ud, numOfRows: 1000, pageNo: 1 }), { signal: AbortSignal.timeout(8000) });
             const j = await r.json().catch(() => null); if (!j || !j.response) return null;
             // 같은 줄이 여러 번 오는 경우가 있어 한 번씩만
             return JSON.stringify([...new Set(items(j).map(x => [hm(x.depTime) || hm(x.arrTime), String(x.endSubwayStationId || ''), stName(x.endSubwayStationNm)].join('|')))].map(v => v.split('|')));
           });
           return t ? JSON.parse(t) : [];
         };
-        const [t1, t2] = await Promise.all([table('U'), table('D')]);
-        return finish(t1, t2, cur, nxt, end, id => +((/(\d+)$/.exec(id) || [])[1] || 0));
+        const [t1, t2] = await Promise.all([table(cur, 'U'), table(cur, 'D')]);
+        // 열차 번호가 없어서 시각으로 맞춰 보기: 내 역 출발마다 1~3분 뒤 다음 역(같은 방향) 출발이 있는 비율이 높은 쪽
+        const resolve = async () => {
+          const [n1, n2] = await Promise.all([table(nxt, 'U'), table(nxt, 'D')]);
+          const score = (a, b) => { const bs = new Set(b.filter(r => r[0]).map(r => key(r[0]))); const as = a.filter(r => r[0]); if (as.length < 10) return 0;
+            return as.filter(r => [1, 2, 3].some(k => bs.has(key(r[0]) + k))).length / as.length; };
+          const s1 = score(t1, n1), s2 = score(t2, n2);
+          if (Math.max(s1, s2) < 0.85 || Math.abs(s1 - s2) < 0.2) return null;
+          return { rows: s1 > s2 ? t1 : t2, reach: null };
+        };
+        return finish(t1, t2, cur, nxt, end, id => +((/(\d+)$/.exec(id) || [])[1] || 0), resolve);
       };
 
       const out = (await seoul()) || (await tago());
