@@ -6,7 +6,8 @@
 //     DATA_GO_KR_KEY    : 공공데이터포털 인증키(아파트 단지 공식 정보, 건축물대장, 서울·경기 버스 도착)
 //     SEOUL_SUBWAY_KEY  : 서울 열린데이터광장 실시간 지하철 인증키
 //     SEOUL_OPEN_KEY    : 서울 열린데이터광장 일반 인증키(지하철 역별 시간표)
-//     SUPABASE_SERVICE_KEY : Supabase 관리자(secret) 키. 매일 1년 지난 사진으로 찾기 사진을 지울 때만 쓴다
+//     SUPABASE_SERVICE_KEY : Supabase 관리자(secret) 키. 1년 지난 사진으로 찾기 사진 지우기, 새 신고 읽기에 쓴다
+//     RESEND_API_KEY    : 신고 알림 메일 보내기(Resend). 일반 변수 NOTIFY_EMAIL: 받을 메일 주소
 // - 결과 저장: KV 바인딩 ROUTE_CACHE. 횟수 제한: 바인딩 LIMIT_ROUTE·LIMIT_PLACE (wrangler.toml)
 // - 공간실록 사이트에서 온 요청만 받는다. AI는 로그인한 사람만(Supabase 로그인 토큰을 확인한다).
 //
@@ -29,7 +30,7 @@
 //   POST /photoplace { image: base64 JPEG 1장, x, y }        → 사진+위치로 그 자리의 가게 후보(간판 글자, AI가 고른 곳, 가까운 곳) (로그인 필요)
 
 const ALLOWED_ORIGINS = ['https://ian-space.github.io', 'http://localhost:8765'];
-const VERSION = '2026-10-13.12'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
+const VERSION = '2026-10-13.13'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
 // 로그인 확인용 Supabase 주소와 공개 키(사이트 코드에도 있는 공개 값)
 const SUPABASE_URL = 'https://qktrghajroxddrbpwtvn.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_j-kp8YKsQTczGcsQX74OxA_mfI7DoZw';
@@ -98,8 +99,11 @@ const ODSAY_WEB_KEY = 'vpfLJcZCiAwV7L5fibSQjA'; // 사이트(index.html)에도 �
 const AI_KINDS = ['intent', 'photo', 'photoplace'];
 
 export default {
-  // 매일 한 번(wrangler.toml [triggers]): '사진으로 찾기'에 쓰도록 동의받은 사진 중 1년 지난 것을 지운다
-  async scheduled(event, env, ctx) { ctx.waitUntil(expireFinds(env)); },
+  // 예약 작업(wrangler.toml [triggers]): 매일 한 번 1년 지난 '사진으로 찾기' 사진 지우기, 10분마다 새 신고를 운영자 메일로
+  async scheduled(event, env, ctx) {
+    if (event.cron === '*/10 * * * *') ctx.waitUntil(notifyReports(env));
+    else ctx.waitUntil(expireFinds(env));
+  },
   async fetch(request, env, ctx) {
     const origin = request.headers.get('Origin') || '';
     const allowed = ALLOWED_ORIGINS.includes(origin);
@@ -822,6 +826,27 @@ async function expireFinds(env) {
   if (!del.ok) { console.log(JSON.stringify({ expireFinds: 'storage failed', status: del.status })); return; }
   const d2 = await fetch(`${SUPABASE_URL}/rest/v1/find_photos?id=in.(${rows.map(x => +x.id).join(',')})`, { method: 'DELETE', headers: h });
   console.log(JSON.stringify({ expireFinds: rows.length, rows: d2.status }));
+}
+
+// 새 신고 알림: 지난번에 알린 뒤로 들어온 신고를 모아 운영자 메일(NOTIFY_EMAIL)로 한 통 보낸다(Resend, 비밀 변수 RESEND_API_KEY).
+// 신고 사유·내용·장소 이름만 보내고 신고한 사람은 보내지 않는다. 어디까지 알렸는지는 KV에 시각 하나로 둔다(새 신고가 있을 때만 쓴다)
+async function notifyReports(env) {
+  const key = env.SUPABASE_SERVICE_KEY, rk = env.RESEND_API_KEY, to = env.NOTIFY_EMAIL, kv = env.ROUTE_CACHE;
+  if (!key || !rk || !to || !kv) return;
+  const h = { apikey: key, ...(/^eyJ/.test(key) && { Authorization: 'Bearer ' + key }) };
+  const since = (await kv.get('notify:reports:since').catch(() => null)) || new Date(Date.now() - 3600e3).toISOString();
+  const r = await fetch(`${SUPABASE_URL}/rest/v1/reports?select=id,reason,detail,status,created_at,records(id,places(name))&created_at=gt.${encodeURIComponent(since)}&order=created_at&limit=50`, { headers: h });
+  const rows = await r.json().catch(() => null);
+  if (!r.ok || !Array.isArray(rows)) { console.log(JSON.stringify({ notifyReports: 'list failed', status: r.status })); return; }
+  if (!rows.length) return;
+  const clean = (v, n) => String(v || '').replace(/[\u0000-\u001F\u007F]/g, ' ').slice(0, n);
+  const lines = rows.map(x => `• [${clean(x.reason, 20)}] ${clean(x.records && x.records.places && x.records.places.name, 40) || '(지워진 기록)'}${x.detail ? ` — ${clean(x.detail, 200)}` : ''}${x.status === 'auto_hidden' ? ' (신고가 쌓여 자동으로 숨김)' : ''}`);
+  const text = `새 신고 ${rows.length}건이 들어왔어요.\n\n${lines.join('\n')}\n\n처리: 공간실록 → 계정 메뉴 → 관리자 (현황·신고)\nhttps://ian-space.github.io/gongan-sillok/`;
+  const m = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: 'Bearer ' + rk, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ from: '공간실록 알림 <onboarding@resend.dev>', to: [to], subject: `[공간실록] 새 신고 ${rows.length}건`, text }) });
+  if (!m.ok) { console.log(JSON.stringify({ notifyReports: 'mail failed', status: m.status })); return; } // 못 보냈으면 다음 차례에 다시
+  await kv.put('notify:reports:since', rows[rows.length - 1].created_at).catch(() => {});
+  console.log(JSON.stringify({ notifyReports: rows.length }));
 }
 
 // Supabase 로그인 토큰 → 회원번호. 토큰이 없거나 틀리면 null

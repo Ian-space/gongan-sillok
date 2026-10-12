@@ -24,7 +24,7 @@ window.GS_EN = {
   '계정 메뉴': 'Account menu', '로그인과 계정 메뉴': 'Log in and account menu',
   '홈 화면에 추가': 'Add to home screen', '이 브라우저 기록 계정으로 옮기기': 'Move this browser’s records to my account',
   '사용법 다시 보기': 'Show the guide again', '엑셀 파일 불러오기': 'Import an Excel file', '예시 데이터로 되돌리기': 'Reset to sample data',
-  '회원 탈퇴': 'Delete account', '이용약관': 'Terms of Use', '(10/16 변경)': '(updated 10/16)', '(10/16·11/13 변경)': '(updated 10/16 · 11/13)', '(10/20 변경)': '(updated 10/20)', '(10/20·11/13 변경)': '(updated 10/20 · 11/13)', '개인정보처리방침': 'Privacy Policy',
+  '회원 탈퇴': 'Delete account', '이용약관': 'Terms of Use', '(10/16 변경)': '(updated 10/16)', '(10/16·11/13 변경)': '(updated 10/16 · 11/13)', '(10/20 변경)': '(updated 10/20)', '(10/20·11/13 변경)': '(updated 10/20 · 11/13)', '개인정보처리방침': 'Privacy Policy', '데이터 출처': 'Data sources',
   '빠른 조건': 'Quick filters', '주변 장소 종류': 'Kinds of nearby places', '장소 유형별 색': 'Colors by place type',
   '확대': 'Zoom in', '축소': 'Zoom out', '기록한 장소 전체 보기': 'Show all recorded places', '전체 보기': 'Show all',
   '찜한 곳과 내 기록만 모아 보기': 'Show only saved places and my records', '내 장소 모아 보기': 'My places', '내 위치': 'My location',
