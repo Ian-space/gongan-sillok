@@ -335,6 +335,7 @@ window.GS_EN = {
   '내부': 'Inside', '외관': 'Exterior', '안내문': 'Signs', '종류 고르기': 'What is it?', '종류': 'Type',
   '사진+위치로 찾기': 'Find by photo + location', '다른 사진으로 찾기': 'Try another photo', '매장 안이나 간판을 찍으면 지금 위치 근처에서 어느 가게인지 찾아 줘요': 'Take a photo inside or of the sign, and we’ll find which place it is near you',
   '사진과 맞음': 'Matches photo', '간판 글자': 'Sign text', '가까운 곳': 'Nearby', '찾을 때 쓴 사진': 'Photo used for search',
+  "가게를 고르면 이 사진을 '사진으로 찾기' 정확도를 높이는 데 써도 돼요. 공개되지 않고 1년 뒤 지워져요.": 'When I pick a place, this photo may be used to improve photo search. It stays private and is deleted after a year.',
   '사진으로 찾기는 로그인하면 쓸 수 있어요. 계정 메뉴에서 카카오로 로그인해 주세요.': 'Log in to find by photo. Use Kakao login in the account menu.',
   '사진을 줄이는 중이에요…': 'Resizing photo…', '지금 위치를 확인하는 중이에요…': 'Checking your location…', '사진과 위치로 가게를 찾는 중이에요…': 'Finding the place from your photo and location…',
   '이 사진은 쓸 수 없어요. 다른 사진으로 해 주세요.': 'This photo can’t be used. Try another one.',

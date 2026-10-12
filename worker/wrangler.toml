@@ -26,3 +26,7 @@ simple = { limit = 300, period = 60 }
 # 로그(차단된 요청의 IP·회원번호 등)를 Cloudflare 대시보드에서 볼 수 있게
 [observability]
 enabled = true
+
+# 매일 한 번(한국 시각 새벽 4시 = UTC 19시): 1년 지난 '사진으로 찾기' 사진을 지운다(worker.js scheduled)
+[triggers]
+crons = ["0 19 * * *"]

@@ -6,6 +6,7 @@
 //     DATA_GO_KR_KEY    : 공공데이터포털 인증키(아파트 단지 공식 정보, 건축물대장, 서울·경기 버스 도착)
 //     SEOUL_SUBWAY_KEY  : 서울 열린데이터광장 실시간 지하철 인증키
 //     SEOUL_OPEN_KEY    : 서울 열린데이터광장 일반 인증키(지하철 역별 시간표)
+//     SUPABASE_SERVICE_KEY : Supabase 관리자(secret) 키. 매일 1년 지난 사진으로 찾기 사진을 지울 때만 쓴다
 // - 결과 저장: KV 바인딩 ROUTE_CACHE. 횟수 제한: 바인딩 LIMIT_ROUTE·LIMIT_PLACE (wrangler.toml)
 // - 공간실록 사이트에서 온 요청만 받는다. AI는 로그인한 사람만(Supabase 로그인 토큰을 확인한다).
 //
@@ -28,7 +29,7 @@
 //   POST /photoplace { image: base64 JPEG 1장, x, y }        → 사진+위치로 그 자리의 가게 후보(간판 글자, AI가 고른 곳, 가까운 곳) (로그인 필요)
 
 const ALLOWED_ORIGINS = ['https://ian-space.github.io', 'http://localhost:8765'];
-const VERSION = '2026-10-13.1'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
+const VERSION = '2026-10-13.2'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
 // 로그인 확인용 Supabase 주소와 공개 키(사이트 코드에도 있는 공개 값)
 const SUPABASE_URL = 'https://qktrghajroxddrbpwtvn.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_j-kp8YKsQTczGcsQX74OxA_mfI7DoZw';
@@ -97,6 +98,8 @@ const ODSAY_WEB_KEY = 'vpfLJcZCiAwV7L5fibSQjA'; // 사이트(index.html)에도 �
 const AI_KINDS = ['intent', 'photo', 'photoplace'];
 
 export default {
+  // 매일 한 번(wrangler.toml [triggers]): '사진으로 찾기'에 쓰도록 동의받은 사진 중 1년 지난 것을 지운다
+  async scheduled(event, env, ctx) { ctx.waitUntil(expireFinds(env)); },
   async fetch(request, env, ctx) {
     const origin = request.headers.get('Origin') || '';
     const allowed = ALLOWED_ORIGINS.includes(origin);
@@ -739,6 +742,22 @@ ${list}
     if (!upstream.ok) throw send(text, upstream.status, { 'X-Cache': 'MISS' });
     return text;
   });
+}
+
+// 1년 지난 '사진으로 찾기' 사진(supabase/26_find_photos.sql) 지우기: 저장소 파일을 먼저, 그다음 표의 줄. 한 번에 500개씩.
+// 관리자 키(비밀 변수 SUPABASE_SERVICE_KEY)가 있어야 한다. 없으면 아무것도 하지 않는다
+async function expireFinds(env) {
+  const key = env.SUPABASE_SERVICE_KEY; if (!key) { console.log(JSON.stringify({ expireFinds: 'no key' })); return; }
+  const h = { apikey: key, ...(/^eyJ/.test(key) && { Authorization: 'Bearer ' + key }) }; // 예전 형식(JWT) 키는 Authorization도
+  const cutoff = new Date(Date.now() - 365 * 86400e3).toISOString();
+  const r = await fetch(`${SUPABASE_URL}/rest/v1/find_photos?select=id,path&created_at=lt.${encodeURIComponent(cutoff)}&order=id&limit=500`, { headers: h });
+  const rows = await r.json().catch(() => null);
+  if (!r.ok || !Array.isArray(rows)) { console.log(JSON.stringify({ expireFinds: 'list failed', status: r.status })); return; }
+  if (!rows.length) return;
+  const del = await fetch(`${SUPABASE_URL}/storage/v1/object/finds`, { method: 'DELETE', headers: { ...h, 'Content-Type': 'application/json' }, body: JSON.stringify({ prefixes: rows.map(x => x.path) }) });
+  if (!del.ok) { console.log(JSON.stringify({ expireFinds: 'storage failed', status: del.status })); return; }
+  const d2 = await fetch(`${SUPABASE_URL}/rest/v1/find_photos?id=in.(${rows.map(x => +x.id).join(',')})`, { method: 'DELETE', headers: h });
+  console.log(JSON.stringify({ expireFinds: rows.length, rows: d2.status }));
 }
 
 // Supabase 로그인 토큰 → 회원번호. 토큰이 없거나 틀리면 null

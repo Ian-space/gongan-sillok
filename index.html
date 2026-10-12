@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<script src="i18n.js?v=19"></script>
+<script src="i18n.js?v=20"></script>
 <title>공간실록 시제품</title>
 <meta name="description" content="입구 계단, 화장실, 소음, 콘센트처럼 다녀온 사람만 아는 사실을 평점 대신 남기고 함께 보는 공간 지도예요.">
 <!-- 카톡 등에 링크를 보냈을 때 미리보기 -->
@@ -161,6 +161,8 @@ html[lang="en"] .brand-en{display:inline}
 .add-photofind-tx span{font-size:12px;color:var(--muted)}
 .add-photofind-thumb{flex:none;width:44px;height:44px;border-radius:6px;object-fit:cover}
 .ar-why{padding:1px 7px;border-radius:999px;background:var(--paper);color:var(--blue);font-size:11px;font-weight:700}
+.add-findok{display:flex;align-items:flex-start;gap:8px;margin:8px 0 0;font-size:12px;color:var(--muted);line-height:1.5;cursor:pointer}
+.add-findok input{flex:none;width:18px;height:18px;margin:1px 0 0}
 .add-search .search{flex:1;min-width:0}
 .add-status{margin:0;font-size:13px;color:var(--muted)}
 .add-status.err{color:#9B1C1C}
@@ -4671,12 +4673,26 @@ async function photoPlaceSearch(file){
     if (r.status === 429) return say('오늘 쓸 수 있는 사진 찾기 횟수를 다 썼어요. 이름으로 찾아 주세요.', true);
     if (!r.ok || !j) throw new Error('photoplace');
     if (addState.photoHint !== ph) return; // 그사이 다른 사진을 골랐다
-    ph.kind = PHOTO_KINDS.includes(j.kind) ? j.kind : '';
+    ph.kind = PHOTO_KINDS.includes(j.kind) ? j.kind : ''; ph.sign = cleanText(j.sign, 30);
     addState.results = (j.places || []).map(x => ({ name: cleanText(x.name, 40), category: cleanText(x.category, 60), address: cleanText(x.address, 60), lng: toNum(x.x), lat: toNum(x.y), distance: toNum(x.distance), kid: (KAKAO_PLACE.exec(String(x.url || '')) || [])[1] || '', why: cleanText(x.why, 10) }))
       .filter(x => x.name && x.lat >= 33 && x.lat <= 39 && x.lng >= 124 && x.lng <= 132);
     const notes = [j.sign && `사진에서 읽은 글자: ${cleanText(j.sign, 30)}`, at.from === 'map' && '위치가 꺼져 있어 지도 가운데 근처에서 찾았어요'].filter(Boolean);
     say(addState.results.length ? notes.join(' · ') : '근처에서 맞는 가게를 찾지 못했어요. 이름으로 찾아 주세요.');
   } catch { say('사진으로 찾지 못했어요. 잠시 뒤 다시 하거나 이름으로 찾아 주세요.', true); }
+}
+// '사진으로 찾기' 정확도 높이기(supabase/26_find_photos.sql): 이용자가 직접 체크하고 장소를 골랐을 때만
+// 그 사진을 고른 장소와 함께 비공개 저장소(finds)에 둔다(1년 보관, 공개 안 함). 개인정보처리방침 시행일(10/20)부터 묻는다
+const FIND_KEY = 'gongan-sillok:findConsent';
+const findsOpen = () => +seoulNow().stamp.slice(0, 8) >= 20261020;
+async function saveFind(ph, r){
+  if (!sb || !auth.user || !ph.blob || ph.findSaved) return;
+  ph.findSaved = true;
+  const path = `${auth.user.id}/${crypto.randomUUID()}.jpg`;
+  const { error } = await sb.storage.from('finds').upload(path, ph.blob, { contentType: 'image/jpeg', upsert: false }).catch(() => ({ error: true }));
+  if (error) { ph.findSaved = false; return; }
+  const { error: e2 } = await sb.from('find_photos').insert({ path, kakao_id: /^\d{1,15}$/.test(r.kid || '') ? r.kid : null, place_name: cleanText(r.name, 60),
+    category: cleanText(r.category, 80) || null, lat: r.lat, lng: r.lng, sign: ph.sign || null, kind: PHOTO_KINDS.includes(ph.kind) ? ph.kind : null });
+  if (e2) { sb.storage.from('finds').remove([path]).catch(() => {}); ph.findSaved = false; }
 }
 function renderAdd(){
   const body = $('addBody'); body.replaceChildren();
@@ -4702,6 +4718,15 @@ function renderAdd(){
       body.append(pb, pin);
     }
     if (addState.status) body.appendChild(el('p','add-status' + (addState.err ? ' err' : ''), addState.status));
+    // 사진으로 찾은 결과가 있으면: 이 사진을 정확도 높이는 데 써도 되는지(처음엔 체크 안 됨, 체크하면 다음에도 기억)
+    const hint = addState.photoHint;
+    if (hint && auth.user && findsOpen() && addState.results.some(r => r.why)) {
+      if (hint.consent === undefined) { try { hint.consent = localStorage.getItem(FIND_KEY) === '1'; } catch { hint.consent = false; } }
+      const lb = el('label','add-findok'), cb = el('input'); cb.type = 'checkbox'; cb.checked = !!hint.consent;
+      cb.addEventListener('change', () => { hint.consent = cb.checked; try { localStorage.setItem(FIND_KEY, cb.checked ? '1' : '0'); } catch {} });
+      lb.append(cb, el('span', null, "가게를 고르면 이 사진을 '사진으로 찾기' 정확도를 높이는 데 써도 돼요. 공개되지 않고 1년 뒤 지워져요."));
+      body.appendChild(lb);
+    }
     if (addState.results.length) {
       const ul = el('ul','add-results');
       for (const r of addState.results) {
@@ -4718,6 +4743,7 @@ function renderAdd(){
         b.addEventListener('click', () => {
           const keep = { results: addState.results }; // '다시 찾기'로 돌아왔을 때 결과가 남아 있게
           const hint = r.why ? addState.photoHint : null; // 사진으로 찾은 곳이면 그 사진을 기록 사진으로
+          if (hint && hint.consent && findsOpen()) saveFind(hint, r); // 동의했으면 사진과 고른 장소를 짝지어 둔다
           if (rec) Object.assign(addState, freshAdd(), keep, editState(rec));
           else Object.assign(addState, freshAdd(), keep, { step: 'form', picked: { ...r, type: guessType(r.category) } });
           if (hint && (addState.photos || []).length < PHOTO_LIMIT) { (addState.photos || (addState.photos = [])).push(hint); preUpload(hint); }
@@ -5622,8 +5648,11 @@ function openLeave(){
     const uid = auth.user.id;
     let files = [];
     try { const { data } = await sb.storage.from('photos').list(uid, { limit: 1000 }); files = (data || []).map(f => `${uid}/${f.name}`); } catch {}
+    let finds = []; // '사진으로 찾기'에 쓰도록 동의한 사진도 함께 지운다
+    try { const { data } = await sb.storage.from('finds').list(uid, { limit: 1000 }); finds = (data || []).map(f => `${uid}/${f.name}`); } catch {}
     const { error } = await sb.rpc('delete_my_account');
     if (!error && files.length) { try { await sb.storage.from('photos').remove(files); } catch {} }
+    if (!error && finds.length) { try { await sb.storage.from('finds').remove(finds); } catch {} }
     if (error) {
       st.classList.add('err');
       st.textContent = /delete_my_account|PGRST202|schema cache/.test(error.message + error.code) ? '탈퇴 기능이 아직 준비되지 않았어요. 잠시 뒤 다시 시도해 주세요.' : '탈퇴하지 못했어요. 잠시 뒤 다시 시도해 주세요.';
