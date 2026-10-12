@@ -3646,7 +3646,9 @@ function schedNote(s, at){ // at: { min, weekday } 그 구간을 탈 무렵(한�
     let first, last, slack = 0, tail = '';
     if (sub) { first = d.first; last = d.last; tail = d.lastTo ? ` (${d.lastTo}행)` : d.rough ? ' (대략)' : ''; }
     else if (body.city === 'seoul') {
-      const x = (d.list || []).find(x => x.name === s.raw); if (!x) return;
+      // 경기 버스는 서울 자료에 지역 이름이 붙어 있다('30' → '30하남')
+      const list = d.list || [], x = list.find(x => x.name === s.raw) || list.find(x => x.name.startsWith(s.raw) && /^[가-힣]+$/.test(x.name.slice(s.raw.length)));
+      if (!x) return;
       first = x.first; last = x.last; slack = 60; tail = ' · 차고지 출발 기준';
     } else {
       // 경기 버스: 상행·하행 중 어느 쪽인지 몰라서 넓게(이른 첫차, 늦은 막차)
