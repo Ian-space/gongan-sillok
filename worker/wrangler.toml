@@ -14,7 +14,7 @@ id = "08c80ee463d14c6d8b68f87f26b229c8"
 
 # 횟수 제한(접속 IP별, 1분 단위). 외부 서비스의 하루 한도를 누가 마구 써서 바닥내지 않게 한다
 [[ratelimits]]
-name = "LIMIT_ROUTE"   # TMAP 대중교통·도보 경로
+name = "LIMIT_ROUTE"   # TMAP 대중교통·도보 경로, ODsay 대중교통 경로
 namespace_id = "1001"
 simple = { limit = 30, period = 60 }
 

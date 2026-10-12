@@ -27,7 +27,7 @@
 //   POST /photo    { images: [base64 JPEG, 최대 3장] }          → 사진에서 눈으로 확인되는 기록 항목 제안 (로그인 필요)
 
 const ALLOWED_ORIGINS = ['https://ian-space.github.io', 'http://localhost:8765'];
-const VERSION = '2026-10-12.17'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
+const VERSION = '2026-10-12.18'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
 // 로그인 확인용 Supabase 주소와 공개 키(사이트 코드에도 있는 공개 값)
 const SUPABASE_URL = 'https://qktrghajroxddrbpwtvn.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_j-kp8YKsQTczGcsQX74OxA_mfI7DoZw';
@@ -123,6 +123,8 @@ export default {
       return await handle(kind, input, { request, env, ctx, send, reply });
     } catch (e) {
       if (e instanceof Response) return e; // 도우미들이 실패 응답을 던진다
+      // 예상 못 한 오류: 원인을 Cloudflare 대시보드 로그에 남긴다(요청 내용·IP는 남기지 않는다)
+      console.log(JSON.stringify({ error: kind, name: (e && e.name) || '', msg: String((e && e.message) || e).slice(0, 300) }));
       return reply(502, { error: 'upstream error' });
     }
   },
@@ -140,8 +142,9 @@ async function handle(kind, input, { request, env, ctx, send, reply }) {
   const kv = env.ROUTE_CACHE;
   const ip = request.headers.get('CF-Connecting-IP') || 'x';
 
-  // 외부 서비스를 부르기 전 횟수 제한(접속 IP별 1분 단위). 저장해 둔 결과를 줄 때는 세지 않는다
-  const limiter = TMAP[kind] ? env.LIMIT_ROUTE : env.LIMIT_PLACE;
+  // 외부 서비스를 부르기 전 횟수 제한(접속 IP별 1분 단위). 저장해 둔 결과를 줄 때는 세지 않는다.
+  // 하루 한도가 작은 경로 서비스(TMAP, ODsay)는 빡빡한 쪽(1분 30번)으로
+  const limiter = TMAP[kind] || kind === 'odsay' ? env.LIMIT_ROUTE : env.LIMIT_PLACE;
   const allow = async () => {
     if (!limiter) return;
     const { success } = await limiter.limit({ key: ip }).catch(() => ({ success: true }));
