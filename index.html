@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<script src="i18n.js?v=16"></script>
+<script src="i18n.js?v=17"></script>
 <title>공간실록 시제품</title>
 <meta name="description" content="입구 계단, 화장실, 소음, 콘센트처럼 다녀온 사람만 아는 사실을 평점 대신 남기고 함께 보는 공간 지도예요.">
 <!-- 카톡 등에 링크를 보냈을 때 미리보기 -->
@@ -708,7 +708,7 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
 .tour-focus{outline:3px solid var(--mark) !important;outline-offset:3px} /* 짚는 테두리는 노랑 그대로: 인주색 기록 버튼을 짚을 때도 잘 보이게 */
 @media (prefers-reduced-motion:no-preference){ .tour{animation:spfade .2s ease-out both} }
 /* 사진 */
-.photo{display:block;padding:0;border:0;border-radius:8px;overflow:hidden;background:var(--paper);aspect-ratio:4 / 3;cursor:zoom-in}
+.photo{position:relative;display:block;padding:0;border:0;border-radius:8px;overflow:hidden;background:var(--paper);aspect-ratio:4 / 3;cursor:zoom-in}
 .photo img{display:block;width:100%;height:100%;object-fit:cover}
 .photo.missing{display:none}
 .photo.small{width:84px;flex:none}
@@ -726,7 +726,10 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
 .photo-cell{position:relative}
 .photo-thumb{display:block;width:100%;aspect-ratio:1;object-fit:cover;border-radius:8px;background:var(--paper)}
 .photo-rm{position:absolute;top:4px;right:4px;width:24px;height:24px;border:0;border-radius:50%;background:rgba(15,20,40,.7);color:#FFFFFF;font-size:16px;line-height:1;cursor:pointer}
-.photo-badge{position:absolute;left:4px;bottom:4px;padding:1px 7px;border-radius:999px;background:var(--blue);color:#FFFFFF;font-size:11px;font-weight:700}
+.photo-badge{position:absolute;left:4px;top:4px;padding:1px 7px;border-radius:999px;background:var(--blue);color:#FFFFFF;font-size:11px;font-weight:700}
+.photo-kind{display:block;width:100%;margin-top:4px;padding:4px 2px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--ink);font:inherit;font-size:16px}
+.photo-kind.unset{color:var(--muted)}
+.photo .ph-kind{position:absolute;left:4px;bottom:4px;padding:1px 6px;border-radius:999px;background:rgba(15,20,40,.68);color:#FFFFFF;font-size:11px;font-weight:600;pointer-events:none}
 .photo-add{display:grid;place-items:center;align-content:center;gap:2px;aspect-ratio:1;border:1.5px dashed var(--line);border-radius:8px;background:transparent;color:var(--muted);font-size:12px;cursor:pointer}
 .photo-add b{font-size:24px;line-height:1;color:var(--blue)}
 .photo-pick{display:grid;gap:8px}
@@ -982,7 +985,7 @@ html{touch-action:manipulation}
           <button class="acct-item" id="btnLoad" type="button">엑셀 파일 불러오기</button>
           <button class="acct-item" id="btnReset" type="button">예시 데이터로 되돌리기</button>
           <button class="acct-item leave" id="btnLeave" type="button" hidden>회원 탈퇴</button>
-          <div class="acct-legal"><a href="terms.html">이용약관 <span class="muted">(10/16 변경)</span></a><a href="privacy.html"><b>개인정보처리방침</b></a></div>
+          <div class="acct-legal"><a href="terms.html">이용약관 <span class="muted">(10/16·11/13 변경)</span></a><a href="privacy.html"><b>개인정보처리방침</b> <span class="muted">(10/20 변경)</span></a></div>
         </div>
       </div>
       <div class="recent" id="recent" hidden></div>
@@ -1121,6 +1124,10 @@ const dbCol = k => ENUMS[k].db || k;
 const PHOTO_PATH = /^[0-9a-f-]{36}\/[0-9a-f-]{36}\.jpg$/; // 사진 저장 위치 모양: 사용자 번호/임의 번호.jpg
 const PHOTO_LIMIT = 5; // 기록 하나에 사진 최대 5장 (서버 규칙과 같다)
 const validPhotos = a => (Array.isArray(a) ? a : []).filter(x => PHOTO_PATH.test(String(x))).slice(0, PHOTO_LIMIT);
+// 사진 종류(무엇을 찍었나). 서버 규칙(supabase/25_photo_kinds.sql)과 같은 값. 사진 주소 → 종류
+const PHOTO_KINDS = ['입구', '내부', '화장실', '외관', '층 이동', '안내문', '기타'];
+const photoKind = new Map();
+const noteKinds = (paths, kinds) => { if (!Array.isArray(paths) || !Array.isArray(kinds)) return; paths.forEach((x, i) => { if (PHOTO_KINDS.includes(kinds[i])) photoKind.set(String(x), kinds[i]); }); };
 // 기록 기준: 사람마다 '조용함'을 다르게 고르지 않도록 값마다 기준을 정해 둔다(? 버튼으로 본다)
 // 값 순서는 ENUMS와 같다(좋음, 보통, 아쉬움)
 const CRITERIA = {
@@ -1609,6 +1616,7 @@ async function loadPublic(){
     if (!p) continue;
     if (!groups.has(r.place_id)) groups.set(r.place_id, { pid: r.place_id, kid: r.kakao_id || '', name: p.name, type: p.type, addr: p.addr, lat: p.lat, lng: p.lng, recs: [] });
     groups.get(r.place_id).recs.push({ ...p, rid: r.id, nickname: cleanText(r.nickname, 30), mineRec: !!r.mine, photos: validPhotos(r.photo_paths) }); // 닉네임은 관리자에게만 온다
+    noteKinds(r.photo_paths, r.photo_kinds);
   }
   const first = !state.pub.length;
   state.pub = [...groups.values()];
@@ -4032,8 +4040,9 @@ function photoWhen(date){
 }
 function buildingNote(br){
   const box = el('div','bld-note');
-  // 건물 기록의 사진(입구 등) 한 장을 함께: 건물 안 가게 화면에서도 입구가 어떻게 생겼는지 보인다
-  const ph = photosOf(br);
+  // 건물 기록의 사진(입구 등) 한 장을 함께: 건물 안 가게 화면에서도 입구가 어떻게 생겼는지 보인다. 입구·외관 사진을 먼저
+  const rank = x => ({ '입구': 0, '외관': 1, '층 이동': 2 })[photoKind.get(x.path)] ?? 3;
+  const ph = photosOf(br).map((x, i) => [x, i]).sort((a, b) => rank(a[0]) - rank(b[0]) || a[1] - b[1]).map(x => x[0]);
   if (ph.length) {
     box.appendChild(photoImg(ph[0].path, `${br.name} 건물 사진`, 'bld-thumb', ph.map(x => x.path), 0));
     fillPhotos(box).then(() => { const t = box.querySelector('.bld-thumb.missing'); if (t) t.remove(); });
@@ -4598,7 +4607,7 @@ function editState(p){
     texts: { materials: p.materials, furniture: p.furniture, note: p.note, date: p.date },
     nums: { stepCm: p.mine ? (p.stepCm ?? '') : '', noiseDb: p.mine ? (p.noiseDb ?? '') : '', visitHour: p.mine ? (p.visitHour ?? '') : '' }, // 잰 숫자·시각은 내 기록 것만
     server: p.rid ? { rid: p.rid, pid: p.pid, pub: !!p.pub, photos: p.photos || [] } : null, // 계정에 저장된 기록이면 서버 번호를 함께 둔다
-    photos: (p.photos || []).map(path => ({ path })) };
+    photos: (p.photos || []).map(path => ({ path, kind: photoKind.get(path) || '' })) };
 }
 function openEdit(id){
   const p = state.places.find(x => x.id === id); if (!p) return;
@@ -4870,7 +4879,7 @@ const sb = window.supabase && SUPABASE_URL && SUPABASE_KEY
   ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { flowType: 'pkce', persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } })
   : null;
 const auth = { user: null, nickname: '', role: 'user', ready: false };
-const RECORD_COLS = 'id, is_public, noise, spacing, light, outlet, stay, materials, furniture, note, visited_on, entrance, floor_access, toilet, kids, pets, parking, diaper, late_night, hood, step_cm, noise_db, visit_hour, lamp, photo_paths, places(id, kakao_id, name, type, address, lat, lng)';
+const RECORD_COLS = 'id, is_public, noise, spacing, light, outlet, stay, materials, furniture, note, visited_on, entrance, floor_access, toilet, kids, pets, parking, diaper, late_night, hood, step_cm, noise_db, visit_hour, lamp, photo_paths, photo_kinds, places(id, kakao_id, name, type, address, lat, lng)';
 
 async function loadMine(){
   const { data, error } = await sb.from('records').select(RECORD_COLS).eq('user_id', auth.user.id).order('created_at');
@@ -4882,6 +4891,7 @@ async function loadMine(){
     const { places: [p] } = rowsToPlaces([SAMPLE_ROWS[0], [pl.name, pl.type, pl.address, pl.lat, pl.lng, r.noise, r.spacing, r.light, r.outlet, r.stay, r.materials, r.furniture, r.note, r.visited_on, ...accessOf(r), ...extraOf(r)]]);
     if (!p) continue;
     places.push(Object.assign(p, { id: 'p' + places.length, rid: r.id, pid: pl.id, kid: pl.kakao_id || '', pub: !!r.is_public, photos: validPhotos(r.photo_paths) }));
+    noteKinds(r.photo_paths, r.photo_kinds);
   }
   setMine(places, '내 기록(계정)', false);
   if (!places.length) setStatus('아직 내 기록이 없어요. + 장소 추가로 첫 기록을 남겨 보세요.', false);
@@ -4942,6 +4952,9 @@ async function saveToServer(row, picked, editing, isPublic){
   const uploaded = got.filter(g => g && !g.old).map(g => g.path), paths = got.filter(Boolean).map(g => g.path);
   if (got.some(g => !g)) { removePhotos(uploaded); return fail('사진을 올리지 못했어요. 신호가 약한 곳이면 잠시 뒤 다시 저장하거나, 사진을 빼고 먼저 저장해 주세요.'); }
   vals.photo_paths = paths;
+  // 사진 종류: 사진 목록과 같은 순서(고르지 않은 사진은 ''). 하나도 안 골랐으면 빈 목록
+  const kinds = list.map(ph => PHOTO_KINDS.includes(ph.kind) ? ph.kind : '');
+  vals.photo_kinds = kinds.some(Boolean) ? kinds : [];
   const dropped = oldPaths.filter(x => !paths.includes(x));
   try {
     let placeId;
@@ -5101,6 +5114,7 @@ function photoImg(path, alt, cls, list, index){
   const b = el('button','photo ' + (cls || '')); b.type = 'button'; b.setAttribute('aria-label', alt + ' 크게 보기');
   const img = el('img'); img.alt = alt; img.loading = 'lazy'; img.decoding = 'async'; img.dataset.photo = path;
   b.appendChild(img);
+  if (photoKind.has(path)) b.appendChild(el('span','ph-kind', photoKind.get(path)));
   b.addEventListener('click', () => openViewer(list || [path], index || 0));
   return b;
 }
@@ -5120,7 +5134,7 @@ async function openViewer(paths, start){
     const f = el('figure','pv-item'); const img = el('img'); img.alt = `사진 ${i + 1}/${paths.length}`; img.dataset.photo = path; img.decoding = 'async';
     f.appendChild(img); track.appendChild(f);
   }
-  const show = i => { count.textContent = paths.length > 1 ? `${i + 1} / ${paths.length}` : ''; };
+  const show = i => { const k = photoKind.get(paths[i]) || ''; count.textContent = [k, paths.length > 1 ? `${i + 1} / ${paths.length}` : ''].filter(Boolean).join(' · '); };
   track.onscroll = () => show(Math.round(track.scrollLeft / Math.max(1, track.clientWidth)));
   $('photoPrev').hidden = $('photoNext').hidden = paths.length < 2;
   dlg.showModal();
@@ -5133,7 +5147,7 @@ function stepViewer(d){ const t = $('photoTrack'); t.scrollBy({ left: d * t.clie
 function photoField(){
   const w = el('div','add-field photo-field'); w.appendChild(el('span','lbl', `사진 (선택, 최대 ${PHOTO_LIMIT}장)`));
   const box = el('div','photo-pick'); w.appendChild(box);
-  w.appendChild(el('p','add-hint', '입구, 계단, 좌석, 화장실처럼 기록을 보여 주는 사진을 골라 주세요. 첫 장이 대표 사진이 돼요. 사람 얼굴이나 차량 번호가 나오지 않게 찍어 주세요. 촬영 위치 정보는 지우고 올려요. 공개한 기록이면 사진도 함께 공개돼요.'));
+  w.appendChild(el('p','add-hint', '입구, 계단, 좌석, 화장실처럼 기록을 보여 주는 사진을 골라 주세요. 사진 아래에서 무엇을 찍었는지 골라 주시면 찾는 사람에게 맞는 사진을 먼저 보여 줘요. 첫 장이 대표 사진이 돼요. 사람 얼굴이나 차량 번호가 나오지 않게 찍어 주세요. 촬영 위치 정보는 지우고 올려요. 공개한 기록이면 사진도 함께 공개돼요.'));
   const draw = () => {
     box.replaceChildren();
     const list = addState.photos || (addState.photos = []);
@@ -5147,6 +5161,13 @@ function photoField(){
       rm.addEventListener('click', () => { if (ph.preview) URL.revokeObjectURL(ph.preview); dropPreUpload(ph); list.splice(i, 1); draw(); });
       cell.append(img, rm);
       if (i === 0) cell.appendChild(el('span','photo-badge','대표'));
+      // 무엇을 찍었는지(선택): 입구 사진은 같은 건물의 다른 가게 화면에도 먼저 보여 준다
+      const kind = el('select','photo-kind'); kind.setAttribute('aria-label', `사진 ${i + 1} 종류`);
+      kind.appendChild(new Option('종류 고르기', ''));
+      for (const k of PHOTO_KINDS) kind.appendChild(new Option(k, k));
+      kind.value = ph.kind || ''; kind.classList.toggle('unset', !ph.kind);
+      kind.addEventListener('change', () => { ph.kind = kind.value; kind.classList.toggle('unset', !ph.kind); });
+      cell.appendChild(kind);
       grid.appendChild(cell);
     });
     const input = el('input'); input.type = 'file'; input.accept = 'image/*'; input.multiple = true; input.hidden = true;
