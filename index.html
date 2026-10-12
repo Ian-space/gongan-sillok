@@ -2969,6 +2969,8 @@ function renderLegend(){
 // 두 곳의 응답은 같은 모양(route)으로 바꿔서 쓴다.
 //   route = { source, minutes, fare, transfers, segs: [{ mode: walk|subway|bus|other, minutes, name, color, from, to, stops, raw, shape: [[lat,lng],…] }] }
 const WALK_COLOR = '#5B6475';
+// ODsay 노선 번호(subwayCode) → 서울 실시간 지하철의 노선 번호(subwayId). 1~9호선은 1001~1009
+const LIVE_LINE = { 101: '1065', 104: '1063', 108: '1067', 109: '1077', 112: '1081', 113: '1092', 114: '1093', 116: '1075' }; // 공항철도, 경의중앙, 경춘, 신분당, 경강, 우이신설, 서해, 수인분당
 const SUBWAY_COLORS = { 1:'#0052A4', 2:'#00A84D', 3:'#EF7C1C', 4:'#00A5DE', 5:'#996CAC', 6:'#CD7C2F', 7:'#747F00', 8:'#E6186C', 9:'#BDB092', 101:'#0090D2', 104:'#77C4A3', 109:'#D4003B', 116:'#F5A200' }; // ODsay subwayCode
 const BUS_COLORS = { 11:'#0068B7', 12:'#53B332', 13:'#F2B70A', 14:'#E60012', 3:'#53B332' }; // ODsay 버스 종류: 간선, 지선, 순환, 광역, 마을
 const safeColor = (c, fallback) => /^#?[0-9a-f]{6}$/i.test(String(c || '')) ? '#' + String(c).replace('#', '') : fallback;
@@ -3514,8 +3516,9 @@ function liveArrival(s){
     const lines = [];
     if (s.mode === 'subway') {
       // 같은 노선(1~9호선)이고, 다음 역 방면(ODsay의 way)인 열차만
-      const want = s.lineCode >= 1 && s.lineCode <= 9 ? String(1000 + s.lineCode) : '';
-      const mine = list.filter(x => (!want || x.line === want) && (!s.way || x.dir.includes(s.way)));
+      const want = s.lineCode >= 1 && s.lineCode <= 9 ? String(1000 + s.lineCode) : LIVE_LINE[s.lineCode] || '';
+      let mine = list.filter(x => (!want || x.line === want) && (!s.way || x.dir.includes(s.way)));
+      if (!mine.length && LIVE_LINE[s.lineCode]) mine = list.filter(x => !s.way || x.dir.includes(s.way)); // 노선 번호 짝이 틀렸을 때를 대비해 방면만으로
       if (mine.length) lines.push(`${s.way ? `${s.way} 방면 ` : ''}${mine[0].msg}` + (mine[1] ? ` · 다음 ${mine[1].msg}` : ''));
     } else {
       const wanted = new Set(s.busNos);
