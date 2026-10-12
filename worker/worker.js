@@ -25,14 +25,15 @@
 //   POST /nearby   { rect: "왼쪽X,아래Y,오른쪽X,위Y", code? }      → 지도 한 칸 안의 장소 (NEARBY의 업종 코드)
 //   POST /intent   { text }                                     → 글로 적은 목적을 기록 항목 조건으로 (로그인 필요)
 //   POST /photo    { images: [base64 JPEG, 최대 3장] }          → 사진에서 눈으로 확인되는 기록 항목 제안 (로그인 필요)
+//   POST /photoplace { image: base64 JPEG 1장, x, y }        → 사진+위치로 그 자리의 가게 후보(간판 글자, AI가 고른 곳, 가까운 곳) (로그인 필요)
 
 const ALLOWED_ORIGINS = ['https://ian-space.github.io', 'http://localhost:8765'];
-const VERSION = '2026-10-12.18'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
+const VERSION = '2026-10-13.1'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
 // 로그인 확인용 Supabase 주소와 공개 키(사이트 코드에도 있는 공개 값)
 const SUPABASE_URL = 'https://qktrghajroxddrbpwtvn.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_j-kp8YKsQTczGcsQX74OxA_mfI7DoZw';
 // AI 하루 한도: 한 사람당 / 전체. 넘으면 429와 함께 Cloudflare 로그에 회원번호·IP를 남긴다(남용 확인용)
-const AI_LIMITS = { intent: { user: 30, day: 1000 }, photo: { user: 20, day: 200 } };
+const AI_LIMITS = { intent: { user: 30, day: 1000 }, photo: { user: 20, day: 200 }, photoplace: { user: 30, day: 300 } };
 // 경로 결과 저장 시간(초)
 const CACHE_SECONDS = { transit: 600, walk: 86400 };
 // 주변 장소 종류. 카카오 업종 코드로 찾고, 업종 분류가 없는 도서관은 검색어로 찾은 뒤 분류에 '도서관'이 있는 곳만 남긴다
@@ -93,7 +94,7 @@ const TMAP = {
 };
 const PLACE_KINDS = ['search', 'nearby', 'station', 'addr', 'apt', 'bldreg', 'arrive', 'elev', 'odsay', 'fstexit', 'sched'];
 const ODSAY_WEB_KEY = 'vpfLJcZCiAwV7L5fibSQjA'; // 사이트(index.html)에도 공개된 웹 키. 따로 넣은 비밀값 ODSAY_API_KEY가 있으면 그걸 쓴다
-const AI_KINDS = ['intent', 'photo'];
+const AI_KINDS = ['intent', 'photo', 'photoplace'];
 
 export default {
   async fetch(request, env, ctx) {
@@ -653,6 +654,45 @@ ${list}
       const body = JSON.stringify({ w, t, missing });
       if (kv) ctx.waitUntil(kv.put(cacheKey, body, { expirationTtl: 30 * 86400 }).catch(() => {}));
       return send(body, 200, { 'X-Cache': kv ? 'MISS' : 'OFF' });
+    }
+
+    /* 사진+위치로 장소 찾기: { image: base64 JPEG 1장, x, y } → 그 자리 근처에서 사진의 가게 후보.
+       1) 카카오 업종별로 반경 150m 안 가게를 모으고 2) AI가 사진의 간판·메뉴판 글자와 생김새로 후보 중에서 고르고
+       3) 읽은 간판 글자로 반경 500m 안을 한 번 더 찾는다. 사진과 위치는 저장하지 않는다. 위치는 AI에 보내지 않는다(가게 이름 목록만) */
+    if (kind === 'photoplace') {
+      const data = String(input.image || '');
+      if (data.length < 100 || data.length > 1500000 || !/^[A-Za-z0-9+/=]+$/.test(data)) return reply(400, { error: 'no image' });
+      const x = num(input.x), y = num(input.y);
+      if (!inKorea(x, y)) return reply(400, { error: 'coordinates out of range' });
+      await count();
+      const pick = d => ({ name: d.place_name, category: d.category_name, address: d.road_address_name || d.address_name, phone: d.phone, x: d.x, y: d.y, url: d.place_url, distance: d.distance, id: String(d.id || '') });
+      const groups = ['CE7', 'FD6', 'CS2', 'PM9', 'HP8', 'BK9', 'MT1', 'AC5', 'AD5', 'CT1'];
+      const near = (await Promise.all(groups.map(g => kakao('search/category', { category_group_code: g, x: String(x), y: String(y), radius: '150', sort: 'distance', size: '15' })
+        .then(j => j.documents || []).catch(() => [])))).flat();
+      const seen = new Set(), cands = [];
+      for (const d of near.sort((a, b) => +a.distance - +b.distance)) if (!seen.has(d.id)) { seen.add(d.id); cands.push(pick(d)); }
+      const list = cands.slice(0, 50);
+      const system = `너는 공간 기록 지도의 장소 찾기 도우미다. 이용자가 지금 있는 가게 안이나 앞에서 찍은 사진 한 장과, 그 자리 근처 가게 목록을 받는다.
+- sign: 사진에 보이는 가게 이름으로 보이는 글자(간판, 메뉴판, 컵, 영수증, 안내문)를 그대로 적는다. 없으면 빈 글자. 가게 이름이 아닌 일반 낱말(OPEN, 커피, 메뉴)은 적지 않는다.
+- picks: 목록에서 이 사진의 가게일 가능성이 높은 번호를 높은 순으로 최대 3개. 간판 글자가 맞거나, 업종과 생김새(예: 커피 머신·진열대·약 진열장)가 분명히 맞을 때만. 애매하면 비운다.
+- kind: 이 사진이 무엇을 찍었는지 하나: 입구 | 내부 | 화장실 | 외관 | 층 이동 | 안내문 | 기타
+목록:
+${list.map((c, i) => `${i}. ${c.name} (${String(c.category || '').split('>').slice(-2).join('>').trim()}, ${c.distance}m)`).join('\n') || '(근처 가게 없음)'}
+출력은 JSON 하나만, 설명 없이: {"sign":"","picks":[0],"kind":"내부"}`;
+      const content = [{ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data } }, { type: 'text', text: '이 사진은 어느 가게일까?' }];
+      const ai = await askClaude(system, content);
+      const sign = String(ai.sign || '').replace(/[\u0000-\u001F\u007F]/g, ' ').trim().slice(0, 30);
+      const kinds = ['입구', '내부', '화장실', '외관', '층 이동', '안내문', '기타'];
+      const out = [], has = new Set();
+      const add = (c, why) => { const k = c.id || c.name + c.x; if (has.has(k)) return; has.add(k); out.push({ ...c, why }); };
+      for (const i of (Array.isArray(ai.picks) ? ai.picks : []).slice(0, 3)) if (Number.isInteger(i) && list[i]) add(list[i], '사진과 맞음');
+      // 간판 글자로 근처를 다시 찾는다(업종 분류가 없는 옷가게·미용실 같은 곳도 찾게)
+      if (sign.length >= 2) {
+        const j = await kakao('search/keyword', { query: sign, x: String(x), y: String(y), radius: '500', sort: 'distance', size: '5' }).catch(() => null);
+        for (const d of (j && j.documents) || []) add(pick(d), '간판 글자');
+      }
+      for (const c of list.slice(0, 8)) add(c, '가까운 곳');
+      return reply(200, { sign, kind: kinds.includes(ai.kind) ? ai.kind : '', places: out.slice(0, 15).map(({ id, ...c }) => c) });
     }
 
     /* 사진으로 항목 채우기. 사진은 저장하지 않고 바로 넘기며, 눈으로 확인할 수 있는 항목만 고르게 한다.
