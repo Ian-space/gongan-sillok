@@ -4706,8 +4706,8 @@ function renderAdd(){
     const go = el('button','btn','찾기'); go.type = 'submit';
     f.append(q, go); f.addEventListener('submit', e => { e.preventDefault(); searchPlaces(q.value); });
     body.appendChild(f);
-    // 이름 대신 사진+위치로 찾기
-    if (ROUTE_PROXY) {
+    // 이름 대신 사진+위치로 찾기 (개인정보처리방침 11/13 시행분이라 그날부터 보인다)
+    if (ROUTE_PROXY && findsOpen()) {
       const pin = el('input'); pin.type = 'file'; pin.accept = 'image/*'; pin.hidden = true;
       pin.addEventListener('change', () => { const file = pin.files && pin.files[0]; if (file) photoPlaceSearch(file); });
       const pb = el('button','add-photofind'); pb.type = 'button';
