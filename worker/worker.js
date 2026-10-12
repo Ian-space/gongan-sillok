@@ -29,7 +29,7 @@
 //   POST /photoplace { image: base64 JPEG 1장, x, y }        → 사진+위치로 그 자리의 가게 후보(간판 글자, AI가 고른 곳, 가까운 곳) (로그인 필요)
 
 const ALLOWED_ORIGINS = ['https://ian-space.github.io', 'http://localhost:8765'];
-const VERSION = '2026-10-13.6'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
+const VERSION = '2026-10-13.7'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
 // 로그인 확인용 Supabase 주소와 공개 키(사이트 코드에도 있는 공개 값)
 const SUPABASE_URL = 'https://qktrghajroxddrbpwtvn.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_j-kp8YKsQTczGcsQX74OxA_mfI7DoZw';
@@ -327,18 +327,21 @@ async function handle(kind, input, { request, env, ctx, send, reply }) {
         };
         const [t1, t2] = await Promise.all([table(cur, 1), table(cur, 2)]);
         // 열차 번호로 맞춰 보기: 같은 번호의 열차가 0~6분 뒤 다음 역 시간표(같은 방향)에 있는 쪽
+        // 열차 번호는 하루에 여러 번 다시 쓰이기도 해서, 번호마다 시각 목록으로 두고 '몇 분 안에 뒤따라 나타나는지'로 본다
+        const byNo = rows => { const m = new Map(); for (const r of rows) if (r[3] && r[0]) (m.get(r[3]) || m.set(r[3], []).get(r[3])).push(key(r[0])); return m; };
+        const after = (m, r, lo, hi) => (m.get(r[3]) || []).some(t => t - key(r[0]) >= lo && t - key(r[0]) <= hi);
         const resolve = async () => {
           const [n1, n2] = await Promise.all([table(nxt, 1), table(nxt, 2)]);
-          const score = (a, b) => { const at = new Map(b.map(r => [r[3], key(r[0])])); let n = 0;
-            for (const r of a) { const t = at.get(r[3]); if (r[3] && t != null && t - key(r[0]) >= 0 && t - key(r[0]) <= 6) n++; } return n; };
+          const score = (a, b) => { const m = byNo(b); return a.filter(r => after(m, r, 0, 6)).length; };
           const s1 = score(t1, n1), s2 = score(t2, n2);
+          diag = { s1, s2 };
           if (Math.max(s1, s2) < 5 || s1 === s2) return null;
           const dir = s1 > s2 ? 1 : 2, rows = dir === 1 ? t1 : t2;
-          // 내리는 역까지 가는지도 열차 번호로: 그 열차가 내 역보다 뒤에 내리는 역 시간표에 있으면
+          // 내리는 역까지 가는지도 열차 번호로: 그 열차가 내 역을 떠나고 100분 안에 내리는 역 시간표(같은 방향)에 나타나면
           let reachBy = null;
           if (end) {
-            const at = new Map((await table(end, dir)).map(r => [r[3], key(r[0])]));
-            if (at.size) reachBy = r => at.has(r[3]) && at.get(r[3]) > key(r[0]);
+            const m = byNo(await table(end, dir));
+            if (m.size) reachBy = r => after(m, r, 1, 100);
           }
           return { rows, reach: reachBy };
         };
@@ -382,13 +385,16 @@ async function handle(kind, input, { request, env, ctx, send, reply }) {
           const score = (a, b) => { const bs = new Set(b.filter(r => r[0]).map(r => key(r[0]))); const as = a.filter(r => r[0]); if (as.length < 10) return 0;
             return as.filter(r => [1, 2, 3].some(k => bs.has(key(r[0]) + k))).length / as.length; };
           const s1 = score(t1, n1), s2 = score(t2, n2);
+          diag = { s1: +s1.toFixed(2), s2: +s2.toFixed(2), n: [t1.length, t2.length, n1.length, n2.length], ids: [cur, nxt] };
           if (Math.max(s1, s2) < 0.85 || Math.abs(s1 - s2) < 0.2) return null;
           return { rows: s1 > s2 ? t1 : t2, reach: null };
         };
         return finish(t1, t2, cur, nxt, end, id => +((/(\d+)$/.exec(id) || [])[1] || 0), resolve);
       };
 
+      let diag = null; // 방향을 못 가렸을 때 원인 확인용(판별 점수만)
       const out = (await seoul()) || (await tago());
+      if (out && out.rough && diag) out.diag = diag;
       return reply(200, out || { none: true });
     }
     return reply(400, { error: 'bad type' });
