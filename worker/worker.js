@@ -29,7 +29,7 @@
 //   POST /photoplace { image: base64 JPEG 1장, x, y }        → 사진+위치로 그 자리의 가게 후보(간판 글자, AI가 고른 곳, 가까운 곳) (로그인 필요)
 
 const ALLOWED_ORIGINS = ['https://ian-space.github.io', 'http://localhost:8765'];
-const VERSION = '2026-10-13.4'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
+const VERSION = '2026-10-13.5'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
 // 로그인 확인용 Supabase 주소와 공개 키(사이트 코드에도 있는 공개 값)
 const SUPABASE_URL = 'https://qktrghajroxddrbpwtvn.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_j-kp8YKsQTczGcsQX74OxA_mfI7DoZw';
@@ -245,7 +245,7 @@ async function handle(kind, input, { request, env, ctx, send, reply }) {
      { type: 'bus', city: 'seoul', ars }   → 그 정류장에 서는 서울 버스들의 첫차·막차(차고지 출발 기준, 서울특별시_정류소정보조회) { list: [{ name, first, last }] }
      { type: 'bus', city: 'gg', route }    → 경기 버스 한 노선의 평일·토·일 첫차·막차(경기도_버스노선 조회) { wd, sat, sun: { first: [상행, 하행], last: [상행, 하행] } }
      { type: 'subway', station, line, lineName?, next, to?, week } → 그 역에서 그 방향(다음 역 쪽)으로 가는, 내리는 역(to)까지 가는 열차의 첫차·막차
-       (1~9호선은 서울 열린데이터광장 역별 시간표, 그 밖의 노선은 국토교통부 TAGO 지하철정보)
+       (1~9호선은 서울 열린데이터광장 역별 시간표, 그 밖의 노선은 국토교통부 TAGO 지하철정보). list: true면 times: [['HH:MM', 행선지]…]도
        line: 1~9, week: 1 평일·2 토요일·3 휴일 → { first, last, lastTo } */
   if (kind === 'sched') {
     const hm = v => { const m = /^(\d{1,2}):?(\d{2})/.exec(String(v || '').trim()); return m ? `${m[1].padStart(2, '0')}:${m[2]}` : ''; };
@@ -295,7 +295,9 @@ async function handle(kind, input, { request, env, ctx, send, reply }) {
         const rows = use.filter(r => r[0]).sort((a, b) => key(a[0]) - key(b[0]));
         if (!rows.length) return null;
         const lastRow = rows[rows.length - 1];
-        return { first: show(rows[0][0]), last: show(lastRow[0]), lastTo: both ? '' : lastRow[2], rough: both };
+        // list: 시간표(출발 시각, 행선지)도 함께. 하루 운행 순서대로, 같은 시각 겹침은 하나로. 방향을 못 가렸으면(대략) 주지 않는다
+        const times = input.list && !both ? [...new Map(rows.map(r => [r[0], [show(r[0]), r[2]]])).values()] : undefined;
+        return { first: show(rows[0][0]), last: show(lastRow[0]), lastTo: both ? '' : lastRow[2], rough: both, ...(times && { times }) };
       };
 
       // 1) 1~9호선: 서울 열린데이터광장 역별 시간표
