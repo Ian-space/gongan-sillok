@@ -3071,7 +3071,7 @@ function fromOdsay(path){
       ars: subway ? '' : (/^\d{5}$/.test(String(s.startArsID || '')) ? String(s.startArsID) : ''),
       // 실시간 도착 조회용: 버스는 서울(도시 코드 1000, 정류소 고유번호)·그 밖(경기 정류소 ID), 지하철은 노선 번호와 다음 역(방면)
       city: subway ? '' : (+s.startStationCityCode === 1000 ? 'seoul' : 'gg'), localId: subway ? '' : String(s.startLocalStationID || ''),
-      busNos: subway ? [] : (s.lane || []).map(l => String(l.busNo || '')).filter(Boolean), lineCode: subway ? +lane.subwayCode || 0 : 0,
+      busNos: subway ? [] : (s.lane || []).map(l => String(l.busNo || '')).filter(Boolean), lineCode: subway ? +lane.subwayCode || 0 : 0, lineName: subway ? cleanText(lane.name, 20) : '',
       shape: stops.length >= 2 ? stops.map(x => [+x.y, +x.x]) : [[+s.startY, +s.startX], [+s.endY, +s.endX]]
     };
   });
@@ -3620,7 +3620,7 @@ function schedNote(s, at){ // at: { min, weekday } 그 구간을 탈 무렵(한�
   const late = at.min < 180, wd = late ? (at.weekday + 6) % 7 : at.weekday; // 새벽은 전날 시간표
   const week = wd === 0 ? 3 : wd === 6 ? 2 : 1;
   const sub = s.mode === 'subway';
-  const body = sub ? (s.lineCode >= 1 && s.lineCode <= 9 && s.next1 ? { type: 'subway', station: s.from, line: String(s.lineCode), next: s.next1, to: s.to, week: String(week) } : null)
+  const body = sub ? (s.next1 ? { type: 'subway', station: s.from, line: s.lineCode >= 1 && s.lineCode <= 9 ? String(s.lineCode) : 'etc', lineName: s.lineName || '', next: s.next1, to: s.to, week: String(week) } : null)
     : s.city === 'seoul' && s.ars ? { type: 'bus', city: 'seoul', ars: s.ars }
     : s.city === 'gg' && s.routeId ? { type: 'bus', city: 'gg', route: s.routeId } : null;
   if (!body) return box;
