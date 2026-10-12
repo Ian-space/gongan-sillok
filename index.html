@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<script src="i18n.js?v=15"></script>
+<script src="i18n.js?v=16"></script>
 <title>공간실록 시제품</title>
 <meta name="description" content="입구 계단, 화장실, 소음, 콘센트처럼 다녀온 사람만 아는 사실을 평점 대신 남기고 함께 보는 공간 지도예요.">
 <!-- 카톡 등에 링크를 보냈을 때 미리보기 -->
@@ -3058,6 +3058,10 @@ function fromOdsay(path){
       color: subway ? (SUBWAY_COLORS[lane.subwayCode] || '#5B6475') : (BUS_COLORS[lane.type] || '#1F5EFF'),
       from: cleanText(s.startName, 30), to: cleanText(s.endName, 30), stops: s.stationCount || 0,
       pass: stops.slice(1, -1).map(x => cleanText(x.stationName, 30)).filter(Boolean), // 지나는 역·정류장 이름(타고 내리는 곳 빼고)
+      // 첫차·막차와 빠른하차용: 탄 다음 역(가는 방향), 내리기 직전 역(오는 방향), 경기 버스 노선 ID
+      next1: stops.length >= 2 ? cleanText(stops[1].stationName, 30) : cleanText(s.endName, 30),
+      prevTo: stops.length >= 2 ? cleanText(stops[stops.length - 2].stationName, 30) : cleanText(s.startName, 30),
+      routeId: subway ? '' : (/^\d{6,10}$/.test(String(lane.busLocalBlID || '')) ? String(lane.busLocalBlID) : ''),
       // 자세히: 같은 정류장에서 탈 수 있는 다른 버스, 배차 간격(분), 지하철 방면·들어갈/나갈 출구, 버스 정류장 번호(실시간 도착 조회용)
       alts: subway ? [] : (s.lane || []).slice(1, 6).map(l => busLabel(String(l.busNo || ''))).filter(Boolean),
       interval: +s.intervalTime || 0, way: subway ? cleanText(s.way, 20) : '',
@@ -3598,6 +3602,68 @@ function elevNote(s, which){ // which: 'from'(타는 역) | 'to'(내리는 역)
   });
   return box;
 }
+// 첫차·막차(중계 서버 /sched): 지하철은 그 역·그 방향 시간표, 버스는 차고지 출발 기준(서울 정류소·경기 노선).
+// 그 구간을 탈 무렵(출발 시각 + 앞 구간에 걸린 시간)에 운행 시간이 아니면 알린다
+const schedCache = new Map();
+function schedFetch(body){
+  const k = JSON.stringify(body), hit = schedCache.get(k); if (hit) return hit;
+  const p = proxyPost('/sched', body).then(r => r.ok ? r.json() : null).catch(() => null);
+  schedCache.set(k, p); return p;
+}
+// 하루 운행 순서의 분(새벽 3시 전은 전날 밤의 연장: 00:46 → 24:46)
+const svcMin = hm => { const m = /^(\d\d):(\d\d)$/.exec(hm || ''); if (!m) return null; const h = +m[1]; return (h < 3 ? h + 24 : h) * 60 + +m[2]; };
+function schedNote(s, at){ // at: { min, weekday } 그 구간을 탈 무렵(한국 시각)
+  const box = el('span','t-elev'); box.hidden = true;
+  const late = at.min < 180, wd = late ? (at.weekday + 6) % 7 : at.weekday; // 새벽은 전날 시간표
+  const week = wd === 0 ? 3 : wd === 6 ? 2 : 1;
+  const sub = s.mode === 'subway';
+  const body = sub ? (s.lineCode >= 1 && s.lineCode <= 9 && s.next1 ? { type: 'subway', station: s.from, line: String(s.lineCode), next: s.next1, to: s.to, week: String(week) } : null)
+    : s.city === 'seoul' && s.ars ? { type: 'bus', city: 'seoul', ars: s.ars }
+    : s.city === 'gg' && s.routeId ? { type: 'bus', city: 'gg', route: s.routeId } : null;
+  if (!body) return box;
+  schedFetch(body).then(d => {
+    if (!d || d.none) return;
+    let first, last, slack = 0, tail = '';
+    if (sub) { first = d.first; last = d.last; tail = d.lastTo ? ` (${d.lastTo}행)` : d.rough ? ' (대략)' : ''; }
+    else if (body.city === 'seoul') {
+      const x = (d.list || []).find(x => x.name === s.raw); if (!x) return;
+      first = x.first; last = x.last; slack = 60; tail = ' · 차고지 출발 기준';
+    } else {
+      // 경기 버스: 상행·하행 중 어느 쪽인지 몰라서 넓게(이른 첫차, 늦은 막차)
+      const w = d[week === 1 ? 'wd' : week === 2 ? 'sat' : 'sun'] || d.wd; if (!w) return;
+      const fs = w.first.filter(v => svcMin(v) != null), ls = w.last.filter(v => svcMin(v) != null); if (!fs.length || !ls.length) return;
+      first = fs.sort((a, b) => svcMin(a) - svcMin(b))[0]; last = ls.sort((a, b) => svcMin(b) - svcMin(a))[0]; slack = 60; tail = ' · 차고지 출발 기준';
+    }
+    const f = svcMin(first), l = svcMin(last); if (f == null || l == null) return;
+    const now = late ? at.min + 1440 : at.min;
+    const off = now < f || now > l + slack, soon = !off && sub && l - now <= 30;
+    box.textContent = `첫차 ${first} · 막차 ${last}${tail}${off ? ' · 이 시각엔 운행하지 않아요' : soon ? ` · 막차까지 ${l - now}분` : ''}`;
+    box.classList.toggle('warn', off || soon);
+    box.hidden = false;
+  });
+  return box;
+}
+// 빠른하차(중계 서버 /fstexit, 서울교통공사 1~8호선): 내리는 역에서 엘리베이터·에스컬레이터·계단과 가까운 문 번호.
+// 자료는 방면(다음 역)별이라, 오는 방향(내리기 직전 역) 쪽 방면은 뺀다
+const fstCache = new Map();
+function fastExitNote(s){
+  const box = el('span','t-elev'); box.hidden = true;
+  if (!(s.lineCode >= 1 && s.lineCode <= 8)) return box;
+  const nm = v => String(v || '').replace(/\(.*\)$/, '').replace(/역$/, '').trim(), station = nm(s.to), prev = nm(s.prevTo);
+  if (!fstCache.has(station)) fstCache.set(station, proxyPost('/fstexit', { station }).then(r => r.ok ? r.json() : null).catch(() => null));
+  fstCache.get(station).then(d => {
+    const rows = ((d && d.list) || []).filter(x => x.line === `${s.lineCode}호선` && x.dir !== prev);
+    if (!rows.length) return;
+    const parts = ['엘리베이터', '에스컬레이터', '계단'].map(f => {
+      const doors = [...new Set(rows.filter(x => x.fac === f).map(x => x.door).filter(Boolean))].slice(0, 3);
+      return doors.length ? `${f} ${doors.join(', ')}` : '';
+    }).filter(Boolean);
+    if (!parts.length) return;
+    box.textContent = `빠른하차 · ${parts.join(' · ')}`;
+    box.hidden = false;
+  });
+  return box;
+}
 // 고른 경로의 단계: 걷기(분·거리) → 지하철(방면, 몇 개 역·몇 분, 배차, 들어갈·나갈 출구) / 버스(같이 탈 수 있는 버스, 몇 정류장·몇 분, 배차, 정류장 번호) → … → 도착
 function routeSteps(r){
   const ol = el('ol','d-tsteps');
@@ -3637,7 +3703,11 @@ function routeSteps(r){
     // 실시간 도착(ODsay 경로에서 첫 탈것만: 지금 탈 것이라서. 갈아탈 것은 그때 가서 바뀌므로 배차 간격만)
     if (r.source === 'odsay' && !state.departAt && !r.off && i === r.segs.findIndex(x => x.mode !== 'walk')) li.append(el('br'), liveArrival(s));
     // 지하철에서 내려 걸어가야 하면 나갈 출구를 눈에 띄게
+    // 첫차·막차: 이 구간을 탈 무렵 = 출발 시각 + 앞 구간들에 걸린 시간
+    const base = routeNow(), off = r.segs.slice(0, i).reduce((a, x) => a + (x.minutes || 0), 0), t = base.min + off;
+    li.appendChild(schedNote(s, { min: t % 1440, weekday: (base.weekday + Math.floor(t / 1440)) % 7 }));
     if (sub && s.outExit) li.append(el('br'), el('span','t-exit', `${s.to}역 ${s.outExit}번 출구로 나가기`));
+    if (sub) li.appendChild(fastExitNote(s));
     // 지하철역 엘리베이터(타는 역·내리는 역): 휠체어·유아차로 갈 수 있는지
     if (sub) li.append(elevNote(s, 'from'), elevNote(s, 'to'));
     ol.appendChild(li);
