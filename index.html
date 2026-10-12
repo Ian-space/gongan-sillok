@@ -3645,8 +3645,16 @@ function schedNote(s, at){ // at: { min, weekday } 그 구간을 탈 무렵(한�
   if (!body) return box;
   schedFetch(body).then(d => {
     if (!d || d.none) return;
-    let first, last, slack = 0, tail = '';
-    if (sub) { first = d.first; last = d.last; tail = (d.lastTo ? ` (${d.lastTo}행)` : d.rough ? ' (대략)' : '') + (d.unsure ? ' · 내리는 역까지 가는지 확인 필요' : ''); }
+    let first, last, slack = 0, tail = '', times = null;
+    if (sub) {
+      // 시간표가 있으면 경로의 지나는 역에서 끝나는 열차(내리는 역까지 안 가는 열차)를 빼고 첫차·막차를 다시 고른다
+      times = Array.isArray(d.times) && d.times.length ? d.times : null;
+      const nm = v => String(v || '').replace(/\(.*\)$/, '').replace(/역$/, '').trim(), pass = new Set((s.pass || []).map(nm));
+      if (times && pass.size) { const ok = times.filter(([, to]) => !pass.has(nm(to))); if (ok.length) times = ok; }
+      const lastTo = times ? times[times.length - 1][1] : d.lastTo;
+      first = times ? times[0][0] : d.first; last = times ? times[times.length - 1][0] : d.last;
+      tail = (lastTo ? ` (${lastTo}행)` : d.rough ? ' (대략)' : '') + (d.unsure && !pass.size ? ' · 내리는 역까지 가는지 확인 필요' : '');
+    }
     else if (body.city === 'seoul') {
       // 경기 버스는 서울 자료에 지역 이름이 붙어 있다('30' → '30하남')
       const list = d.list || [], x = list.find(x => x.name === s.raw) || list.find(x => x.name.startsWith(s.raw) && /^[가-힣]+$/.test(x.name.slice(s.raw.length)));
@@ -3662,7 +3670,7 @@ function schedNote(s, at){ // at: { min, weekday } 그 구간을 탈 무렵(한�
     const now = late ? at.min + 1440 : at.min;
     const off = now < f || now > l + slack, soon = !off && sub && l - now <= 30;
     box.textContent = `첫차 ${first} · 막차 ${last}${tail}${off ? ' · 이 시각엔 운행하지 않아요' : soon ? ` · 막차까지 ${l - now}분` : ''}`;
-    if (sub && Array.isArray(d.times) && d.times.length) box.appendChild(nextTrains(d.times, now));
+    if (sub && times) box.appendChild(nextTrains(times, now));
     box.classList.toggle('warn', off || soon);
     box.hidden = false;
   });

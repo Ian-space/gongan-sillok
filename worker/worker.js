@@ -29,7 +29,7 @@
 //   POST /photoplace { image: base64 JPEG 1장, x, y }        → 사진+위치로 그 자리의 가게 후보(간판 글자, AI가 고른 곳, 가까운 곳) (로그인 필요)
 
 const ALLOWED_ORIGINS = ['https://ian-space.github.io', 'http://localhost:8765'];
-const VERSION = '2026-10-13.8'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
+const VERSION = '2026-10-13.9'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
 // 로그인 확인용 Supabase 주소와 공개 키(사이트 코드에도 있는 공개 값)
 const SUPABASE_URL = 'https://qktrghajroxddrbpwtvn.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_j-kp8YKsQTczGcsQX74OxA_mfI7DoZw';
@@ -380,13 +380,20 @@ async function handle(kind, input, { request, env, ctx, send, reply }) {
           return t ? JSON.parse(t) : [];
         };
         const [t1, t2] = await Promise.all([table(cur, 'U'), table(cur, 'D')]);
-        // 열차 번호가 없어서 시각으로 맞춰 보기: 내 역 출발마다 1~3분 뒤 다음 역(같은 방향) 출발이 있는 비율이 높은 쪽
+        const numOf = id => +((/(\d+)$/.exec(id) || [])[1] || 0), want = Math.sign(numOf(nxt) - numOf(cur));
+        // 1) 종착역 이름으로: 방향마다 가장 많은 종착역을 같은 노선의 역 ID로 바꿔, 다음 역과 같은 쪽에 있는 방향
+        // 2) 그래도 안 되면 시각으로 맞춰 보기(열차 번호가 없어서): 내 역 출발마다 1~3분 뒤 다음 역(같은 방향) 출발이 있는 비율이 높은 쪽
         const resolve = async () => {
+          const term = rows => { const c = new Map(); for (const r of rows) if (r[2]) c.set(r[2], (c.get(r[2]) || 0) + 1); return ([...c].sort((p, q) => q[1] - p[1])[0] || [''])[0]; };
+          const idOf = async nm => nm ? ((await ids(stName(nm))).find(([r]) => r === route) || [])[1] || '' : '';
+          const [e1, e2] = await Promise.all([idOf(term(t1)), idOf(term(t2))]);
+          const d1 = e1 ? Math.sign(numOf(e1) - numOf(cur)) : 0, d2 = e2 ? Math.sign(numOf(e2) - numOf(cur)) : 0;
+          if (want && d1 && d2 && d1 !== d2) return { rows: d1 === want ? t1 : t2, reach: null };
           const [n1, n2] = await Promise.all([table(nxt, 'U'), table(nxt, 'D')]);
           const score = (a, b) => { const bs = new Set(b.filter(r => r[0]).map(r => key(r[0]))); const as = a.filter(r => r[0]); if (as.length < 10) return 0;
             return as.filter(r => [1, 2, 3].some(k => bs.has(key(r[0]) + k))).length / as.length; };
           const s1 = score(t1, n1), s2 = score(t2, n2);
-          diag = { s1: +s1.toFixed(2), s2: +s2.toFixed(2), n: [t1.length, t2.length, n1.length, n2.length], ids: [cur, nxt] };
+          diag = { s1: +s1.toFixed(2), s2: +s2.toFixed(2), ends: [term(t1), term(t2), e1, e2], ids: [cur, nxt] };
           if (Math.max(s1, s2) < 0.85 || Math.abs(s1 - s2) < 0.2) return null;
           return { rows: s1 > s2 ? t1 : t2, reach: null };
         };
