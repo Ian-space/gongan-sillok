@@ -27,7 +27,7 @@
 //   POST /photo    { images: [base64 JPEG, 최대 3장] }          → 사진에서 눈으로 확인되는 기록 항목 제안 (로그인 필요)
 
 const ALLOWED_ORIGINS = ['https://ian-space.github.io', 'http://localhost:8765'];
-const VERSION = '2026-10-12.13'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
+const VERSION = '2026-10-12.14'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
 // 로그인 확인용 Supabase 주소와 공개 키(사이트 코드에도 있는 공개 값)
 const SUPABASE_URL = 'https://qktrghajroxddrbpwtvn.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_j-kp8YKsQTczGcsQX74OxA_mfI7DoZw';
@@ -267,7 +267,7 @@ async function handle(kind, input, { request, env, ctx, send, reply }) {
     }
     if (input.type === 'subway') {
       const st = stName(input.station), nx = stName(input.next), line = String(input.line || ''), week = String(input.week || '1');
-      if (!st || !nx || st.length > 20 || nx.length > 20 || !/^[1-9]$/.test(line) || !/^[123]$/.test(week)) return reply(400, { error: 'bad subway' });
+      if (!st || !nx || st.length > 20 || nx.length > 20 || !/^([1-9]|[가-힣A-Za-z0-9]{2,10})$/.test(line) || !/^[123]$/.test(week)) return reply(400, { error: 'bad subway' });
       const sk = env.SEOUL_OPEN_KEY; if (!sk) return reply(503, { error: 'off' });
       const base = `http://openapi.seoul.go.kr:8088/${encodeURIComponent(sk)}/json`;
       // 역 이름 → 그 노선의 역 코드(30일 저장)
@@ -277,12 +277,13 @@ async function handle(kind, input, { request, env, ctx, send, reply }) {
           const j = await r.json().catch(() => null); const s = j && j.SearchInfoBySubwayNameService; if (!s) return null;
           return JSON.stringify((s.row || []).map(x => [String(x.LINE_NUM || ''), String(x.STATION_CD || '')]));
         });
-        const hit = t && JSON.parse(t).find(([l]) => l === `0${line}호선`);
+        const hit = t && JSON.parse(t).find(([l]) => l === (/^[1-9]$/.test(line) ? `0${line}호선` : line));
+        if (!hit && t) seen.push(...JSON.parse(t).map(([l]) => l));
         return hit ? hit[1] : '';
       };
-      const to = stName(input.to).slice(0, 20);
+      const to = stName(input.to).slice(0, 20), seen = []; // seen: 노선 이름이 안 맞을 때 그 역에 있는 노선 이름(확인용)
       const [cur, nxt, end] = await Promise.all([code(st), code(nx), to ? code(to) : '']);
-      if (!cur || !nxt) return reply(200, { none: true });
+      if (!cur || !nxt) return reply(200, { none: true, lines: [...new Set(seen)] });
       // 두 방향(1·2) 시간표 중 다음 역 쪽으로 가는 것: 역 코드가 노선을 따라 커지거나 작아지는 것을 이용한다(종착역 코드와 비교)
       const table = async dir => {
         const t = await edgeCached(`sch1:stt:${cur}:${week}:${dir}`, 86400, async () => {
