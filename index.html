@@ -1090,7 +1090,9 @@ const NAVER_CLIENT_ID = 'ffqv2bmvwg';
 /* ===== 설정: 처음 온 사람에게 사용법 안내를 한 번 보여 줄지. 빼려면 false ===== */
 const SHOW_TOUR = true;
 /* ===== 설정: 예시(가상) 장소 14곳을 보여 줄지. 실제 기록이 충분히 쌓이면 false로 바꾼다 ===== */
-const SHOW_SAMPLE = true;
+// 시제품 시절 기능: 예시(가상) 장소와 엑셀 불러오기. 실제 지도에 가짜 장소가 섞이지 않게, 일반 이용자에게 헷갈리지 않게 꺼 둔다(코드는 남겨 둔다)
+const SHOW_SAMPLE = false;
+const SHOW_IMPORT = false;
 /* ===== 설정: TMAP 경로 중계 서버 주소 (TMAP 키는 이 서버의 비밀 변수에만 있다, 코드는 worker/worker.js) ===== */
 const ROUTE_PROXY = 'https://gongan-sillok-route.spddlqj20.workers.dev';
 // 이용자 화면에서 난 스크립트 오류를 중계 서버 로그에 한 줄씩 남긴다(무엇이 어디서 깨졌는지만: 오류 문구·파일 줄·브라우저 종류).
@@ -5714,7 +5716,7 @@ function renderAuth(){
   if (!sb) { $('acctSep').hidden = true; return; }
   const local = !auth.user;
   $('btnMove').hidden = local || !localRecords().length; // 로그인했는데 이 브라우저에 옮기지 않은 기록이 남아 있으면
-  $('btnLoad').hidden = $('btnReset').hidden = !local; // 엑셀 불러오기·예시 되돌리기는 이 브라우저 저장용이라 로그인 중에는 숨긴다
+  $('btnLoad').hidden = $('btnReset').hidden = !local || !SHOW_IMPORT; // 엑셀 불러오기·예시 되돌리기는 이 브라우저 저장용이라 로그인 중에는 숨긴다(지금은 꺼 둠)
   $('acctSep').hidden = !auth.ready || (!local && $('btnInstall').hidden);
   if (!auth.ready) return;
   const item = (label, fn) => { const b = el('button','acct-item', label); b.type = 'button'; b.addEventListener('click', () => { closeAcct(); fn(); }); return b; };
@@ -6355,6 +6357,8 @@ buildFilters(); bindSheets();
   const fb = critButton(() => { const open = fc.hidden; if (open && !fc.firstChild) fc.appendChild(critPanel()); fc.hidden = !open; fb.setAttribute('aria-expanded', String(open)); });
   $('filterTitle').appendChild(fb);
 }
+// 엑셀 양식 안내·보안 처리 안내(목록 아래)는 엑셀 불러오기를 켤 때만
+document.querySelector('.notes').hidden = !SHOW_IMPORT;
 $('btnLoad').addEventListener('click', () => { closeAcct(); $('file').click(); });
 $('file').addEventListener('change', e => { const f = e.target.files && e.target.files[0]; if (f) handleFile(f); e.target.value = ''; });
 $('btnAdd').addEventListener('click', () => startAdd());
