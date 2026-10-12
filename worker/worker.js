@@ -23,7 +23,7 @@
 //   POST /photo    { images: [base64 JPEG, 최대 3장] }          → 사진에서 눈으로 확인되는 기록 항목 제안 (로그인 필요)
 
 const ALLOWED_ORIGINS = ['https://ian-space.github.io', 'http://localhost:8765'];
-const VERSION = '2026-10-12.8'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
+const VERSION = '2026-10-12.9'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
 // 로그인 확인용 Supabase 주소와 공개 키(사이트 코드에도 있는 공개 값)
 const SUPABASE_URL = 'https://qktrghajroxddrbpwtvn.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_j-kp8YKsQTczGcsQX74OxA_mfI7DoZw';
@@ -87,7 +87,7 @@ const TMAP = {
   transit: 'https://apis.openapi.sk.com/transit/routes',
   walk: 'https://apis.openapi.sk.com/tmap/routes/pedestrian?version=1&format=json',
 };
-const PLACE_KINDS = ['search', 'nearby', 'station', 'addr', 'apt', 'bldreg', 'arrive', 'elev', 'odsay'];
+const PLACE_KINDS = ['search', 'nearby', 'station', 'addr', 'apt', 'bldreg', 'arrive', 'elev', 'odsay', 'probe'];
 const ODSAY_WEB_KEY = 'vpfLJcZCiAwV7L5fibSQjA'; // 사이트(index.html)에도 공개된 웹 키. 따로 넣은 비밀값 ODSAY_API_KEY가 있으면 그걸 쓴다
 const AI_KINDS = ['intent', 'photo'];
 
@@ -189,6 +189,23 @@ async function handle(kind, input, { request, env, ctx, send, reply }) {
       ctx.waitUntil(edge.put(ck, new Response(text, { headers: { 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=86400' } })).catch(() => {}));
     }
     return send(text, 200, { 'X-Cache': 'MISS' });
+  }
+
+  /* 임시 확인용(PROBE): 새 API 응답 모양 보기. 확인 뒤 지운다 */
+  if (kind === 'probe') {
+    const gk = /%[0-9A-Fa-f]{2}/.test(env.DATA_GO_KR_KEY || '') ? decodeURIComponent(env.DATA_GO_KR_KEY) : (env.DATA_GO_KR_KEY || '');
+    const sk = env.SEOUL_OPEN_KEY || '', e = encodeURIComponent, a = String(input.a || ''), b = String(input.b || ''), c = String(input.c || '');
+    const U = {
+      fst: `https://apis.data.go.kr/B553766/inout/getFstExit?serviceKey=${e(gk)}&pageNo=1&numOfRows=${e(b || '5')}&dataType=JSON${a}`,
+      sbr: `http://ws.bus.go.kr/api/rest/busRouteInfo/getRouteInfo?serviceKey=${e(gk)}&busRouteId=${e(a)}&resultType=json`,
+      gbr: `https://apis.data.go.kr/6410000/busrouteservice/v2/getBusRouteInfoItemv2?serviceKey=${e(gk)}&routeId=${e(a)}&format=json`,
+      stn: `http://openapi.seoul.go.kr:8088/${e(sk)}/json/SearchInfoBySubwayNameService/1/10/${e(a)}`,
+      stt: `http://openapi.seoul.go.kr:8088/${e(sk)}/json/SearchSTNTimeTableByIDService/1/${e(c || '5')}/${e(a)}/${e(b)}`,
+    }[String(input.u)];
+    if (!U) return reply(400, { error: 'u' });
+    const r = await fetch(U, { signal: AbortSignal.timeout(8000) }); let t = await r.text();
+    for (const k of [gk, sk, e(gk), e(sk)].filter(x => x && x.length > 8)) t = t.split(k).join('KEY');
+    return reply(200, { status: r.status, hasSeoulKey: !!sk, body: t.slice(0, 6000) });
   }
 
   /* 카카오 장소 검색 */
