@@ -27,7 +27,7 @@
 //   POST /photo    { images: [base64 JPEG, 최대 3장] }          → 사진에서 눈으로 확인되는 기록 항목 제안 (로그인 필요)
 
 const ALLOWED_ORIGINS = ['https://ian-space.github.io', 'http://localhost:8765'];
-const VERSION = '2026-10-12.12'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
+const VERSION = '2026-10-12.13'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
 // 로그인 확인용 Supabase 주소와 공개 키(사이트 코드에도 있는 공개 값)
 const SUPABASE_URL = 'https://qktrghajroxddrbpwtvn.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_j-kp8YKsQTczGcsQX74OxA_mfI7DoZw';
@@ -237,7 +237,7 @@ async function handle(kind, input, { request, env, ctx, send, reply }) {
   /* 첫차·막차
      { type: 'bus', city: 'seoul', ars }   → 그 정류장에 서는 서울 버스들의 첫차·막차(차고지 출발 기준, 서울특별시_정류소정보조회) { list: [{ name, first, last }] }
      { type: 'bus', city: 'gg', route }    → 경기 버스 한 노선의 평일·토·일 첫차·막차(경기도_버스노선 조회) { wd, sat, sun: { first: [상행, 하행], last: [상행, 하행] } }
-     { type: 'subway', station, line, next, week } → 그 역에서 그 방향(다음 역 쪽)으로 가는 열차의 첫차·막차(서울 열린데이터광장 역별 시간표)
+     { type: 'subway', station, line, next, to?, week } → 그 역에서 그 방향(다음 역 쪽)으로 가는, 내리는 역(to)까지 가는 열차의 첫차·막차(서울 열린데이터광장 역별 시간표)
        line: 1~9, week: 1 평일·2 토요일·3 휴일 → { first, last, lastTo } */
   if (kind === 'sched') {
     const hm = v => { const m = /^(\d{1,2}):?(\d{2})/.exec(String(v || '').trim()); return m ? `${m[1].padStart(2, '0')}:${m[2]}` : ''; };
@@ -280,7 +280,8 @@ async function handle(kind, input, { request, env, ctx, send, reply }) {
         const hit = t && JSON.parse(t).find(([l]) => l === `0${line}호선`);
         return hit ? hit[1] : '';
       };
-      const [cur, nxt] = await Promise.all([code(st), code(nx)]);
+      const to = stName(input.to).slice(0, 20);
+      const [cur, nxt, end] = await Promise.all([code(st), code(nx), to ? code(to) : '']);
       if (!cur || !nxt) return reply(200, { none: true });
       // 두 방향(1·2) 시간표 중 다음 역 쪽으로 가는 것: 역 코드가 노선을 따라 커지거나 작아지는 것을 이용한다(종착역 코드와 비교)
       const table = async dir => {
@@ -294,14 +295,20 @@ async function handle(kind, input, { request, env, ctx, send, reply }) {
       const [t1, t2] = await Promise.all([table(1), table(2)]);
       const want = Math.sign(+nxt - +cur);
       const side = rows => Math.sign(rows.reduce((a, [, d]) => a + Math.sign(+d - +cur), 0));
+      // 2호선 순환처럼 방향을 못 가리면 두 방향을 합친다(가장 이른 첫차·가장 늦은 막차, 대략)
       const pick = side(t1) === want && side(t2) !== want ? t1 : side(t2) === want && side(t1) !== want ? t2 : null;
-      if (!pick || !pick.length) return reply(200, { none: true });
-      // 하루 운행 순서로(새벽 3시 전은 전날 밤의 연장)
+      const both = !pick;
+      // 내리는 역까지 가는 열차만(중간 역에서 끝나는 열차는 막차가 아니다): 종착역이 내리는 역이거나 그 너머
+      const reach = r => !end || r[1] === end || Math.sign(+r[1] - +end) === want;
+      const far = pick ? pick.filter(reach) : [];
+      const use = pick ? (far.length ? far : pick) : [...t1, ...t2]; // 갈래가 있는 노선(5호선 마천·상일동)에서 다 걸러지면 거르지 않는다
+      // 하루 운행 순서로(새벽 3시 전은 전날 밤의 연장). 시간표의 '24:46'은 '00:46'으로 보여 준다
       const key = v => { const [h, m] = v.split(':').map(Number); return (h < 3 ? h + 24 : h) * 60 + m; };
-      const rows = pick.filter(r => r[0]).sort((a, b) => key(a[0]) - key(b[0]));
+      const show = v => { const [h, m] = v.split(':'); return `${String(+h % 24).padStart(2, '0')}:${m}`; };
+      const rows = use.filter(r => r[0]).sort((a, b) => key(a[0]) - key(b[0]));
       if (!rows.length) return reply(200, { none: true });
       const lastRow = rows[rows.length - 1];
-      return reply(200, { first: rows[0][0], last: lastRow[0], lastTo: lastRow[2] });
+      return reply(200, { first: show(rows[0][0]), last: show(lastRow[0]), lastTo: both ? '' : lastRow[2], rough: both });
     }
     return reply(400, { error: 'bad type' });
   }
