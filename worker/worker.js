@@ -29,7 +29,7 @@
 //   POST /photoplace { image: base64 JPEG 1장, x, y }        → 사진+위치로 그 자리의 가게 후보(간판 글자, AI가 고른 곳, 가까운 곳) (로그인 필요)
 
 const ALLOWED_ORIGINS = ['https://ian-space.github.io', 'http://localhost:8765'];
-const VERSION = '2026-10-13.7'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
+const VERSION = '2026-10-13.8'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
 // 로그인 확인용 Supabase 주소와 공개 키(사이트 코드에도 있는 공개 값)
 const SUPABASE_URL = 'https://qktrghajroxddrbpwtvn.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_j-kp8YKsQTczGcsQX74OxA_mfI7DoZw';
@@ -289,17 +289,18 @@ async function handle(kind, input, { request, env, ctx, send, reply }) {
         let pick = side(t1) === want && side(t2) !== want ? t1 : side(t2) === want && side(t1) !== want ? t2 : null;
         // 내리는 역까지 가는 열차만(중간 역에서 끝나는 열차는 막차가 아니다): 종착역이 내리는 역이거나 그 너머
         let reach = r => !end || r[1] === end || Math.sign(num(r[1]) - num(end)) === want;
-        if (!pick && resolve) { const got = await resolve().catch(() => null); if (got) { pick = got.rows; reach = got.reach || (() => true); } }
+        if (!pick && resolve) { const got = await resolve().catch(e => { diag = { err: e instanceof Response ? 'reply ' + e.status : String((e && e.message) || e).slice(0, 120) }; return null; }); if (got) { pick = got.rows; reach = got.reach || (() => true); } }
         // 그래도 못 가리면 두 방향을 합친다(가장 이른 첫차·가장 늦은 막차, 대략)
         const both = !pick;
         const far = pick ? pick.filter(reach) : [];
-        const use = pick ? (far.length ? far : pick) : [...t1, ...t2]; // 갈래가 있는 노선(5호선 마천·상일동)에서 다 걸러지면 거르지 않는다
+        // 다 걸러지면(갈래가 있는 노선, 2호선처럼 열차 번호가 중간에 바뀌는 노선) 거르지 않고, 내리는 역까지 가는지 확인 못 했다고 알린다
+        const use = pick ? (far.length ? far : pick) : [...t1, ...t2];
         const rows = use.filter(r => r[0]).sort((a, b) => key(a[0]) - key(b[0]));
         if (!rows.length) return null;
         const lastRow = rows[rows.length - 1];
         // list: 시간표(출발 시각, 행선지)도 함께. 하루 운행 순서대로, 같은 시각 겹침은 하나로. 방향을 못 가렸으면(대략) 주지 않는다
         const times = input.list && !both ? [...new Map(rows.map(r => [r[0], [show(r[0]), r[2]]])).values()] : undefined;
-        return { first: show(rows[0][0]), last: show(lastRow[0]), lastTo: both ? '' : lastRow[2], rough: both, ...(times && { times }) };
+        return { first: show(rows[0][0]), last: show(lastRow[0]), lastTo: both ? '' : lastRow[2], rough: both, ...(pick && end && !far.length && { unsure: true }), ...(times && { times }) };
       };
 
       // 1) 1~9호선: 서울 열린데이터광장 역별 시간표
