@@ -416,7 +416,7 @@ window.GS_EN = {
   '들어올 때 순서예요. 나갈 때는 아래에서 위로 거꾸로 가면 돼요.': 'This is the way in. To leave, follow it from the bottom up.', '내리는 역': 'Getting off', '타는 역': 'Getting on', '승강장 엘리베이터 있음': 'Platform elevator', '지상으로 가는 엘리베이터 있음': 'Elevator to street level',
   '버스정류장': 'Bus stop', '실시간 도착': 'Live arrivals', '도착 정보 없음': 'no arrival info', '교통 > 버스정류장': 'Transport > Bus stop',
   '정류장: 국토교통부 전국 버스정류장 위치정보 · 도착: 서울특별시 버스도착정보': 'Stops: MOLIT national bus stop data · Arrivals: Seoul bus arrival info', '정류장: 국토교통부 전국 버스정류장 위치정보 · 도착: 경기도 버스도착정보': 'Stops: MOLIT national bus stop data · Arrivals: Gyeonggi bus arrival info',
-  '출발 시각': 'Departure time', '내리는 역까지 가는지 확인 필요': 'check it runs to your stop', '시간표': 'Timetable', '이 시각 이후 열차가 없어요': 'No more trains after this time', '차고지 출발 기준': 'from the depot', '이 시각엔 운행하지 않아요': 'Not running at this time', '빠른하차': 'Quick exit', '지금': 'Now', '지금 출발': 'Leave now', '오늘': 'Today', '내일': 'Tomorrow', '모레': 'In 2 days', '날짜 앞으로': 'Previous day', '날짜 뒤로': 'Next day', '시 앞으로': 'Earlier hour', '시 뒤로': 'Later hour', '분 앞으로': 'Earlier minutes', '분 뒤로': 'Later minutes',
+  '이동': 'Access', '출발 시각': 'Departure time', '내리는 역까지 가는지 확인 필요': 'check it runs to your stop', '시간표': 'Timetable', '이 시각 이후 열차가 없어요': 'No more trains after this time', '차고지 출발 기준': 'from the depot', '이 시각엔 운행하지 않아요': 'Not running at this time', '빠른하차': 'Quick exit', '지금': 'Now', '지금 출발': 'Leave now', '오늘': 'Today', '내일': 'Tomorrow', '모레': 'In 2 days', '날짜 앞으로': 'Previous day', '날짜 뒤로': 'Next day', '시 앞으로': 'Earlier hour', '시 뒤로': 'Later hour', '분 앞으로': 'Earlier minutes', '분 뒤로': 'Later minutes',
   '원목·합판': 'Solid wood · plywood', '노출 콘크리트': 'Exposed concrete', '적벽돌': 'Red brick', '대리석·석재': 'Marble · stone', '통창·유리벽': 'Big windows · glass walls', '철제·스테인리스': 'Steel · stainless', '흰 벽 등': 'White walls, etc.',
   '엑셀 양식 안내': 'Excel format guide', '필수 열': 'Required columns', '선택 열': 'Optional columns', '이 페이지의 보안 처리': 'How this page handles security',
   '이름이 "(예시)"로 시작하는 줄은 건너뜁니다': 'Rows whose name starts with "(예시)" are skipped',
@@ -435,6 +435,11 @@ window.GS_EN = {
 
 // 숫자가 들어간 문장: [정규식, 바꾸는 함수(일치, tr)]. 위에서부터 처음 맞는 것 하나만 쓴다
 window.GS_EN_RULES = [
+  // 장소 화면 '이동' 줄
+  [/^(.+)\(건물\)$/, (m, tr) => `${tr(m[1])} (building)`],
+  [/^(입구 턱·계단|경사로) (\d+)cm$/, (m, tr) => `${tr(m[1])} ${m[2]} cm`],
+  [/^(.+)역 엘리베이터 (.+)번 출구$/, m => `${m[1]} Stn. elevator: Exit ${m[2].split('·').join(', ')}`],
+  [/^(\d{4})\.(\d{2}) · 1년 넘음$/, m => `${m[1]}.${m[2]} · over 1 yr`],
   // 지하철역 엘리베이터
   [/^(\d+(?:-\d)?)번 출구 엘리베이터 있음$/, m => `Exit ${m[1]} has an elevator`],
   [/^(\d+(?:-\d)?)번 출구엔 엘리베이터 없음$/, m => `No elevator at Exit ${m[1]}`],

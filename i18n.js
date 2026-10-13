@@ -20,7 +20,7 @@
   if (lang !== 'en') return;
   // 영어 사전(i18n-en.js)은 영어 화면일 때만 받는다. 사전 끝에서 GS_I18N_START()를 부른다
   window.GS_I18N_START = start;
-  document.write('<script src="i18n-en.js?v=25"></script>');
+  document.write('<script src="i18n-en.js?v=26"></script>');
   function start(){
   document.documentElement.lang = 'en';
 

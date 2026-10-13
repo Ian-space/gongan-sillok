@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<script src="i18n.js?v=25"></script>
+<script src="i18n.js?v=26"></script>
 <title>공간실록 시제품</title>
 <meta name="description" content="입구 계단, 화장실, 소음, 콘센트처럼 다녀온 사람만 아는 사실을 평점 대신 남기고 함께 보는 공간 지도예요.">
 <!-- 카톡 등에 링크를 보냈을 때 미리보기 -->
@@ -730,14 +730,18 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
 .photo.missing{display:none}
 .photo.small{width:84px;flex:none}
 .photo-strip{display:flex;gap:6px;margin-top:6px;overflow-x:auto;scrollbar-width:none}
-/* 상세 맨 위 큰 사진: 옆으로 밀어 넘긴다 */
-.d-hero{position:relative;margin:10px -18px 4px}
-.d-hero-strip{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none;overscroll-behavior-x:contain}
-.d-hero-strip::-webkit-scrollbar,.photo-strip::-webkit-scrollbar{display:none}
-.photo.hero{flex:0 0 100%;border-radius:0;aspect-ratio:auto;height:min(260px,34dvh);scroll-snap-align:start}
-.d-hero-n{position:absolute;right:12px;bottom:10px;padding:2px 9px;border-radius:999px;background:rgba(15,20,40,.6);color:#FFFFFF;font-size:12px;font-weight:600;pointer-events:none}
-.d-hero-date{position:absolute;left:12px;bottom:10px;padding:2px 9px;border-radius:999px;background:rgba(15,20,40,.6);color:#FFFFFF;font-size:12px;font-weight:600;pointer-events:none}
-.d-hero-date[hidden]{display:none}
+/* 상세의 사진: 사실을 가리지 않게 작은 사진을 나란히(한 화면에 3장쯤). 옆으로 밀고, 누르면 화면 가득 */
+.d-thumbs{display:flex;gap:6px;margin:10px -18px 4px;padding:0 18px;overflow-x:auto;scroll-snap-type:x proximity;scroll-padding:0 18px;scrollbar-width:none;overscroll-behavior-x:contain}
+.d-thumbs::-webkit-scrollbar,.photo-strip::-webkit-scrollbar{display:none}
+.photo.thumb{flex:0 0 calc((100% - 12px) / 3);aspect-ratio:auto;height:110px;scroll-snap-align:start}
+.photo.thumb .ph-date{position:absolute;left:6px;bottom:6px;padding:1px 6px;border-radius:999px;background:rgba(15,20,40,.68);color:#FFFFFF;font-size:11px;font-weight:600;pointer-events:none}
+.photo.thumb .ph-date.old{background:rgba(150,40,30,.85)}
+/* 이동에 필요한 사실 한 줄(입구·층 이동·화장실·가까운 역 엘리베이터 출구) */
+.d-access{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 0;margin:10px 0 0;padding:8px 10px;border-radius:8px;background:var(--blue-soft);font-size:13px;color:var(--ink)}
+.d-access[hidden]{display:none}
+.d-access b{margin-right:8px;color:var(--blue);font-size:12px}
+.d-access span+span::before{content:"·";margin:0 6px;color:var(--muted)}
+.d-access .lv2{color:var(--seal-ink);font-weight:600}
 /* 기록 창의 사진 고르기 */
 .photo-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:8px;width:100%}
 .photo-cell{position:relative}
@@ -747,7 +751,6 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
 .photo-kind{display:block;width:100%;margin-top:4px;padding:4px 4px 4px 8px;text-overflow:ellipsis;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--ink);font:inherit;font-size:16px}
 .photo-kind.unset{color:var(--muted)}
 .photo .ph-kind{position:absolute;left:6px;top:6px;padding:1px 6px;border-radius:999px;background:rgba(15,20,40,.68);color:#FFFFFF;font-size:11px;font-weight:600;pointer-events:none}
-.photo.hero .ph-kind{left:12px;top:10px;padding:2px 9px;font-size:12px;background:rgba(15,20,40,.6)}
 .photo-add{display:grid;place-items:center;align-content:center;gap:2px;aspect-ratio:1;border:1.5px dashed var(--line);border-radius:8px;background:transparent;color:var(--muted);font-size:12px;cursor:pointer}
 .photo-add b{font-size:24px;line-height:1;color:var(--blue)}
 .photo-pick{display:grid;gap:8px}
@@ -1912,31 +1915,50 @@ function renderDetail(){
   save.addEventListener('click', () => toggleSave(p));
   const acts = el('div','d-head-acts'); acts.append(save, share, close);
   head.append(t, acts); d.appendChild(head);
-  // 사진이 있으면 맨 위에 크게: 내 사진 먼저, 그다음 다른 사람 공개 기록의 사진. 옆으로 밀어 넘기고, 누르면 화면 가득
-  const photos = photosOf(p).slice(0, 20);
-  if (photos.length) {
-    const hero = el('div','d-hero'), strip = el('div','d-hero-strip');
-    photos.forEach((x, i) => strip.appendChild(photoImg(x.path, `${p.name} 사진 ${i + 1}`, 'hero', photos.map(y => y.path), i)));
-    hero.appendChild(strip);
-    // 사진마다 언제 본 모습인지(기록의 방문일). 접근성은 공사로 바뀌어서 1년이 넘으면 알린다
-    const dt = el('span','d-hero-date'), n = photos.length > 1 ? el('span','d-hero-n') : null;
-    const show = i => { dt.textContent = photoWhen(photos[i].date); dt.hidden = !dt.textContent; if (n) n.textContent = `${i + 1} / ${photos.length}`; };
-    hero.appendChild(dt); if (n) hero.appendChild(n);
-    show(0);
-    strip.addEventListener('scroll', () => show(Math.min(photos.length - 1, Math.round(strip.scrollLeft / Math.max(1, strip.clientWidth)))), { passive: true });
-    d.appendChild(hero);
-    fillPhotos(hero).then(() => { if (!hero.querySelector('.photo:not(.missing)')) hero.remove(); }); // 사진을 못 불러오면 빈 칸을 남기지 않는다
-  }
-  // 사실 한 줄: 기록된 값을 맨 위에 짧게 (좋음은 진하게, 보통은 연하게, 아쉬움은 회색)
-  if (!p.ext) {
-    const facts = Object.keys(ENUMS).filter(k => p[k]).map(k => ({ k, l: level(p, k) }));
-    if (facts.length) {
-      const row = el('div','d-facts');
-      for (const f of facts.slice(0, 8)) row.appendChild(el('span', 'd-fact lv' + (ENUMS[f.k].neutral ? 1 : f.l), FACT[f.k][f.l])); // 조명 색처럼 좋고 나쁨이 없는 값은 늘 '보통' 색
-      d.appendChild(row);
-      d.appendChild(similarBox(p, facts));
+  // 이동에 필요한 사실 한 줄: 입구(단차 cm)·층 이동·화장실. 가게에 없으면 같은 건물 기록에서, 그리고 가까운 역의 엘리베이터 출구(서울교통공사)
+  const ACCESS_TOP = ['entrance', 'floor', 'toilet'];
+  const acc = el('div','d-access'); acc.appendChild(el('b', null, '이동'));
+  {
+    const br = !p.building && p.type !== '건물' ? buildingRecFor(p) : null;
+    for (const k of ACCESS_TOP) {
+      const src = p[k] ? p : br && br[k] ? br : null; if (!src) continue;
+      const l = level(src, k), cm = k === 'entrance' && l > 0 && +src.stepCm > 0 ? ` ${+src.stepCm}cm` : '';
+      acc.appendChild(el('span', 'lv' + l, FACT[k][l] + cm + (src === br ? '(건물)' : '')));
     }
   }
+  acc.hidden = acc.children.length < 2;
+  d.appendChild(acc);
+  stationElevNote(p, acc);
+  // 사실 칩: 기록된 값을 짧게 (좋음은 진하게, 보통은 연하게, 아쉬움은 회색). 위 한 줄에 나온 값은 빼고
+  let facts = [];
+  if (!p.ext) {
+    facts = Object.keys(ENUMS).filter(k => p[k]).map(k => ({ k, l: level(p, k) }));
+    const rest = facts.filter(f => !ACCESS_TOP.includes(f.k));
+    if (rest.length) {
+      const row = el('div','d-facts');
+      for (const f of rest.slice(0, 8)) row.appendChild(el('span', 'd-fact lv' + (ENUMS[f.k].neutral ? 1 : f.l), FACT[f.k][f.l])); // 조명 색처럼 좋고 나쁨이 없는 값은 늘 '보통' 색
+      d.appendChild(row);
+    }
+  }
+  // 사진: 사실 아래에 작게 나란히(내 사진 먼저, 그다음 다른 사람 공개 기록의 사진). 옆으로 밀고, 누르면 화면 가득
+  const photos = photosOf(p).slice(0, 20);
+  if (photos.length) {
+    const strip = el('div','d-thumbs');
+    photos.forEach((x, i) => {
+      const b = photoImg(x.path, `${p.name} 사진 ${i + 1}`, 'thumb', photos.map(y => y.path), i);
+      // 언제 본 모습인지(기록의 방문일). 접근성은 공사로 바뀌어서 1년이 넘으면 알린다
+      const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(x.date || '');
+      if (m) {
+        const old = Date.now() - new Date(+m[1], +m[2] - 1, +m[3]).getTime() > 365 * 86400000;
+        const t = el('span', 'ph-date' + (old ? ' old' : ''), `${m[1]}.${m[2]}${old ? ' · 1년 넘음' : ''}`);
+        t.title = photoWhen(x.date); b.appendChild(t);
+      }
+      strip.appendChild(b);
+    });
+    d.appendChild(strip);
+    fillPhotos(strip).then(() => { strip.querySelectorAll('.photo.missing').forEach(x => x.remove()); if (!strip.children.length) strip.remove(); }); // 못 불러온 사진은 빈 칸을 남기지 않는다
+  }
+  if (facts.length) d.appendChild(similarBox(p, facts));
 
   const st = nearestStation(p);
   if (state.me || st) {
@@ -3732,6 +3754,23 @@ function elevFetch(station){
   elevCache.set(k, { t: Date.now(), p });
   return p;
 }
+const elevGround = f => /^1F?$/i.test(f); // 1층(길)과 닿는 것 = 지상 출구. 고가역(성수: 1→2층 출구, 2→3층 승강장)도 길은 1층
+// 지상과 닿는 엘리베이터의 출구 번호: 출입구 칸('6,7')과 위치 설명('3,4번 출입구 사이')을 함께 본다
+function elevExits(all){
+  const exitsOf = x => [...(/^\d/.test(x.exit) ? x.exit.split(',') : []), ...((/(\d+(?:,\d+)*)번 출입구/.exec(x.pos) || [])[1] || '').split(',')].map(v => v.trim()).filter(Boolean);
+  return [...new Set(all.filter(x => elevGround(x.from) || elevGround(x.to)).flatMap(exitsOf))];
+}
+// 장소 화면 '이동' 줄 끝: 가까운 역(서울교통공사 1~8호선)의 지상 엘리베이터 출구
+function stationElevNote(p, acc){
+  const st = nearestStation(p); if (!st) return;
+  const base = st.name.replace(/\(.*\)$/, '').replace(/\s.*$/, '').replace(/역$/, ''); if (!base) return;
+  elevFetch(base).then(d => {
+    const exits = elevExits((d && d.list) || []);
+    if (!exits.length || !acc.isConnected) return;
+    acc.appendChild(el('span', null, `${base}역 엘리베이터 ${exits.sort((a, b) => parseInt(a, 10) - parseInt(b, 10)).join('·')}번 출구`));
+    acc.hidden = false;
+  });
+}
 function elevNote(s, which){ // which: 'from'(타는 역) | 'to'(내리는 역)
   const station = which === 'to' ? s.to : s.from, exitWanted = which === 'to' ? s.outExit : s.inExit;
   const box = el('span','t-elev'); box.hidden = true;
@@ -3740,12 +3779,9 @@ function elevNote(s, which){ // which: 'from'(타는 역) | 'to'(내리는 역)
     // 지상 출구 엘리베이터는 환승역에서 다른 노선 이름으로 올라 있어도(천호역 5·8호선) 대합실을 함께 써서 역 전체로, 승강장 엘리베이터는 그 노선만
     const line = `${s.lineCode}호선`, all = (d && d.list) || [], list = all.filter(x => x.line === line);
     if (!d) return;
-    const ground = f => /^1F?$/i.test(f); // 1층(길)과 닿는 것 = 지상 출구. 고가역(성수: 1→2층 출구, 2→3층 승강장)도 길은 1층
-    const outs = all.filter(x => ground(x.from) || ground(x.to));
-    const inside = list.filter(x => !ground(x.from) && !ground(x.to));
-    // 출구 번호: 출입구 칸('6,7')과 위치 설명('3,4번 출입구 사이')을 함께 본다
-    const exitsOf = x => [...(/^\d/.test(x.exit) ? x.exit.split(',') : []), ...((/(\d+(?:,\d+)*)번 출입구/.exec(x.pos) || [])[1] || '').split(',')].map(v => v.trim()).filter(Boolean);
-    const exits = [...new Set(outs.flatMap(exitsOf))];
+    const outs = all.filter(x => elevGround(x.from) || elevGround(x.to));
+    const inside = list.filter(x => !elevGround(x.from) && !elevGround(x.to));
+    const exits = elevExits(all);
     const broken = [...new Set([...list, ...outs])].filter(x => !x.ok);
     const parts = [];
     if (!all.length) parts.push(`${station.replace(/역$/, '')}역 엘리베이터 정보 없음`);
