@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<script src="i18n.js?v=30"></script>
+<script src="i18n.js?v=31"></script>
 <title>공간실록 시제품</title>
 <meta name="description" content="입구 계단, 화장실, 소음, 콘센트처럼 다녀온 사람만 아는 사실을 평점 대신 남기고 함께 보는 공간 지도예요.">
 <!-- 카톡 등에 링크를 보냈을 때 미리보기 -->
@@ -3878,7 +3878,7 @@ function schedNote(s, at){ // at: { min, weekday } 그 구간을 탈 무렵(한�
     : s.city === 'seoul' && s.ars ? { type: 'bus', city: 'seoul', ars: s.ars }
     : s.city === 'gg' && s.routeId ? { type: 'bus', city: 'gg', route: s.routeId } : null;
   if (!body) return box;
-  schedFetch(body).then(d => {
+  (s.schedP = schedFetch(body)).then(d => { // 빠른 환승이 열차 방향(행선지)을 가릴 때도 쓴다
     if (!d || d.none) return;
     let first, last, slack = 0, tail = '', times = null;
     if (sub) {
@@ -3995,6 +3995,24 @@ function elevPathNote(r, i, which){ // which: 'from'(타는 역·갈아타는 �
   });
   return box;
 }
+// 빠른 환승(중계 서버 /fsttrans, 국토교통부): s로 와서 n으로 갈아탈 때 내릴 칸-문('6-1'). 못 가리면 null.
+// 자료는 '타고 온 열차의 종착역 → 갈아탈 노선의 다음 역'별이라, 종착역은 지나온 역이 아닌 쪽, 그래도 여럿이면 이 구간 시간표의 행선지로 고른다
+const ftrCache = new Map();
+function fastTransfer(s, n){
+  if (!s || !n || s.mode !== 'subway' || n.mode !== 'subway') return Promise.resolve(null);
+  const nm = v => String(v || '').replace(/\(.*\)$/, '').replace(/역$/, '').trim();
+  const lk = v => String(v || '').replace(/^(수도권|서울)\s*/, '').replace(/[\s.·]/g, '');
+  const station = nm(s.to);
+  if (!ftrCache.has(station)) ftrCache.set(station, proxyPost('/fsttrans', { station }).then(r => r.ok ? r.json() : null).then(d => (d && d.list) || []).catch(() => []));
+  return Promise.all([ftrCache.get(station), (s.schedP || Promise.resolve(null)).catch(() => null)]).then(([list, sd]) => {
+    const behind = new Set([s.from, ...(s.pass || [])].map(nm));
+    let rows = list.filter(x => lk(x.line) === lk(s.name) && lk(x.xline) === lk(n.name) && nm(x.xnext) === nm(n.next1) && !behind.has(nm(x.end)));
+    const dests = new Set(((sd && sd.times) || []).map(t => nm(t[1])));
+    if (new Set(rows.map(x => x.end)).size > 1 && dests.size) { const hit = rows.filter(x => dests.has(nm(x.end))); if (hit.length) rows = hit; }
+    const doors = [...new Set(rows.filter(x => x.car && x.door).map(x => `${x.car}-${x.door}`))];
+    return doors.length === 1 ? doors[0] : null;
+  });
+}
 // 지하철 구간의 접근 정보: 평소엔 칩 한 줄(엘리베이터 출구, 빠른하차 문)만, 누르면 자세히(역 엘리베이터 상태, 빠른하차 전체, 엘리베이터 동선).
 // 엘리베이터 칩은 길에서 들어가는 역(타는 역)과 길로 나오는 역(내리는 역)마다. 경로가 고른 출구에 엘리베이터가 없거나 지상 엘리베이터가 없으면 빨갛게
 const ELEV_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M9 10l3-3 3 3M9 14l3 3 3-3"/></svg>';
@@ -4037,6 +4055,14 @@ function accessChips(r, i){
         if (x && x.door) fast(`빠른하차 ${x.door}${x.fac === '엘리베이터' ? '' : ` ${x.fac}`}`);
       });
     }
+  }
+  if (!leave) { // 갈아타는 역: 갈아탈 노선으로 가장 빨리 가는 칸·문(국토교통부 자료라 코레일 등 다른 노선도)
+    const set = chip('');
+    fastTransfer(s, nextRide).then(d => {
+      if (!d) return;
+      set(`빠른환승 ${d}`);
+      panel.appendChild(el('span','t-elev', `빠른환승 · ${d} (${nm(s.to)}역에서 ${nextRide.name} ${nm(nextRide.next1)} 방면으로)`));
+    });
   }
   wrap.append(chips, panel);
   return wrap;
