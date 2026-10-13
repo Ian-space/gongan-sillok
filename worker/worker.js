@@ -23,6 +23,7 @@
 //   POST /elev     { station }                                  → 지하철역 엘리베이터(출구·층·운행 상태, 서울교통공사 1~8호선)
 //   POST /odsay    { SX, SY, EX, EY }                           → ODsay 대중교통 경로(같은 구간은 하루 동안 같이 쓴다)
 //   POST /fstexit  { station }                                  → 빠른하차(엘리베이터·에스컬레이터·계단 가까운 문, 서울교통공사 1~8호선)
+//   POST /elevpath { station, line }                           → 엘리베이터 이동 동선(출입구↔승강장, 환승, KRIC, 서울교통공사 1~8호선)
 //   POST /sched    { type: bus|subway, ... }                    → 첫차·막차(서울·경기 버스, 서울 지하철 역별 시간표)
 //   POST /nearby   { rect: "왼쪽X,아래Y,오른쪽X,위Y", code? }      → 지도 한 칸 안의 장소 (NEARBY의 업종 코드)
 //   POST /intent   { text }                                     → 글로 적은 목적을 기록 항목 조건으로 (로그인 필요)
@@ -30,7 +31,7 @@
 //   POST /photoplace { image: base64 JPEG 1장, x, y }        → 사진+위치로 그 자리의 가게 후보(간판 글자, AI가 고른 곳, 가까운 곳) (로그인 필요)
 
 const ALLOWED_ORIGINS = ['https://ian-space.github.io', 'http://localhost:8765'];
-const VERSION = '2026-10-14.3'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
+const VERSION = '2026-10-14.4'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
 // 로그인 확인용 Supabase 주소와 공개 키(사이트 코드에도 있는 공개 값)
 const SUPABASE_URL = 'https://qktrghajroxddrbpwtvn.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_j-kp8YKsQTczGcsQX74OxA_mfI7DoZw';
@@ -94,7 +95,7 @@ const TMAP = {
   transit: 'https://apis.openapi.sk.com/transit/routes',
   walk: 'https://apis.openapi.sk.com/tmap/routes/pedestrian?version=1&format=json',
 };
-const PLACE_KINDS = ['search', 'nearby', 'station', 'addr', 'apt', 'bldreg', 'arrive', 'elev', 'odsay', 'fstexit', 'sched', 'clienterr', 'kricprobe'];
+const PLACE_KINDS = ['search', 'nearby', 'station', 'addr', 'apt', 'bldreg', 'arrive', 'elev', 'odsay', 'fstexit', 'sched', 'clienterr', 'elevpath'];
 const ODSAY_WEB_KEY = 'vpfLJcZCiAwV7L5fibSQjA'; // 사이트(index.html)에도 공개된 웹 키. 따로 넣은 비밀값 ODSAY_API_KEY가 있으면 그걸 쓴다
 const AI_KINDS = ['intent', 'photo', 'photoplace'];
 
@@ -223,21 +224,43 @@ async function handle(kind, input, { request, env, ctx, send, reply }) {
   const stName = v => String(v || '').replace(/\(.*\)$/, '').replace(/역$/, '').trim();
 
   /* 사이트 화면에서 난 스크립트 오류: 대시보드 로그에 한 줄만 남긴다(IP·입력 내용은 남기지 않는다) */
-  /* 임시: KRIC(철도산업정보센터) 응답 모양 확인용. 확인 끝나면 지운다 */
-  if (kind === 'kricprobe') {
-    if (!env.KRIC_KEY) return reply(503, { error: 'no KRIC_KEY' });
-    const p = String(input.p || ''); if (!/^[A-Za-z]+\/[A-Za-z]+$/.test(p)) return reply(400, { error: 'bad p' });
-    const qs = new URLSearchParams({ serviceKey: env.KRIC_KEY, format: 'json', ...(input.q || {}) });
-    const out = [];
-    for (const base of ['https://openapi.kric.go.kr', 'http://openapi.kric.go.kr']) {
-      try {
-        const r = await fetch(`${base}/openapi/${p}?${qs}`, { signal: AbortSignal.timeout(8000) });
-        const t = await r.text();
-        out.push({ base, status: r.status, body: t.replaceAll(env.KRIC_KEY, '***').slice(0, 300000) });
-        if (r.ok) break;
-      } catch (e) { out.push({ base, err: String((e && e.message) || e).slice(0, 200) }); }
-    }
-    return reply(200, { out });
+  /* 엘리베이터 이동 동선(철도산업정보센터 KRIC 교통약자 역사 내 엘리베이터 이동동선, 지금은 서울교통공사 1~8호선만):
+     { station, line: 1~8 } → { paths: [{ kind: '출입구-승강장'|'환승경로'…, steps: ['(1F) 1번 출입구 옆 엘리베이터 탑승', …] }] }
+     KRIC 서버가 자주 멈춰서 실시간으로 묻지 않는다. 받은 것을 KV에 두고 7일 지나면 새로 받되, 실패하면 전에 받은 것을 그대로 준다 */
+  if (kind === 'elevpath') {
+    const st = stName(input.station), line = String(input.line || '');
+    if (!st || st.length > 20 || !/^[1-8]$/.test(line)) return reply(400, { error: 'bad input' });
+    if (!env.KRIC_KEY || !env.SEOUL_OPEN_KEY) return reply(503, { error: 'elevpath off' });
+    // 역 이름 → 서울 역 코드(첫차·막차와 같은 저장 열쇠). KRIC는 앞의 0을 뺀 코드를 쓴다('0222' → '222')
+    const codes = await edgeCached(`sch1:stc:${st}`, 30 * 86400, async () => {
+      const r = await fetch(`http://openapi.seoul.go.kr:8088/${encodeURIComponent(env.SEOUL_OPEN_KEY)}/json/SearchInfoBySubwayNameService/1/20/${encodeURIComponent(st)}`, { signal: AbortSignal.timeout(6000) });
+      const j = await r.json().catch(() => null); const s = j && j.SearchInfoBySubwayNameService; if (!s) return null;
+      return JSON.stringify((s.row || []).map(x => [String(x.LINE_NUM || ''), String(x.STATION_CD || '')]));
+    });
+    const hit = codes && JSON.parse(codes).find(([l]) => l === `0${line}호선`);
+    const code = hit ? hit[1].replace(/^0+/, '') : '';
+    if (!code) return reply(200, { paths: [] });
+    const key = `kric1:em:S1:${line}:${code}`;
+    const text = await edgeCached(key, 3600, async () => {
+      const old = kv ? await kv.get(key, 'json').catch(() => null) : null;
+      if (old && Date.now() - old.t < 7 * 86400000) return JSON.stringify(old.p);
+      const fresh = await (async () => {
+        const qs = new URLSearchParams({ serviceKey: env.KRIC_KEY, format: 'json', railOprIsttCd: 'S1', lnCd: line, stinCd: code });
+        const r = await fetch(`https://openapi.kric.go.kr/openapi/trafficWeekInfo/stinElevatorMovement?${qs}`, { signal: AbortSignal.timeout(6000) });
+        const j = await r.json().catch(() => null); const h = j && j.header;
+        if (!h || (h.resultCode !== '00' && h.resultCode !== '03')) return null; // 03: 이 역은 자료 없음(빈 목록으로 저장)
+        const g = new Map();
+        for (const x of j.body || []) {
+          const k = `${x.mvPathDvCd}:${x.mvPathMgNo}`;
+          if (!g.has(k)) g.set(k, { kind: String(x.mvPathDvNm || ''), steps: [] });
+          g.get(k).steps.push([+x.mvTpOrdr || 0, String(x.mvContDtl || '').replace(/^\s*\d+\)\s*/, '').trim()]);
+        }
+        return [...g.values()].map(p => ({ kind: p.kind, steps: p.steps.sort((a, b) => a[0] - b[0]).map(s => s[1]).filter(Boolean) }));
+      })().catch(() => null);
+      if (fresh) { if (kv) ctx.waitUntil(kv.put(key, JSON.stringify({ t: Date.now(), p: fresh })).catch(() => {})); return JSON.stringify(fresh); }
+      return old ? JSON.stringify(old.p) : null; // KRIC가 멈췄으면 전에 받은 것
+    });
+    return text ? send(`{"paths":${text}}`, 200) : reply(502, { error: 'elevpath upstream' });
   }
 
   if (kind === 'clienterr') {
