@@ -34,7 +34,7 @@
 //   POST /photoplace { image: base64 JPEG 1장, x, y }        → 사진+위치로 그 자리의 가게 후보(간판 글자, AI가 고른 곳, 가까운 곳) (로그인 필요)
 
 const ALLOWED_ORIGINS = ['https://ian-space.github.io', 'http://localhost:8765'];
-const VERSION = '2026-10-14.15'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
+const VERSION = '2026-10-14.16'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
 // 로그인 확인용 Supabase 주소와 공개 키(사이트 코드에도 있는 공개 값)
 const SUPABASE_URL = 'https://qktrghajroxddrbpwtvn.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_j-kp8YKsQTczGcsQX74OxA_mfI7DoZw';
@@ -98,7 +98,7 @@ const TMAP = {
   transit: 'https://apis.openapi.sk.com/transit/routes',
   walk: 'https://apis.openapi.sk.com/tmap/routes/pedestrian?version=1&format=json',
 };
-const PLACE_KINDS = ['search', 'nearby', 'station', 'addr', 'apt', 'bldreg', 'arrive', 'elev', 'odsay', 'fstexit', 'sched', 'clienterr', 'elevpath', 'fsttrans', 'lines', 'elevpos'];
+const PLACE_KINDS = ['search', 'nearby', 'station', 'addr', 'apt', 'bldreg', 'arrive', 'elev', 'odsay', 'fstexit', 'sched', 'clienterr', 'elevpath', 'fsttrans', 'lines', 'elevpos', 'seoulprobe'];
 const ODSAY_WEB_KEY = 'vpfLJcZCiAwV7L5fibSQjA'; // 사이트(index.html)에도 공개된 웹 키. 따로 넣은 비밀값 ODSAY_API_KEY가 있으면 그걸 쓴다
 const AI_KINDS = ['intent', 'photo', 'photoplace'];
 
@@ -299,6 +299,14 @@ async function handle(kind, input, { request, env, ctx, send, reply }) {
     if (!all) return reply(502, { error: 'fstexit upstream' });
     const list = JSON.parse(all).filter(x => x[0] === st).map(([, line, dir, door, fac]) => ({ line, dir, door, fac }));
     return reply(200, { list });
+  }
+
+  /* 임시: 서울 열린데이터광장 서비스 이름 확인용(키는 가린다). 확인 끝나면 지운다 */
+  if (kind === 'seoulprobe') {
+    const sk = env.SEOUL_OPEN_KEY; const svc = String(input.svc || '');
+    if (!sk || !/^[A-Za-z0-9_]{3,40}$/.test(svc)) return reply(400, { error: 'bad' });
+    const r = await fetch(`http://openapi.seoul.go.kr:8088/${encodeURIComponent(sk)}/json/${svc}/1/3/`, { signal: AbortSignal.timeout(8000) });
+    return reply(200, { body: (await r.text()).replaceAll(sk, '***').slice(0, 1500) });
   }
 
   /* 지하철역 엘리베이터 위치(서울 열린데이터광장 교통약자 엘리베이터 위치, 서울 안 모든 운영사 역): → { list: [[역, 위도, 경도]] }.
