@@ -1,0 +1,41 @@
+# 엘리베이터 노선도: 수도권 노선 그래프를 LOOM(프라이부르크 대학, 오픈소스)으로 반듯한 노선도 좌표로 바꾼다.
+# 결과(tools/linemap/octi.json, preview.svg)는 저장소에 다시 올린다. 노선이 바뀌면 Actions 탭에서 'Run workflow'로 다시 돌린다
+name: linemap
+on:
+  workflow_dispatch:
+  push:
+    paths: ['tools/linemap/build-graph.mjs', '.github/workflows/linemap.yml']
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Build LOOM
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq cmake g++ libglpk-dev coinor-libcbc-dev
+          git clone --recurse-submodules --depth 1 https://github.com/ad-freiburg/loom.git /tmp/loom
+          cmake -S /tmp/loom -B /tmp/loom/build -DCMAKE_BUILD_TYPE=Release
+          make -C /tmp/loom/build -j4
+          ls /tmp/loom/build
+      - name: Make line graph
+        run: node tools/linemap/build-graph.mjs > tools/linemap/graph.json
+      - name: Schematize
+        run: |
+          B=/tmp/loom/build
+          cat tools/linemap/graph.json | $B/loom > /tmp/loom.json
+          cat /tmp/loom.json | $B/octi > tools/linemap/octi.json
+          cat tools/linemap/octi.json | $B/transitmap -l > tools/linemap/preview.svg
+          ls -la tools/linemap
+      - name: Commit result
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
+          git add tools/linemap/graph.json tools/linemap/octi.json tools/linemap/preview.svg
+          git diff --cached --quiet || (git commit -m "linemap: regenerate schematic" && git push)
