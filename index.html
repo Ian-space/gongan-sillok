@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<script src="i18n.js?v=34"></script>
+<script src="i18n.js?v=35"></script>
 <title>공간실록 시제품</title>
 <meta name="description" content="입구 계단, 화장실, 소음, 콘센트처럼 다녀온 사람만 아는 사실을 평점 대신 남기고 함께 보는 공간 지도예요.">
 <!-- 카톡 등에 링크를 보냈을 때 미리보기 -->
@@ -699,6 +699,20 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
 .peek-text b{font-weight:800}
 .peek-text span{font-size:12.5px;color:var(--muted)}
 .peek .btn.add{flex:none}
+/* 휴대폰 아래 탭과 탭 창 (컴퓨터에서는 쓰지 않는다) */
+.tabbar,.tabpane{display:none}
+/* 아래 탭 '대중교통' 창 */
+.tp-head{display:flex;align-items:center;justify-content:space-between;margin-top:4px}
+.tp-note{margin:2px 0 8px;font-size:12px}
+.tp-sub{margin:14px 0 6px;font-size:13px;color:var(--muted)}
+.tp-card{padding:10px 12px;margin-bottom:8px;border:1px solid var(--line);border-radius:10px;background:var(--panel)}
+.tp-title{display:block;width:100%;padding:0;border:0;background:none;font:inherit;font-size:14px;color:var(--ink);text-align:left;cursor:pointer}
+.tp-title .muted{font-size:12px}
+.tp-line{display:flex;align-items:center;gap:4px;margin:6px 0 0;font-size:12px;color:var(--ink)}
+.tp-line[hidden]{display:none}
+.tp-line.warn{color:var(--seal-ink);font-weight:600}
+.tp-ico svg{display:block;width:14px;height:14px;color:var(--blue)}
+.tp-card .stop-arr{margin-top:6px}
 /* 필터 화면: 컴퓨터는 오른쪽에서, 휴대폰은 화면 가득 */
 .filter-dlg{width:min(460px,100vw);height:100dvh;max-width:none;max-height:none;margin:0 0 0 auto;padding:0;border:0;background:var(--panel);color:var(--ink);box-shadow:-10px 0 40px rgba(15,20,40,.25)}
 .filter-dlg[open]{display:grid;grid-template-rows:auto minmax(0,1fr) auto}
@@ -913,6 +927,21 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
   body.map-only .topbar{transform:translateY(calc(-100% - 20px));opacity:0;pointer-events:none}
   body.map-only .side{transform:translateY(calc(100% + 10px));pointer-events:none}
   body.map-only .mapctl,body.map-only .legend,body.map-only .legend-help{opacity:0;pointer-events:none}
+  /* 아래 탭: 떠 있는 둥근 줄. 목록 패널은 그 위에 얹고, 장소를 열거나 지도만 볼 때는 숨긴다 */
+  body.tabs{--tab-h:calc(72px + env(safe-area-inset-bottom,0px))}
+  body.tabs .tabbar{display:flex;align-items:center;position:fixed;left:12px;right:12px;bottom:calc(8px + env(safe-area-inset-bottom,0px));height:58px;padding:0 4px;z-index:18;background:var(--panel);border-radius:999px;box-shadow:0 4px 18px rgba(15,20,40,.22)}
+  .tabbar button{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 0;border:0;background:none;color:var(--muted);font:inherit;font-size:11px;font-weight:600;cursor:pointer}
+  .tabbar svg{width:22px;height:22px}
+  .tabbar button[aria-current="true"]{color:var(--blue)}
+  .tabbar .tab-add svg{width:34px;height:34px;margin-top:-6px;padding:8px;box-sizing:border-box;border-radius:50%;background:var(--seal);color:#FFFFFF}
+  .tabbar .tab-add span{color:var(--seal-ink)}
+  body.tabs.has-detail .tabbar,body.tabs.map-only .tabbar{display:none}
+  body.tabs .side{bottom:var(--tab-h);padding-bottom:0}
+  body.tabs:not(.has-detail) .mapctl{bottom:calc(var(--sheet-h,104px) + var(--tab-h) + 12px)}
+  body.tabs .peek .btn.add,body.tabs .tb-row .acct,body.tabs .mapctl #zsaved{display:none}
+  body.tab-transit .side>.side-head,body.tab-transit .side>.scroll,body.tab-me .side>.side-head,body.tab-me .side>.scroll{display:none}
+  .tabpane:not([hidden]){display:block;flex:1;min-height:0;overflow-y:auto;padding:0 16px 16px;overscroll-behavior:contain}
+  #mePane .acct-menu{position:static;width:auto;max-height:none;margin:0;border:0;box-shadow:none;padding:0}
 }
 @media (max-width:899px) and (prefers-reduced-motion:reduce){
   .topbar,.side,.mapctl,.legend{transition:none}
@@ -963,6 +992,9 @@ html{touch-action:manipulation}
       <p class="status" id="status" role="status" aria-live="polite"></p>
       <div class="source" id="source"></div>
     </div>
+    <!-- 휴대폰 아래 탭의 창: 대중교통(내 주변 역·정류장), 내 정보(계정 메뉴를 옮겨 온다) -->
+    <div class="tabpane" id="transitPane" hidden aria-label="내 주변 대중교통"></div>
+    <div class="tabpane" id="mePane" hidden aria-label="내 정보"></div>
     <div class="scroll">
       <section class="sec intent" id="intent" hidden aria-label="적은 목적에서 찾은 조건"></section>
       <section class="sec" id="extList" hidden aria-label="검색 결과: 기록 안 된 장소"></section>
@@ -1055,6 +1087,14 @@ html{touch-action:manipulation}
     <div class="legend-help" id="legendHelp" hidden aria-label="지도에 표시한 조건의 기준"></div>
     <section class="detail" id="detail" hidden aria-live="polite"></section>
   </main>
+  <!-- 휴대폰 아래 탭(떠 있는 둥근 줄). 장소를 열면 숨는다 -->
+  <nav class="tabbar" id="tabbar" aria-label="주요 메뉴">
+    <button type="button" data-tab="map"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2z"/><path d="M9 4v14M15 6v14"/></svg><span>지도</span></button>
+    <button type="button" data-tab="transit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4h10a2 2 0 0 1 2 2v9a3 3 0 0 1-3 3H8a3 3 0 0 1-3-3V6a2 2 0 0 1 2-2z"/><path d="M5 11h14M8.5 15h.01M15.5 15h.01M8 18l-2 2.5M16 18l2 2.5"/></svg><span>대중교통</span></button>
+    <button type="button" data-tab="add" class="tab-add"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span>기록</span></button>
+    <button type="button" data-tab="saved"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"/></svg><span>찜</span></button>
+    <button type="button" data-tab="me"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg><span>내 정보</span></button>
+  </nav>
 </div>
 
 <dialog class="add-dlg" id="addDlg" aria-labelledby="addTitle"><div class="add-body" id="addBody"></div></dialog>
@@ -2587,7 +2627,7 @@ const detailHeight = () => (isPhone() && detailSheet && detailSheet.height) || $
 function bindSheets(){
   listSheet = makeSheet({
     panel: $('side'), varName: '--sheet-h',
-    snaps: () => [PEEK_H, vh(0.5), sheetMax()], // 한 줄(요약), 반, 검색창 바로 아래까지
+    snaps: () => [PEEK_H, vh(0.5), sheetMax() - tabSpace()], // 한 줄(요약), 반, 검색창 바로 아래까지(아래 탭 위에 얹는다)
     isGrab: t => !!t.closest('.sheet-handle, .side-head'),
     onSettle: () => renderLegendHelp() // 패널 높이가 바뀌면 지도 위 기준 상자 높이도 맞춘다
   });
@@ -3783,14 +3823,14 @@ function liveArrival(s){
 // 지하철역 하나의 실시간 도착(곧 오는 순, 서울 열린데이터광장). 상세가 열려 있는 동안 30초마다 새로
 const SUBWAY_ID = { 1063: '경의중앙선', 1065: '공항철도', 1067: '경춘선', 1075: '수인분당선', 1077: '신분당선', 1081: '경강선', 1092: '우이신설선', 1093: '서해선', 1094: '신림선', 1032: 'GTX-A' };
 const subwayIdName = id => +id >= 1001 && +id <= 1009 ? `${+id - 1000}호선` : SUBWAY_ID[id] || '';
-function stationArrivals(p){
+function stationArrivals(p, max = 8){
   const ul = el('ul','stop-arr'); ul.appendChild(el('li','muted','실시간 도착 확인 중…'));
   const body = { type: 'subway', station: p.name.replace(/역$/, '') };
   const draw = list => {
     if (!ul.isConnected) return false;
     ul.replaceChildren();
     if (list === null) { ul.appendChild(el('li','muted','실시간 도착 정보를 불러오지 못했어요')); return true; }
-    const rows = list.slice().sort((a, b) => (a.sec || 9999) - (b.sec || 9999)).slice(0, 8);
+    const rows = list.slice().sort((a, b) => (a.sec || 9999) - (b.sec || 9999)).slice(0, max);
     if (!rows.length) { ul.appendChild(el('li','muted','지금 들어오는 열차 정보가 없어요. 서울 지하철 역만 나와요.')); return true; }
     for (const x of rows) {
       const li = el('li'); li.append(el('b', null, subwayIdName(x.line) || '지하철'), ` ${x.dir}`, el('span','muted', ` · ${x.msg}`));
@@ -3803,7 +3843,7 @@ function stationArrivals(p){
   return ul;
 }
 // 정류장 하나에 오는 모든 버스의 실시간 도착(곧 오는 순). 상세가 열려 있는 동안 30초마다 새로
-function stopArrivals(p){
+function stopArrivals(p, max = 15){
   const ul = el('ul','stop-arr'); ul.appendChild(el('li','muted','실시간 도착 확인 중…'));
   const body = p.city === 'seoul' && p.ars ? { type: 'bus', city: 'seoul', ars: p.ars } : p.city === 'gg' && p.sid ? { type: 'bus', city: 'gg', station: p.sid } : null;
   if (!body) { ul.replaceChildren(el('li','muted','이 정류장은 실시간 도착 정보가 없어요')); return ul; }
@@ -3813,7 +3853,7 @@ function stopArrivals(p){
     if (!ul.isConnected) return false;
     ul.replaceChildren();
     if (list === null) { ul.appendChild(el('li','muted','실시간 도착 정보를 불러오지 못했어요')); return true; }
-    const rows = list.map(x => ({ x, m: +minOf(x) })).sort((a, b) => a.m - b.m).slice(0, 15);
+    const rows = list.map(x => ({ x, m: +minOf(x) })).sort((a, b) => a.m - b.m).slice(0, max);
     if (!rows.length) { ul.appendChild(el('li','muted','지금 도착 예정인 버스 정보가 없어요')); return true; }
     for (const { x } of rows) {
       const now = p.city === 'seoul' ? short(x.msg) : x.min != null ? `${x.min}분 후${x.stops != null ? ` [${x.stops}번째 전]` : ''}` : '도착 정보 없음';
@@ -4554,6 +4594,18 @@ function elevatorNote(p){
 const roadKey = a => { const t = String(a || '').trim().split(/\s+/); return t.length >= 3 ? `${t[1]} ${t[t.length - 2]} ${t[t.length - 1]}` : ''; }; // '구 도로명 번호'
 // 지도에서 누른 자리 가까이(화면에서 약 40px, 최소 45m)에 지하철역(카카오)이 있으면 그 역 카드. 갈아타는 역은 노선을 모은다
 const stnNear = new Map();
+// 카카오 지하철역(/station, 노선마다 한 줄) → 역 카드(갈아타는 역은 노선을 모은다), at에서 가까운 순. 같은 역의 다른 노선은 수백 m 떨어져 찍혀 있기도 하다
+const STN_ICON = 'M7 4h10a2 2 0 0 1 2 2v9a3 3 0 0 1-3 3H8a3 3 0 0 1-3-3V6a2 2 0 0 1 2-2z M5 11h14 M8.5 15h.01 M15.5 15h.01 M8 18l-2 2.5 M16 18l2 2.5';
+function stationCards(list, at){
+  const rows = list.map(s => ({ name: cleanText(s.name, 40), line: cleanText(s.line, 20), lat: toNum(s.y), lng: toNum(s.x) }))
+    .filter(s => s.name && s.lat >= 33 && s.lat <= 39).map(s => ({ ...s, m: distM(at, s) })).sort((x, y) => x.m - y.m);
+  const by = new Map();
+  for (const s of rows) { const base = s.name.replace(/\s.*$/, ''); (by.get(base) || by.set(base, []).get(base)).push(s); }
+  return [...by].map(([base, same]) => ({ id: 'stn:' + base, ext: true, near: true, subway: true, kind: 'SW8', name: base,
+    lines: [...new Set(same.map(s => s.name.slice(base.length).trim() || s.line.replace(/^(수도권|서울|부산|대구|광주|대전)\s*/, '')).filter(Boolean))]
+      .sort((x, y) => (parseInt(x, 10) || 99) - (parseInt(y, 10) || 99)), // 1~9호선 먼저
+    category: '교통 > 지하철역', type: '지하철역', addr: '', phone: '', url: '', lat: same[0].lat, lng: same[0].lng, m: same[0].m, color: '#5B6475', icon: STN_ICON }));
+}
 async function stationAtTap(at, px){
   if (!map || !at || map.getZoom() < 14 || !ROUTE_PROXY) return null;
   const lat = at.lat(), lng = at.lng(), k = lat.toFixed(3) + ',' + lng.toFixed(3);
@@ -4562,15 +4614,8 @@ async function stationAtTap(at, px){
   const list = await stnNear.get(k);
   const proj = map.getProjection(), a = proj.fromOffsetToCoord(new naver.maps.Point(px.x, px.y)), b = proj.fromOffsetToCoord(new naver.maps.Point(px.x + 40, px.y));
   const reach = Math.max(45, distM({ lat: a.lat(), lng: a.lng() }, { lat: b.lat(), lng: b.lng() }));
-  const near = list.map(s => ({ name: cleanText(s.name, 40), line: cleanText(s.line, 20), lat: toNum(s.y), lng: toNum(s.x) }))
-    .filter(s => s.name && s.lat >= 33 && s.lat <= 39).map(s => ({ ...s, m: distM({ lat, lng }, s) })).sort((x, y) => x.m - y.m);
-  if (!near.length || near[0].m > reach) return null;
-  const base = near[0].name.replace(/\s.*$/, '');
-  const same = near.filter(s => s.name.replace(/\s.*$/, '') === base); // 같은 역의 다른 노선(서울역 4호선·공항철도…)은 수백 m 떨어져 찍혀 있기도 하다
-  const lines = [...new Set(same.map(s => s.name.slice(base.length).trim() || s.line.replace(/^(수도권|서울|부산|대구|광주|대전)\s*/, '')).filter(Boolean))]
-    .sort((x, y) => (parseInt(x, 10) || 99) - (parseInt(y, 10) || 99)); // 1~9호선 먼저
-  return { id: 'stn:' + base, ext: true, near: true, subway: true, kind: 'SW8', name: base, lines, category: '교통 > 지하철역', type: '지하철역',
-    addr: '', phone: '', url: '', lat: near[0].lat, lng: near[0].lng, color: '#5B6475', icon: 'M7 4h10a2 2 0 0 1 2 2v9a3 3 0 0 1-3 3H8a3 3 0 0 1-3-3V6a2 2 0 0 1 2-2z M5 11h14 M8.5 15h.01 M15.5 15h.01 M8 18l-2 2.5 M16 18l2 2.5' };
+  const card = stationCards(list, { lat, lng })[0];
+  return card && card.m <= reach ? card : null;
 }
 async function placeAt(at){ // at: 누른 자리(네이버 좌표)
   if (!map || !at || map.getZoom() < 17 || !ROUTE_PROXY) return null;
@@ -6357,6 +6402,7 @@ function renderAll(){
   $('btnClear').hidden = !(Object.values(state.filters).some(s => s.size) || Object.values(state.tags).some(s => s.size) || state.q || state.badges.length);
   renderSummary(); renderPicks(vis); renderList(vis); renderExtList(); renderIntent(); renderMap(vis); renderExtMarkers(); renderLegend(); renderQuick(); renderDetail();
   renderQuickChips(); renderPeek(vis); syncFilterChips(); renderRouteBar(); renderCollectBar(); if ($('filterDlg').open) renderFilterExtras();
+  renderTabs();
   $('qClear').hidden = !$('q').value; // 검색어가 있을 때만 × 버튼
   $('summary').hidden = $('picks').hidden = !!state.ext.query; // 검색 중에는 검색 결과가 맨 위에 오도록 요약·추천을 접는다
 }
@@ -6560,6 +6606,94 @@ async function toggleSave(p){
   } else storeLocalSaves();
   toast(auth.user ? '찜했어요. 지도 오른쪽의 책갈피 버튼으로 모아 볼 수 있어요.' : '찜했어요. 이 기기에 저장돼요. 로그인하면 계정으로 옮겨져요.');
 }
+/* ---------- 휴대폰 아래 탭: 지도 · 대중교통 · 기록 · 찜 · 내 정보 ----------
+   지도: 평소 목록 패널, 대중교통: 내 주변 역·정류장(엘리베이터, 실시간 도착), 기록: '+ 기록', 찜: 찜·내 기록 모아 보기, 내 정보: 계정 메뉴.
+   대중교통·내 정보는 목록 패널 자리에 그 창을 보여 준다 */
+state.tab = 'map';
+// 아래 탭이 차지하는 높이(목록 패널을 그 위에 얹는다)
+const tabSpace = () => { const r = document.body.classList.contains('tabs') && $('tabbar').getBoundingClientRect(); return r && r.height ? Math.round(innerHeight - r.top + 6) : 0; };
+function renderTabs(){
+  const on = isPhone(), t = on ? state.tab : 'map';
+  document.body.classList.toggle('tabs', on);
+  document.body.classList.toggle('tab-transit', t === 'transit');
+  document.body.classList.toggle('tab-me', t === 'me');
+  $('transitPane').hidden = t !== 'transit'; $('mePane').hidden = t !== 'me';
+  const cur = state.collect ? 'saved' : t;
+  for (const b of $('tabbar').querySelectorAll('button')) b.setAttribute('aria-current', String(b.dataset.tab === cur));
+  // 계정 메뉴: 휴대폰은 '내 정보' 창 안에, 컴퓨터는 검색창 옆 단추 아래
+  const m = $('acctMenu');
+  if (on && m.parentElement !== $('mePane')) $('mePane').appendChild(m);
+  else if (!on && m.parentElement === $('mePane')) { $('acctBtn').after(m); m.hidden = true; }
+  if (on && t === 'me') { m.hidden = false; m.style.cssText = ''; }
+}
+function setTab(t){
+  if (t === 'add') { $('btnAdd').click(); return; }
+  if (t === 'saved') { state.tab = 'map'; setCollect(!state.collect); if (state.collect && listSheet) listSheet.set(vh(0.5), true); return; }
+  if (state.collect) setCollect(false);
+  state.tab = t;
+  if (t === 'transit') renderTransitPane();
+  renderAll();
+  if (listSheet) listSheet.set(t === 'map' ? PEEK_H : vh(0.6), true);
+}
+// 대중교통 창: 내 위치(없으면 지도 가운데) 주변 지하철역 3곳과 버스정류장 3곳. 역은 엘리베이터 출구와 실시간 도착, 정류장은 실시간 도착(저상 표시)
+function renderTransitPane(){
+  const box = $('transitPane'); box.replaceChildren();
+  const c = map && map.getCenter(), at = state.me || (c && { lat: c.lat(), lng: c.lng() });
+  const head = el('div','tp-head'); head.appendChild(el('h3','sec-title','내 주변 대중교통'));
+  const re = el('button','linkbtn','새로고침'); re.type = 'button'; re.addEventListener('click', renderTransitPane); head.appendChild(re);
+  box.appendChild(head);
+  if (!at) { box.appendChild(el('p','muted','지도를 불러온 뒤 다시 눌러 주세요.')); return; }
+  if (state.me) box.appendChild(el('p','tp-note muted','내 위치 기준이에요.'));
+  else {
+    const note = el('p','tp-note muted','지금은 지도 가운데 기준이에요. ');
+    const me = el('button','linkbtn','내 위치로 보기'); me.type = 'button';
+    me.addEventListener('click', () => {
+      locate(false, true);
+      const t0 = Date.now(), w = setInterval(() => { if (state.me || Date.now() - t0 > 10000) { clearInterval(w); if (state.tab === 'transit') renderTransitPane(); } }, 500);
+    });
+    note.appendChild(me); box.appendChild(note);
+  }
+  const card = (title, sub, open) => {
+    const c = el('div','tp-card'), b = el('button','tp-title'); b.type = 'button';
+    b.append(el('b','notranslate', title), el('span','muted', ` · ${sub}`)); b.addEventListener('click', open);
+    c.appendChild(b); return c;
+  };
+  // 지하철역
+  box.appendChild(el('h4','tp-sub','지하철역'));
+  const sbox = el('div'); sbox.appendChild(el('p','muted','찾는 중…')); box.appendChild(sbox);
+  proxyPost('/station', { x: String(at.lng), y: String(at.lat) }).then(r => r.ok ? r.json() : null).then(j => {
+    const list = stationCards((j && j.stations) || [], at).filter(s => s.m <= 1200).slice(0, 3);
+    sbox.replaceChildren();
+    if (!list.length) { sbox.appendChild(el('p','muted','1km 안에 지하철역이 없어요.')); return; }
+    for (const s of list) {
+      const c = card(s.name, [s.lines.join('·'), `걸어서 약 ${walkMin(s.m)}분`].filter(Boolean).join(' · '), () => openShop(s));
+      const ev = el('p','tp-line'); ev.hidden = true;
+      elevFetch(s.name.replace(/역$/, '')).then(d => {
+        const all = (d && d.list) || []; if (!all.length) return;
+        const exits = elevExits(all).sort((a, b) => parseInt(a, 10) - parseInt(b, 10)), broken = all.filter(x => !x.ok).length;
+        ev.replaceChildren(el('span','tp-ico'), exits.length ? `엘리베이터 ${exits.join('·')}번 출구` : '지상으로 가는 엘리베이터 없음', broken ? ` · 점검·중지 ${broken}대` : '');
+        ev.firstChild.innerHTML = ELEV_ICON; ev.classList.toggle('warn', !exits.length || !!broken); ev.hidden = false;
+      });
+      c.append(ev, stationArrivals(s, 4)); sbox.appendChild(c);
+    }
+  }).catch(() => sbox.replaceChildren(el('p','muted','역을 불러오지 못했어요.')));
+  // 버스정류장(우리 DB)
+  box.appendChild(el('h4','tp-sub','버스정류장'));
+  const bbox = el('div'); bbox.appendChild(el('p','muted','찾는 중…')); box.appendChild(bbox);
+  if (!sb) { bbox.replaceChildren(el('p','muted','정류장 정보를 쓸 수 없어요.')); return; }
+  sb.rpc('stops_in_box', { min_lng: at.lng - 0.005, min_lat: at.lat - 0.004, max_lng: at.lng + 0.005, max_lat: at.lat + 0.004, lim: 80 }).then(({ data, error }) => {
+    bbox.replaceChildren();
+    if (error) { bbox.appendChild(el('p','muted','정류장을 불러오지 못했어요.')); return; }
+    const stops = (data || []).map(s => ({ id: 'u' + s.id, ext: true, near: true, bus: true, kind: 'BUS', name: cleanText(s.name, 40), category: '교통 > 버스정류장', type: '버스정류장',
+      addr: '', phone: '', url: '', lat: +s.lat, lng: +s.lng, ars: /^\d{5}$/.test(s.ars || '') ? s.ars : '', city: s.city, sid: /^\d{6,10}$/.test(s.sid || '') ? s.sid : '' }))
+      .map(p => ({ p, m: distM(at, p) })).sort((a, b) => a.m - b.m).slice(0, 3);
+    if (!stops.length) { bbox.appendChild(el('p','muted','400m 안에 버스정류장이 없어요.')); return; }
+    for (const { p, m } of stops) {
+      const c = card(p.name, [p.ars && `정류장 번호 ${p.ars}`, `걸어서 약 ${walkMin(m)}분`].filter(Boolean).join(' · '), () => openShop(p));
+      c.appendChild(stopArrivals(p, 4)); bbox.appendChild(c);
+    }
+  });
+}
 function setCollect(on){
   state.collect = on;
   $('zsaved').setAttribute('aria-pressed', String(on));
@@ -6590,13 +6724,13 @@ function renderCollectBar(){
 // v2: 접근성·참여(기록하기)를 맨 앞에, 주변 장소와 출발·도착 길찾기를 더했다. 내용이 바뀌어 v1을 본 사람에게도 한 번 더 보여 준다
 const TOUR_KEY = 'gongan-sillok:tour-v2';
 const tourSteps = () => [
-  { sel: '#btnAdd', text: '공간실록은 다녀온 사람들이 남긴 사실로 만들어져요. 입구에 계단이 있는지, 화장실은 어디인지, 시끄러운지를 평점 대신 남겨요. 다녀온 곳이 있다면 + 기록으로 함께 남겨 주세요.' },
+  { sel: isPhone() ? '#tabbar .tab-add' : '#btnAdd', text: '공간실록은 다녀온 사람들이 남긴 사실로 만들어져요. 입구에 계단이 있는지, 화장실은 어디인지, 시끄러운지를 평점 대신 남겨요. 다녀온 곳이 있다면 + 기록으로 함께 남겨 주세요.' },
   { sel: '#qchips', text: '턱 없음, 조용한 곳 같은 조건을 누르면 맞는 곳만 남아요. 필터에서는 모든 항목과 좌석·마감까지 고를 수 있어요.' },
   { sel: isPhone() ? '#nchips' : '#qchips > .qchip:last-child', text: '주변 장소를 켜면 아직 기록이 없는 편의점·카페·약국·은행도 점으로 보여요. 눌러서 바로 기록할 수 있어요.' },
   isPhone()
     ? { sel: '.peek', text: '아래 패널을 올리면 장소 목록이 나와요. 장소를 열면 기록과 함께 [출발]·[도착] 길찾기를 쓸 수 있어요.' }
     : { sel: '#list', text: '목록이나 지도의 핀을 누르면 그 장소의 기록이 열리고, [출발]·[도착]으로 길찾기도 할 수 있어요.' },
-  { sel: '#zsaved', text: '장소를 열고 하트를 누르면 찜돼요. 이 버튼으로 찜한 곳과 내 기록만 모아 볼 수 있어요.' },
+  { sel: isPhone() ? '#tabbar [data-tab="saved"]' : '#zsaved', text: '장소를 열고 하트를 누르면 찜돼요. 이 버튼으로 찜한 곳과 내 기록만 모아 볼 수 있어요.' },
 ];
 let tourAt = -1;
 function startTour(force){
@@ -6680,6 +6814,9 @@ $('fdDone').addEventListener('click', () => $('filterDlg').close());
 $('fdClear').addEventListener('click', () => { $('btnClear').click(); setBadges([]); });
 $('filterDlg').addEventListener('click', e => { if (e.target === $('filterDlg')) $('filterDlg').close(); }); // 바깥(어두운 부분)을 누르면 닫기
 $('zsaved').addEventListener('click', () => setCollect(!state.collect));
+$('tabbar').addEventListener('click', e => { const b = e.target.closest('button[data-tab]'); if (b) setTab(b.dataset.tab); }); // 휴대폰 아래 탭
+$('q').addEventListener('focus', () => { if (state.tab !== 'map') { state.tab = 'map'; renderAll(); } }); // 검색하면 목록(지도 탭)으로
+matchMedia('(max-width:899px)').addEventListener('change', renderTabs);
 $('routeBtn').addEventListener('click', () => openDestPicker()); // 장소를 열지 않고 바로 길찾기: 도착지부터 고른다
 $('btnFit').addEventListener('click', () => { fitAll(); if (isPhone() && listSheet) listSheet.set(PEEK_H, true); });
 state.saves = loadLocalSaves(); // 로그인 상태가 확인되면 계정의 찜으로 바꾼다
@@ -6697,7 +6834,7 @@ $('photoTrack').addEventListener('click', e => { if (!e.target.closest('img')) $
 $('photoDlg').addEventListener('keydown', e => { if (e.key === 'ArrowLeft') stepViewer(-1); if (e.key === 'ArrowRight') stepViewer(1); });
 // 계정 메뉴: 동그라미를 누르면 열고, 바깥을 누르거나 Esc면 닫는다
 $('acctBtn').addEventListener('click', () => { if ($('acctMenu').hidden) openAcct(); else closeAcct(); });
-document.addEventListener('pointerdown', e => { if (!$('acctMenu').hidden && !(e.target.closest && e.target.closest('#acctMenu, #acctBtn'))) closeAcct(); });
+document.addEventListener('pointerdown', e => { if (!$('acctMenu').hidden && $('acctMenu').parentElement.id !== 'mePane' && !(e.target.closest && e.target.closest('#acctMenu, #acctBtn'))) closeAcct(); }); // 휴대폰 '내 정보' 창 안에서는 닫지 않는다
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('acctMenu').hidden) { closeAcct(); $('acctBtn').focus(); } });
 $('choiceX').addEventListener('click', () => $('choiceDlg').close());
 $('choiceLogin').addEventListener('click', () => { $('choiceDlg').close(); loginThenAdd(); });
