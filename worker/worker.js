@@ -33,7 +33,7 @@
 //   POST /photoplace { image: base64 JPEG 1장, x, y }        → 사진+위치로 그 자리의 가게 후보(간판 글자, AI가 고른 곳, 가까운 곳) (로그인 필요)
 
 const ALLOWED_ORIGINS = ['https://ian-space.github.io', 'http://localhost:8765'];
-const VERSION = '2026-10-14.12'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
+const VERSION = '2026-10-14.13'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
 // 로그인 확인용 Supabase 주소와 공개 키(사이트 코드에도 있는 공개 값)
 const SUPABASE_URL = 'https://qktrghajroxddrbpwtvn.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_j-kp8YKsQTczGcsQX74OxA_mfI7DoZw';
@@ -303,8 +303,9 @@ async function handle(kind, input, { request, env, ctx, send, reply }) {
   if (kind === 'seoulprobe') {
     const sk = env.SEOUL_OPEN_KEY; const svc = String(input.svc || '');
     if (!sk || !/^[A-Za-z0-9_]{3,40}$/.test(svc)) return reply(400, { error: 'bad' });
-    const r = await fetch(`http://openapi.seoul.go.kr:8088/${encodeURIComponent(sk)}/json/${svc}/1/3/`, { signal: AbortSignal.timeout(8000) });
-    return reply(200, { status: r.status, body: (await r.text()).replaceAll(sk, '***').slice(0, 3000) });
+    const a = Math.max(1, +input.a || 1), b = Math.min(a + 999, +input.b || a + 2);
+    const r = await fetch(`http://openapi.seoul.go.kr:8088/${encodeURIComponent(sk)}/json/${svc}/${a}/${b}/`, { signal: AbortSignal.timeout(8000) });
+    return reply(200, { status: r.status, body: (await r.text()).replaceAll(sk, "***").slice(0, 400000) });
   }
 
   /* 노선별 역 목록(서울 열린데이터광장 지하철역 정보, 수도권 노선): → { lines: { '01호선': [['서울역', '133'], …] } } 외부코드(FR_CODE) 순.
