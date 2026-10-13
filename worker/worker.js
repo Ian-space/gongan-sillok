@@ -26,6 +26,7 @@
 //   POST /elevpath { station, line }                           → 엘리베이터 이동 동선(출입구↔승강장, 환승, KRIC, 서울교통공사 1~8호선)
 //   POST /fsttrans { station }                                 → 빠른 환승(갈아탈 노선으로 가장 빨리 가는 칸·문, 국토교통부)
 //   POST /lines    {}                                         → 노선별 역 목록(수도권, 서울 열린데이터광장)
+//   POST /elevpos  {}                                         → 지하철역 엘리베이터 자리(서울 안 모든 운영사, 서울 열린데이터광장)
 //   POST /sched    { type: bus|subway, ... }                    → 첫차·막차(서울·경기 버스, 서울 지하철 역별 시간표)
 //   POST /nearby   { rect: "왼쪽X,아래Y,오른쪽X,위Y", code? }      → 지도 한 칸 안의 장소 (NEARBY의 업종 코드)
 //   POST /intent   { text }                                     → 글로 적은 목적을 기록 항목 조건으로 (로그인 필요)
@@ -33,7 +34,7 @@
 //   POST /photoplace { image: base64 JPEG 1장, x, y }        → 사진+위치로 그 자리의 가게 후보(간판 글자, AI가 고른 곳, 가까운 곳) (로그인 필요)
 
 const ALLOWED_ORIGINS = ['https://ian-space.github.io', 'http://localhost:8765'];
-const VERSION = '2026-10-14.13'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
+const VERSION = '2026-10-14.14'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
 // 로그인 확인용 Supabase 주소와 공개 키(사이트 코드에도 있는 공개 값)
 const SUPABASE_URL = 'https://qktrghajroxddrbpwtvn.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_j-kp8YKsQTczGcsQX74OxA_mfI7DoZw';
@@ -97,7 +98,7 @@ const TMAP = {
   transit: 'https://apis.openapi.sk.com/transit/routes',
   walk: 'https://apis.openapi.sk.com/tmap/routes/pedestrian?version=1&format=json',
 };
-const PLACE_KINDS = ['search', 'nearby', 'station', 'addr', 'apt', 'bldreg', 'arrive', 'elev', 'odsay', 'fstexit', 'sched', 'clienterr', 'elevpath', 'fsttrans', 'lines', 'seoulprobe'];
+const PLACE_KINDS = ['search', 'nearby', 'station', 'addr', 'apt', 'bldreg', 'arrive', 'elev', 'odsay', 'fstexit', 'sched', 'clienterr', 'elevpath', 'fsttrans', 'lines', 'elevpos'];
 const ODSAY_WEB_KEY = 'vpfLJcZCiAwV7L5fibSQjA'; // 사이트(index.html)에도 공개된 웹 키. 따로 넣은 비밀값 ODSAY_API_KEY가 있으면 그걸 쓴다
 const AI_KINDS = ['intent', 'photo', 'photoplace'];
 
@@ -299,13 +300,25 @@ async function handle(kind, input, { request, env, ctx, send, reply }) {
     return reply(200, { list });
   }
 
-  /* 임시: 서울 열린데이터광장 서비스 응답 모양 확인용(키는 가린다). 확인 끝나면 지운다 */
-  if (kind === 'seoulprobe') {
-    const sk = env.SEOUL_OPEN_KEY; const svc = String(input.svc || '');
-    if (!sk || !/^[A-Za-z0-9_]{3,40}$/.test(svc)) return reply(400, { error: 'bad' });
-    const a = Math.max(1, +input.a || 1), b = Math.min(a + 999, +input.b || a + 2);
-    const r = await fetch(`http://openapi.seoul.go.kr:8088/${encodeURIComponent(sk)}/json/${svc}/${a}/${b}/`, { signal: AbortSignal.timeout(8000) });
-    return reply(200, { status: r.status, body: (await r.text()).replaceAll(sk, "***").slice(0, 400000) });
+  /* 지하철역 엘리베이터 위치(서울 열린데이터광장 교통약자 엘리베이터 위치, 서울 안 모든 운영사 역): → { list: [[역, 위도, 경도]] }.
+     출구 번호는 없고 자리만 있다. 서울교통공사 자료가 없는 9호선·우이신설선·코레일 서울 구간 등을 채운다. 7일 동안 저장 */
+  if (kind === 'elevpos') {
+    const sk = env.SEOUL_OPEN_KEY; if (!sk) return reply(503, { error: 'elevpos off' });
+    const text = await edgeCached('epos1:all', 7 * 86400, async () => {
+      const rows = [];
+      for (let start = 1; start <= 3001; start += 1000) {
+        const r = await fetch(`http://openapi.seoul.go.kr:8088/${encodeURIComponent(sk)}/json/tbTraficElvtr/${start}/${start + 999}/`, { signal: AbortSignal.timeout(8000) });
+        const j = await r.json().catch(() => null); const s = j && j.tbTraficElvtr;
+        if (!s) return rows.length ? JSON.stringify({ list: rows }) : null;
+        for (const x of s.row || []) {
+          const m = /POINT\(([\d.]+) ([\d.]+)\)/.exec(String(x.NODE_WKT || '')); if (!m) continue;
+          rows.push([stName(x.SBWY_STN_NM), +(+m[2]).toFixed(6), +(+m[1]).toFixed(6)]);
+        }
+        if (rows.length >= +s.list_total_count || (s.row || []).length < 1000) break;
+      }
+      return JSON.stringify({ list: rows });
+    });
+    return text ? send(text, 200) : reply(502, { error: 'elevpos upstream' });
   }
 
   /* 노선별 역 목록(서울 열린데이터광장 지하철역 정보, 수도권 노선): → { lines: { '01호선': [['서울역', '133'], …] } } 외부코드(FR_CODE) 순.
