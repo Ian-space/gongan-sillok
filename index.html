@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<script src="i18n.js?v=35"></script>
+<script src="i18n.js?v=36"></script>
 <title>공간실록 시제품</title>
 <meta name="description" content="입구 계단, 화장실, 소음, 콘센트처럼 다녀온 사람만 아는 사실을 평점 대신 남기고 함께 보는 공간 지도예요.">
 <!-- 카톡 등에 링크를 보냈을 때 미리보기 -->
@@ -706,8 +706,11 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
 .tp-note{margin:2px 0 8px;font-size:12px}
 .tp-sub{margin:14px 0 6px;font-size:13px;color:var(--muted)}
 .tp-card{padding:10px 12px;margin-bottom:8px;border:1px solid var(--line);border-radius:10px;background:var(--panel)}
-.tp-title{display:block;width:100%;padding:0;border:0;background:none;font:inherit;font-size:14px;color:var(--ink);text-align:left;cursor:pointer}
+.tp-title{display:block;flex:1;min-width:0;padding:0;border:0;background:none;font:inherit;font-size:14px;color:var(--ink);text-align:left;cursor:pointer}
 .tp-title .muted{font-size:12px}
+.tp-top{display:flex;align-items:flex-start;gap:8px}
+.tp-star{flex:none;padding:0 2px;border:0;background:none;font-size:20px;line-height:1;color:var(--muted);cursor:pointer}
+.tp-star[aria-pressed="true"]{color:#E8A400}
 .tp-line{display:flex;align-items:center;gap:4px;margin:6px 0 0;font-size:12px;color:var(--ink)}
 .tp-line[hidden]{display:none}
 .tp-line.warn{color:var(--seal-ink);font-weight:600}
@@ -6635,7 +6638,22 @@ function setTab(t){
   renderAll();
   if (listSheet) listSheet.set(t === 'map' ? PEEK_H : vh(0.6), true);
 }
-// 대중교통 창: 내 위치(없으면 지도 가운데) 주변 지하철역 3곳과 버스정류장 3곳. 역은 엘리베이터 출구와 실시간 도착, 정류장은 실시간 도착(저상 표시)
+// 자주 가는 역·정류장(별표): 이 기기에만 저장. 대중교통 창 맨 위에 실시간 도착과 함께 보여 준다
+const FAV_TRANSIT_KEY = 'gongan-sillok:fav-transit', FAV_TRANSIT_MAX = 8;
+const readFavTransit = () => readList(FAV_TRANSIT_KEY).filter(x => x && x.id && x.name && Number.isFinite(x.lat) && Number.isFinite(x.lng)).slice(0, FAV_TRANSIT_MAX);
+const isFavTransit = id => readFavTransit().some(x => x.id === id);
+function toggleFavTransit(p){
+  const list = readFavTransit();
+  if (list.some(x => x.id === p.id)) writeList(FAV_TRANSIT_KEY, list.filter(x => x.id !== p.id));
+  else {
+    if (list.length >= FAV_TRANSIT_MAX) { toast(`자주 가는 곳은 ${FAV_TRANSIT_MAX}곳까지 저장할 수 있어요.`); return; }
+    const keep = ['id', 'ext', 'near', 'subway', 'bus', 'kind', 'name', 'lines', 'category', 'type', 'lat', 'lng', 'ars', 'city', 'sid', 'color', 'icon'];
+    writeList(FAV_TRANSIT_KEY, [...list, Object.fromEntries(keep.filter(k => p[k] !== undefined).map(k => [k, p[k]]))]);
+  }
+  renderTransitPane();
+}
+// 대중교통 창: 자주 가는 곳, 그리고 내 위치(없으면 지도 가운데) 주변 지하철역 3곳과 버스정류장 3곳.
+// 역은 엘리베이터 출구와 실시간 도착, 정류장은 실시간 도착(저상 표시)
 function renderTransitPane(){
   const box = $('transitPane'); box.replaceChildren();
   const c = map && map.getCenter(), at = state.me || (c && { lat: c.lat(), lng: c.lng() });
@@ -6653,29 +6671,41 @@ function renderTransitPane(){
     });
     note.appendChild(me); box.appendChild(note);
   }
-  const card = (title, sub, open) => {
-    const c = el('div','tp-card'), b = el('button','tp-title'); b.type = 'button';
-    b.append(el('b','notranslate', title), el('span','muted', ` · ${sub}`)); b.addEventListener('click', open);
-    c.appendChild(b); return c;
-  };
-  // 지하철역
-  box.appendChild(el('h4','tp-sub','지하철역'));
-  const sbox = el('div'); sbox.appendChild(el('p','muted','찾는 중…')); box.appendChild(sbox);
-  proxyPost('/station', { x: String(at.lng), y: String(at.lat) }).then(r => r.ok ? r.json() : null).then(j => {
-    const list = stationCards((j && j.stations) || [], at).filter(s => s.m <= 1200).slice(0, 3);
-    sbox.replaceChildren();
-    if (!list.length) { sbox.appendChild(el('p','muted','1km 안에 지하철역이 없어요.')); return; }
-    for (const s of list) {
-      const c = card(s.name, [s.lines.join('·'), `걸어서 약 ${walkMin(s.m)}분`].filter(Boolean).join(' · '), () => openShop(s));
-      const ev = el('p','tp-line'); ev.hidden = true;
-      elevFetch(s.name.replace(/역$/, '')).then(d => {
+  // 역·정류장 한 칸: 이름(누르면 그 장소 화면), 별표, 엘리베이터(역), 실시간 도착 4대
+  const cardOf = p => {
+    const m = distM(at, p), c = el('div','tp-card'), top = el('div','tp-top');
+    const b = el('button','tp-title'); b.type = 'button';
+    const sub = p.subway ? [(p.lines || []).join('·'), `걸어서 약 ${walkMin(m)}분`] : [p.ars && `정류장 번호 ${p.ars}`, `걸어서 약 ${walkMin(m)}분`];
+    b.append(el('b','notranslate', p.name), el('span','muted', ` · ${sub.filter(Boolean).join(' · ')}`)); b.addEventListener('click', () => openShop(p));
+    const fav = isFavTransit(p.id), star = el('button','tp-star', fav ? '★' : '☆'); star.type = 'button';
+    star.setAttribute('aria-pressed', String(fav)); star.setAttribute('aria-label', fav ? `${p.name} 자주 가는 곳에서 빼기` : `${p.name} 자주 가는 곳에 넣기`);
+    star.addEventListener('click', () => toggleFavTransit(p));
+    top.append(b, star); c.appendChild(top);
+    if (p.subway) {
+      const ev = el('p','tp-line'); ev.hidden = true; c.appendChild(ev);
+      elevFetch(p.name.replace(/역$/, '')).then(d => {
         const all = (d && d.list) || []; if (!all.length) return;
         const exits = elevExits(all).sort((a, b) => parseInt(a, 10) - parseInt(b, 10)), broken = all.filter(x => !x.ok).length;
         ev.replaceChildren(el('span','tp-ico'), exits.length ? `엘리베이터 ${exits.join('·')}번 출구` : '지상으로 가는 엘리베이터 없음', broken ? ` · 점검·중지 ${broken}대` : '');
         ev.firstChild.innerHTML = ELEV_ICON; ev.classList.toggle('warn', !exits.length || !!broken); ev.hidden = false;
       });
-      c.append(ev, stationArrivals(s, 4)); sbox.appendChild(c);
-    }
+      c.appendChild(stationArrivals(p, 4));
+    } else c.appendChild(stopArrivals(p, 4));
+    return c;
+  };
+  const favs = readFavTransit(), favIds = new Set(favs.map(x => x.id));
+  if (favs.length) {
+    box.appendChild(el('h4','tp-sub','자주 가는 곳'));
+    for (const p of favs) box.appendChild(cardOf(p));
+  }
+  // 지하철역(자주 가는 곳에 있는 역은 빼고)
+  box.appendChild(el('h4','tp-sub','지하철역'));
+  const sbox = el('div'); sbox.appendChild(el('p','muted','찾는 중…')); box.appendChild(sbox);
+  proxyPost('/station', { x: String(at.lng), y: String(at.lat) }).then(r => r.ok ? r.json() : null).then(j => {
+    const list = stationCards((j && j.stations) || [], at).filter(s => s.m <= 1200 && !favIds.has(s.id)).slice(0, 3);
+    sbox.replaceChildren();
+    if (!list.length) { sbox.appendChild(el('p','muted','1km 안에 지하철역이 없어요.')); return; }
+    for (const s of list) sbox.appendChild(cardOf(s));
   }).catch(() => sbox.replaceChildren(el('p','muted','역을 불러오지 못했어요.')));
   // 버스정류장(우리 DB)
   box.appendChild(el('h4','tp-sub','버스정류장'));
@@ -6686,12 +6716,9 @@ function renderTransitPane(){
     if (error) { bbox.appendChild(el('p','muted','정류장을 불러오지 못했어요.')); return; }
     const stops = (data || []).map(s => ({ id: 'u' + s.id, ext: true, near: true, bus: true, kind: 'BUS', name: cleanText(s.name, 40), category: '교통 > 버스정류장', type: '버스정류장',
       addr: '', phone: '', url: '', lat: +s.lat, lng: +s.lng, ars: /^\d{5}$/.test(s.ars || '') ? s.ars : '', city: s.city, sid: /^\d{6,10}$/.test(s.sid || '') ? s.sid : '' }))
-      .map(p => ({ p, m: distM(at, p) })).sort((a, b) => a.m - b.m).slice(0, 3);
+      .filter(p => !favIds.has(p.id)).sort((a, b) => distM(at, a) - distM(at, b)).slice(0, 3);
     if (!stops.length) { bbox.appendChild(el('p','muted','400m 안에 버스정류장이 없어요.')); return; }
-    for (const { p, m } of stops) {
-      const c = card(p.name, [p.ars && `정류장 번호 ${p.ars}`, `걸어서 약 ${walkMin(m)}분`].filter(Boolean).join(' · '), () => openShop(p));
-      c.appendChild(stopArrivals(p, 4)); bbox.appendChild(c);
-    }
+    for (const p of stops) bbox.appendChild(cardOf(p));
   });
 }
 function setCollect(on){
