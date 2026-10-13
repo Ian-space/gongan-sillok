@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<script src="i18n.js?v=40"></script>
+<script src="i18n.js?v=41"></script>
 <title>공간실록 시제품</title>
 <meta name="description" content="입구 계단, 화장실, 소음, 콘센트처럼 다녀온 사람만 아는 사실을 평점 대신 남기고 함께 보는 공간 지도예요.">
 <!-- 카톡 등에 링크를 보냈을 때 미리보기 -->
@@ -760,7 +760,16 @@ body.linemap #map .pin:not(.sel),body.linemap #map .near-dot,body.linemap #map .
 .lmv-x{width:36px;height:36px;border:0;background:transparent;color:var(--muted);font-size:26px;line-height:1;cursor:pointer}
 .lmv-chips{padding:0 12px 4px}
 .lmv-chips .qchip{height:32px}
-.lmv-legend{padding:0 12px 6px}
+.lmv-legend{padding:0 12px 6px;align-items:center}
+.lmv-legend[hidden],.lmv-route[hidden]{display:none}
+.lmv-elev{display:inline-flex;align-items:center;gap:5px;padding:6px 12px;border:1px solid var(--line);border-radius:999px;background:var(--panel);color:var(--ink);font:inherit;font-size:13px;font-weight:600;cursor:pointer}
+.lmv-elev svg{width:16px;height:16px;color:#2E9E6A}
+.lmv-elev[aria-pressed="true"]{background:#2E9E6A;border-color:#2E9E6A;color:#FFFFFF}
+.lmv-elev[aria-pressed="true"] svg{color:#FFFFFF}
+.lmv-route{display:flex;align-items:center;gap:8px;margin:0 12px 6px;padding:8px 12px;border-radius:10px;background:var(--blue-soft);font-size:13px}
+.lmv-route b{font-weight:700}
+.lmv-route .grow{flex:1;min-width:0}
+.lmv-route button{border:0;background:transparent;color:var(--muted);font-size:18px;cursor:pointer}
 .lmv-stage{position:relative;flex:1;min-height:0;overflow:hidden;background:#FFFFFF;touch-action:none;cursor:grab}
 .lmv-stage svg{display:block;width:100%;height:100%}
 .lmv-wait{padding:20px}
@@ -1122,7 +1131,7 @@ html{touch-action:manipulation}
           <div class="acct-sep" id="acctSep"></div>
           <button class="acct-item" id="btnInstall" type="button" hidden>홈 화면에 추가</button>
           <button class="acct-item" id="btnMove" type="button" hidden>이 브라우저 기록 계정으로 옮기기</button>
-          <div class="acct-theme" id="themeRow" role="group" aria-label="화면 테마"><span>화면</span><button type="button" data-t="system">기기 설정</button><button type="button" data-t="light">밝게</button><button type="button" data-t="dark">어둡게</button></div>
+          <div class="acct-theme" id="themeRow" role="group" aria-label="화면 테마"><span>화면</span><button type="button" data-t="light">밝게</button><button type="button" data-t="dark">어둡게</button><button type="button" data-t="system">시스템 설정</button></div>
           <button class="acct-item" id="btnLang" type="button" translate="no" lang="en">English</button>
           <button class="acct-item" id="btnTour" type="button">사용법 다시 보기</button>
           <button class="acct-item" id="btnLoad" type="button">엑셀 파일 불러오기</button>
@@ -1144,7 +1153,7 @@ html{touch-action:manipulation}
       <button type="button" id="zin" aria-label="확대">+</button>
       <button type="button" id="zout" aria-label="축소">−</button>
       <button type="button" class="round" id="zfit" aria-label="기록한 장소 전체 보기" title="전체 보기"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/></svg></button>
-      <button type="button" class="round" id="zlines" aria-label="엘리베이터 노선도" title="엘리베이터 노선도">
+      <button type="button" class="round" id="zlines" aria-label="지하철 노선도" title="지하철 노선도">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M9 10l3-3 3 3M9 14l3 3 3-3"/></svg>
       </button>
       <button type="button" class="round" id="zsaved" aria-pressed="false" aria-label="찜한 곳과 내 기록만 모아 보기" title="내 장소 모아 보기">
@@ -1171,15 +1180,17 @@ html{touch-action:manipulation}
 <dialog class="add-dlg" id="addDlg" aria-labelledby="addTitle"><div class="add-body" id="addBody"></div></dialog>
 <dialog class="add-dlg" id="adminDlg" aria-labelledby="adminTitle"><div class="add-body" id="adminBody"></div></dialog>
 <dialog class="add-dlg" id="moveDlg" aria-label="이 브라우저의 기록을 계정으로 옮기기"><div class="add-body" id="moveBody"></div></dialog>
-<!-- 엘리베이터 노선도(도식형): 화면 가득. 끌어서 옮기고 두 손가락·휠로 확대, 역을 누르면 아래 카드 -->
-<section class="lmv" id="lmView" hidden aria-label="엘리베이터 노선도">
+<!-- 지하철 노선도(도식형): 화면 가득. 끌어서 옮기고 두 손가락·휠로 확대, 역을 누르면 아래 카드([출발]·[도착]·역 정보).
+     [엘리베이터]를 켜면 역마다 엘리베이터 상태 색 -->
+<section class="lmv" id="lmView" hidden aria-label="지하철 노선도">
   <div class="lmv-head">
-    <b>엘리베이터 노선도</b>
-    <button type="button" class="lmv-mapbtn" id="lmvMap">지도에서 보기</button>
-    <button type="button" class="lmv-x" id="lmvClose" aria-label="엘리베이터 노선도 닫기">×</button>
+    <b>지하철 노선도</b>
+    <button type="button" class="lmv-elev" id="lmvElev" aria-pressed="false"></button>
+    <button type="button" class="lmv-x" id="lmvClose" aria-label="지하철 노선도 닫기">×</button>
   </div>
   <div class="lm-chips lmv-chips" id="lmvChips"></div>
-  <div class="lm-legend lmv-legend"><span class="lm-key ok">엘리베이터 있음</span><span class="lm-key no">지상 엘리베이터 없음</span><span class="lm-key warn">점검 중</span><span class="lm-key none">정보 없음</span></div>
+  <div class="lm-legend lmv-legend" id="lmvLegend" hidden><span class="lm-key ok">엘리베이터 있음</span><span class="lm-key no">지상 엘리베이터 없음</span><span class="lm-key warn">점검 중</span><span class="lm-key none">정보 없음</span><button type="button" class="linkbtn" id="lmvMap">지도에서 보기</button></div>
+  <div class="lmv-route" id="lmvRoute" hidden></div>
   <div class="lmv-stage" id="lmvStage"><p class="muted lmv-wait">노선도를 불러오는 중…</p></div>
   <div class="lmv-card" id="lmvCard" hidden></div>
 </section>
@@ -3428,9 +3439,10 @@ function fromOdsay(path){
 const odsayCache = new Map();
 async function odsayTransit(p){
   const { from: o, to: d } = routeEnds(p);
-  const k = [o.lng, o.lat, d.lng, d.lat].map(v => (+v).toFixed(4)).join(',');
+  const sub = state.routeSubwayFor === p.id; // 지하철 노선도에서 역끼리 고른 길: 지하철만
+  const k = [o.lng, o.lat, d.lng, d.lat].map(v => (+v).toFixed(4)).join(',') + (sub ? ':sub' : '');
   if (odsayCache.has(k)) return odsayCache.get(k);
-  const r = await odsayRaw({ SX: String(o.lng), SY: String(o.lat), EX: String(d.lng), EY: String(d.lat) });
+  const r = await odsayRaw({ SX: String(o.lng), SY: String(o.lat), EX: String(d.lng), EY: String(d.lat), ...(sub && { SearchPathType: '1' }) });
   if (r.status === 'ok') odsayCache.set(k, r);
   return r;
 }
@@ -3536,7 +3548,7 @@ function renderOriginHead(){
 // 고른 방향을 적용하고 길을 찾는다
 function applyOriginSwap(){ if (originFor) state.routeSwap = originSwap ? originFor.id : null; }
 function pickMyLocation(){
-  $('originDlg').close(); applyOriginSwap();
+  $('originDlg').close(); applyOriginSwap(); state.routeSubwayFor = null;
   if (state.me) setRouteFrom(null);
   else { state.routeFrom = null; state.transit = null; clearRoute(); if (originFor) state.routeAfterFix = originFor.id; locate(false, true); renderAll(); }
 }
@@ -3549,7 +3561,7 @@ function renderOriginList(list, status){
       const p = { id: `d${Math.round(x.lat * 1e5)}_${Math.round(x.lng * 1e5)}`, ext: true, name: x.name, type: x.type || '', category: x.type || '', addr: x.addr || '', phone: '', url: '', lat: x.lat, lng: x.lng };
       openShop(p); setTimeout(() => openOriginPicker(findPlace(state.sel) || p), 80); return;
     }
-    applyOriginSwap(); setRouteFrom(x);
+    state.routeSubwayFor = null; applyOriginSwap(); setRouteFrom(x); // 출발지를 직접 고르면 버스도 함께
   };
   const notHere = x => !(originFor && sameSpot(originFor, x));
   // 아직 아무것도 찾지 않았으면 최근에 고른 곳을 보여 준다
@@ -6816,20 +6828,22 @@ function renderLineBar(){
   const x = el('button','lm-close','×'); x.type = 'button'; x.setAttribute('aria-label','엘리베이터 노선도 닫기'); x.addEventListener('click', closeLineMap);
   const legend = el('div','lm-legend');
   legend.append(el('span','lm-key ok','엘리베이터 있음'), el('span','lm-key no','지상 엘리베이터 없음'), el('span','lm-key warn','점검 중'), el('span','lm-key none','정보 없음'));
-  bar.replaceChildren(el('div','lm-top'), legend); bar.firstChild.append(el('b', null, '엘리베이터 노선도'), x); bar.insertBefore(row, legend);
+  bar.replaceChildren(el('div','lm-top'), legend); bar.firstChild.append(el('b', null, '지도 위 역 엘리베이터'), x); bar.insertBefore(row, legend);
   bindDragScroll(row);
   const on = row.querySelector('[aria-pressed="true"]'); if (on) row.scrollLeft = Math.max(0, on.getBoundingClientRect().left - row.getBoundingClientRect().left - 40); // 고른 노선이 보이게
 }
 /* 엘리베이터 노선도(도식형): LOOM으로 만든 반듯한 노선도(linemap.json, .github/workflows/linemap.yml)에 역마다 엘리베이터 상태 색.
    끌어서 옮기고, 두 손가락·휠로 확대. 역을 누르면 아래 카드(엘리베이터 출구, [역 정보 보기]) */
-let lmvData = null, lmvView = { s: 1, x: 0, y: 0 }, lmvLine = null;
+let lmvData = null, lmvView = { s: 1, x: 0, y: 0 }, lmvLine = null, lmvRoute = { from: null, to: null };
+// 엘리베이터 정보 켜기(이 기기에 기억). 끄면 보통 노선도처럼 흰 역
+let lmvElev = (() => { try { return localStorage.getItem('gongan-sillok:lmv-elev') === '1'; } catch { return false; } })();
 const lmvStatus = name => {
   const e = lineData && lineData.elev[name], has = lineData && lineData.posSt.has(name);
   return { cls: e ? (e[0] || has ? 'ok' : 'no') : has ? 'ok' : 'none', exits: e ? e[0] : '', warn: !!(e && e[2] > 0), broken: e ? e[2] : 0 };
 };
 const LMV_FILL = { ok: '#2E9E6A', no: '#D6453D', none: '#FFFFFF' };
 async function openLineView(){
-  $('lmView').hidden = false; $('lmvCard').hidden = true;
+  $('lmView').hidden = false; $('lmvCard').hidden = true; renderLineViewElev(); renderLineViewRoute();
   try {
     const [m] = await Promise.all([lmvData ? lmvData : fetch('linemap.json?v=1').then(r => { if (!r.ok) throw new Error('linemap'); return r.json(); }), loadLineData()]);
     lmvData = m;
@@ -6857,8 +6871,11 @@ function drawLineView(reset){
   const onSel = new Set(); if (sel != null) for (const [cs, ls] of d.edges) if (ls.includes(sel)) for (let j = 0; j < cs.length; j += 2) onSel.add(`${cs[j]},${cs[j + 1]}`);
   for (const [name, x, y, deg] of d.stations) {
     const dim = sel != null && !onSel.has(`${x},${y}`);
-    const st = lmvStatus(name), big = deg > 2;
-    const c = mk('circle', { cx: x, cy: y, r: big ? 6 : 4.5, fill: LMV_FILL[st.cls], stroke: st.warn ? '#F2B705' : st.cls === 'none' ? '#9AA1AD' : '#1B1F2A', 'stroke-width': st.warn ? 3 : 1.6, class: 'st-dot', opacity: dim ? 0.2 : 1 });
+    const st = lmvStatus(name), big = deg > 2, end = name === lmvRoute.from ? '#1F5EFF' : name === lmvRoute.to ? '#D6453D' : '';
+    if (end) g.appendChild(mk('circle', { cx: x, cy: y, r: 11, fill: 'none', stroke: end, 'stroke-width': 4 })); // 고른 출발(파랑)·도착(빨강)
+    const c = lmvElev
+      ? mk('circle', { cx: x, cy: y, r: big ? 6 : 4.5, fill: LMV_FILL[st.cls], stroke: st.warn ? '#F2B705' : st.cls === 'none' ? '#9AA1AD' : '#1B1F2A', 'stroke-width': st.warn ? 3 : 1.6, class: 'st-dot', opacity: dim ? 0.2 : 1 })
+      : mk('circle', { cx: x, cy: y, r: big ? 6 : 4, fill: '#FFFFFF', stroke: '#1B1F2A', 'stroke-width': big ? 2.4 : 1.4, class: 'st-dot', opacity: dim ? 0.2 : 1 });
     c.addEventListener('click', e => { e.stopPropagation(); showLineViewCard(name); });
     g.appendChild(c);
     if (!dim) { const t = mk('text', { x: x + 7, y: y - 6, 'font-size': big ? 10 : 8, 'font-weight': big ? 700 : 500, class: big ? '' : 'minor' }); t.textContent = name; g.appendChild(t); }
@@ -6893,23 +6910,51 @@ function renderLineViewChips(){
   chip(null, '전체', '');
   for (const [id, label, color] of lmvData.lines.slice().sort((a, b) => Object.keys(LINE_INFO).indexOf(a[0]) - Object.keys(LINE_INFO).indexOf(b[0]))) chip(id, label, color);
 }
+// 노선도의 역 → 지도 위 역 카드(실시간 도착·엘리베이터가 있는 역 화면, 길찾기 도착지로도 쓴다)
+function lineViewStation(name){
+  const geo = lineData && Object.values(lineData.lines).flat().find(x => x[0] === name && x[3]); if (!geo) return null;
+  const nm = /역$/.test(name) ? name : name + '역';
+  const lines = Object.keys(lineData.lines).filter(k => lineData.lines[k].some(x => x[0] === name)).map(k => (LINE_INFO[k] || [k])[0]);
+  return { id: 'stn:' + nm, ext: true, near: true, subway: true, kind: 'SW8', name: nm, lines, category: '교통 > 지하철역', type: '지하철역',
+    addr: '', phone: '', url: '', lat: geo[3], lng: geo[4], color: '#5B6475', icon: STN_ICON };
+}
 function showLineViewCard(name){
-  const card = $('lmvCard'), st = lmvStatus(name);
-  const lines = lineData ? Object.keys(lineData.lines).filter(k => lineData.lines[k].some(x => x[0] === name)).map(k => (LINE_INFO[k] || [k])[0]) : [];
+  const card = $('lmvCard'), st = lmvStatus(name), p = lineViewStation(name);
   const nm = /역$/.test(name) ? name : name + '역';
   const ev = st.cls === 'ok' ? (st.exits ? `엘리베이터 ${st.exits}번 출구` : '엘리베이터 있음 (출구 번호 정보 없음)') : st.cls === 'no' ? '지상으로 가는 엘리베이터 없음' : '아직 엘리베이터 정보가 없어요';
-  const p = el('p', st.cls === 'no' ? 'warn' : '', ev + (st.broken ? ` · 점검·중지 ${st.broken}대` : ''));
-  const go = el('button','btn add', '역 정보 보기'); go.type = 'button';
-  go.addEventListener('click', () => {
-    const geo = lineData && Object.values(lineData.lines).flat().find(x => x[0] === name && x[3]);
-    if (!geo) return;
-    closeLineView();
-    openShop({ id: 'stn:' + nm, ext: true, near: true, subway: true, kind: 'SW8', name: nm, lines, category: '교통 > 지하철역', type: '지하철역',
-      addr: '', phone: '', url: '', lat: geo[3], lng: geo[4], color: '#5B6475', icon: STN_ICON });
-  });
-  const x = el('button','btn', '닫기'); x.type = 'button'; x.addEventListener('click', () => { card.hidden = true; });
-  const acts = el('div','acts'); acts.append(go, x);
-  card.replaceChildren(el('h3','notranslate', nm), el('p','muted', lines.join(' · ')), p, acts); card.hidden = false;
+  const evLine = el('p', st.cls === 'no' ? 'warn' : '', ev + (st.broken ? ` · 점검·중지 ${st.broken}대` : ''));
+  const btn = (t, cls, fn) => { const b = el('button', cls, t); b.type = 'button'; b.addEventListener('click', fn); return b; };
+  // 역끼리 길찾기: [출발]·[도착]을 고르면 둘 다 정해졌을 때 경로를 찾는다
+  const pick = which => () => { lmvRoute[which] = name; if (lmvRoute.from === lmvRoute.to) lmvRoute[which === 'from' ? 'to' : 'from'] = null; card.hidden = true; drawLineView(false); renderLineViewRoute(); };
+  const acts = el('div','acts');
+  acts.append(btn('출발', 'btn add', pick('from')), btn('도착', 'btn add rec', pick('to')),
+    btn('역 정보', 'btn', () => { if (!p) return; closeLineView(); openShop(p); }), btn('닫기', 'btn', () => { card.hidden = true; }));
+  card.replaceChildren(el('h3','notranslate', nm), el('p','muted', p ? p.lines.join(' · ') : ''), evLine, acts); card.hidden = false;
+}
+// 출발·도착 줄. 둘 다 고르면 지도에서 그 경로를 찾는다(도착역을 열고 출발역에서 출발)
+function renderLineViewRoute(){
+  const bar = $('lmvRoute'), r = lmvRoute;
+  bar.hidden = !r.from && !r.to; if (bar.hidden) { bar.replaceChildren(); return; }
+  const nm = n => n ? (/역$/.test(n) ? n : n + '역') : '';
+  const t = el('span','grow');
+  t.append('출발 ', el('b','notranslate', r.from ? nm(r.from) : '역을 고르세요'), ' → 도착 ', el('b','notranslate', r.to ? nm(r.to) : '역을 고르세요'));
+  const x = el('button', null, '×'); x.type = 'button'; x.setAttribute('aria-label', '출발·도착 지우기');
+  x.addEventListener('click', () => { lmvRoute = { from: null, to: null }; renderLineViewRoute(); drawLineView(false); });
+  bar.replaceChildren(t, x);
+  if (r.from && r.to) {
+    const from = lineViewStation(r.from), to = lineViewStation(r.to); if (!from || !to) return;
+    const go = el('button','btn add', '길찾기'); go.type = 'button'; go.style.fontSize = '13px';
+    go.addEventListener('click', () => {
+      lmvRoute = { from: null, to: null }; renderLineViewRoute(); closeLineView();
+      state.routeSwap = null; state.routeSubwayFor = to.id; openShop(to); setRouteFrom(from); // 도착역 화면에서 출발역 기준 경로(지하철만)
+    });
+    bar.insertBefore(go, x);
+  }
+}
+function renderLineViewElev(){
+  const b = $('lmvElev'); b.setAttribute('aria-pressed', String(lmvElev));
+  b.innerHTML = ELEV_ICON; b.append(lmvElev ? '엘리베이터 켜짐' : '엘리베이터');
+  $('lmvLegend').hidden = !lmvElev;
 }
 // 끌기·두 손가락 확대·휠
 (() => {
@@ -6929,6 +6974,7 @@ function showLineViewCard(name){
   stage.addEventListener('wheel', e => { e.preventDefault(); const r = stage.getBoundingClientRect(); zoomLineView(e.deltaY < 0 ? 1.15 : 1 / 1.15, e.clientX - r.left, e.clientY - r.top); }, { passive: false });
   $('lmvClose').addEventListener('click', closeLineView);
   $('lmvMap').addEventListener('click', () => { closeLineView(); openLineMap(lmvLine); });
+  $('lmvElev').addEventListener('click', () => { lmvElev = !lmvElev; try { localStorage.setItem('gongan-sillok:lmv-elev', lmvElev ? '1' : '0'); } catch {} renderLineViewElev(); drawLineView(false); });
 })();
 // 자주 가는 역·정류장(별표): 이 기기에만 저장. 대중교통 창 맨 위에 실시간 도착과 함께 보여 준다
 const FAV_TRANSIT_KEY = 'gongan-sillok:fav-transit', FAV_TRANSIT_MAX = 8;
@@ -6953,7 +6999,7 @@ function renderTransitPane(){
   const re = el('button','linkbtn','새로고침'); re.type = 'button'; re.addEventListener('click', renderTransitPane); head.appendChild(re);
   box.appendChild(head);
   const lmBtn = el('button','tp-linemap'); lmBtn.type = 'button';
-  lmBtn.innerHTML = ELEV_ICON; lmBtn.append(el('span', null, '엘리베이터 노선도'), el('small', null, '수도권 모든 노선의 역별 엘리베이터'));
+  lmBtn.innerHTML = ELEV_ICON; lmBtn.append(el('span', null, '지하철 노선도'), el('small', null, '수도권 모든 노선 · 역끼리 길찾기 · 엘리베이터 정보'));
   lmBtn.addEventListener('click', () => openLineView());
   box.appendChild(lmBtn);
   if (!at) { box.appendChild(el('p','muted','지도를 불러온 뒤 다시 눌러 주세요.')); return; }
@@ -7137,7 +7183,7 @@ $('fdDone').addEventListener('click', () => $('filterDlg').close());
 $('fdClear').addEventListener('click', () => { $('btnClear').click(); setBadges([]); });
 $('filterDlg').addEventListener('click', e => { if (e.target === $('filterDlg')) $('filterDlg').close(); }); // 바깥(어두운 부분)을 누르면 닫기
 $('zsaved').addEventListener('click', () => setCollect(!state.collect));
-// 화면 테마: 기기 설정(기본) · 밝게 · 어둡게. 이 기기에만 저장. 지도 그림(네이버)은 테마와 상관없이 밝다
+// 화면 테마: 밝게 · 어둡게 · 시스템 설정(기본, 기기 설정을 따른다). 이 기기에만 저장. 지도 그림(네이버)은 테마와 상관없이 밝다
 const THEME_KEY = 'gongan-sillok:theme';
 function applyTheme(t){
   if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme;

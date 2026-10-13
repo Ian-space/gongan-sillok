@@ -34,7 +34,7 @@
 //   POST /photoplace { image: base64 JPEG 1장, x, y }        → 사진+위치로 그 자리의 가게 후보(간판 글자, AI가 고른 곳, 가까운 곳) (로그인 필요)
 
 const ALLOWED_ORIGINS = ['https://ian-space.github.io', 'http://localhost:8765'];
-const VERSION = '2026-10-14.14'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
+const VERSION = '2026-10-14.15'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
 // 로그인 확인용 Supabase 주소와 공개 키(사이트 코드에도 있는 공개 값)
 const SUPABASE_URL = 'https://qktrghajroxddrbpwtvn.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_j-kp8YKsQTczGcsQX74OxA_mfI7DoZw';
@@ -190,7 +190,8 @@ async function handle(kind, input, { request, env, ctx, send, reply }) {
   if (kind === 'odsay') {
     const sx = num(input.SX), sy = num(input.SY), ex = num(input.EX), ey = num(input.EY);
     if (!inKorea(sx, sy) || !inKorea(ex, ey)) return reply(400, { error: 'coordinates out of range' });
-    const r4 = v => v.toFixed(4), q = `SX=${r4(sx)}&SY=${r4(sy)}&EX=${r4(ex)}&EY=${r4(ey)}`;
+    // SearchPathType 1: 지하철만(지하철 노선도에서 역끼리 찾을 때)
+    const r4 = v => v.toFixed(4), q = `SX=${r4(sx)}&SY=${r4(sy)}&EX=${r4(ex)}&EY=${r4(ey)}${String(input.SearchPathType || '') === '1' ? '&SearchPathType=1' : ''}`;
     const key = `ods1:${q}`;
     const m = memGet(key); if (m) return send(m, 200, { 'X-Cache': 'MEM' });
     const edge = caches.default, ck = new Request('https://cache.gongan-sillok/odsay?' + q);
