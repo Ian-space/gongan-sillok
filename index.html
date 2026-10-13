@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<script src="i18n.js?v=39"></script>
+<script src="i18n.js?v=40"></script>
 <title>공간실록 시제품</title>
 <meta name="description" content="입구 계단, 화장실, 소음, 콘센트처럼 다녀온 사람만 아는 사실을 평점 대신 남기고 함께 보는 공간 지도예요.">
 <!-- 카톡 등에 링크를 보냈을 때 미리보기 -->
@@ -21,6 +21,7 @@
 <meta name="apple-mobile-web-app-title" content="공간실록">
 <meta name="theme-color" content="#EEF1EE" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#141A1D" media="(prefers-color-scheme: dark)">
+<script>/* 고른 화면 테마(밝게·어둡게)를 그리기 전에 적용한다(깜빡임 방지). 없으면 기기 설정을 따른다 */ try { const t = localStorage.getItem("gongan-sillok:theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch {}</script>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
 <style>
 :root{
@@ -641,6 +642,10 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
 .tb-row .acct-menu{right:0;top:54px}
 .tb-route{flex:none;display:grid;place-items:center;width:46px;height:46px;padding:0;border:0;border-radius:50%;background:var(--blue);color:#FFFFFF;box-shadow:0 2px 10px rgba(15,20,40,.25);cursor:pointer}
 .tb-route svg{width:22px;height:22px}
+.acct-theme{display:flex;align-items:center;gap:4px;padding:8px 12px}
+.acct-theme span{flex:1;font-size:14px}
+.acct-theme button{padding:5px 10px;border:1px solid var(--line);border-radius:999px;background:var(--panel);color:var(--ink);font:inherit;font-size:12px;font-weight:600;cursor:pointer}
+.acct-theme button[aria-pressed="true"]{background:var(--ink);border-color:var(--ink);color:var(--panel)}
 .mapctl [hidden]{display:none}
 .qchips{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;padding:2px 2px 4px}
 /* 넘칠 때만 오른쪽 끝을 흐리게: 잘린 게 아니라 더 있다는 표시 */
@@ -1117,6 +1122,7 @@ html{touch-action:manipulation}
           <div class="acct-sep" id="acctSep"></div>
           <button class="acct-item" id="btnInstall" type="button" hidden>홈 화면에 추가</button>
           <button class="acct-item" id="btnMove" type="button" hidden>이 브라우저 기록 계정으로 옮기기</button>
+          <div class="acct-theme" id="themeRow" role="group" aria-label="화면 테마"><span>화면</span><button type="button" data-t="system">기기 설정</button><button type="button" data-t="light">밝게</button><button type="button" data-t="dark">어둡게</button></div>
           <button class="acct-item" id="btnLang" type="button" translate="no" lang="en">English</button>
           <button class="acct-item" id="btnTour" type="button">사용법 다시 보기</button>
           <button class="acct-item" id="btnLoad" type="button">엑셀 파일 불러오기</button>
@@ -7131,6 +7137,20 @@ $('fdDone').addEventListener('click', () => $('filterDlg').close());
 $('fdClear').addEventListener('click', () => { $('btnClear').click(); setBadges([]); });
 $('filterDlg').addEventListener('click', e => { if (e.target === $('filterDlg')) $('filterDlg').close(); }); // 바깥(어두운 부분)을 누르면 닫기
 $('zsaved').addEventListener('click', () => setCollect(!state.collect));
+// 화면 테마: 기기 설정(기본) · 밝게 · 어둡게. 이 기기에만 저장. 지도 그림(네이버)은 테마와 상관없이 밝다
+const THEME_KEY = 'gongan-sillok:theme';
+function applyTheme(t){
+  if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme;
+  const dark = t === 'dark' || (t !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches);
+  for (const m of document.querySelectorAll('meta[name="theme-color"]')) { if (t === 'light' || t === 'dark') m.removeAttribute('media'); m.content = dark ? '#141A1D' : '#EEF1EE'; }
+  for (const b of $('themeRow').querySelectorAll('button')) b.setAttribute('aria-pressed', String(b.dataset.t === (t || 'system')));
+}
+$('themeRow').addEventListener('click', e => {
+  const b = e.target.closest('button[data-t]'); if (!b) return;
+  try { if (b.dataset.t === 'system') localStorage.removeItem(THEME_KEY); else localStorage.setItem(THEME_KEY, b.dataset.t); } catch {}
+  applyTheme(b.dataset.t);
+});
+applyTheme((() => { try { return localStorage.getItem(THEME_KEY); } catch { return null; } })());
 $('tabbar').addEventListener('click', e => { const b = e.target.closest('button[data-tab]'); if (b) setTab(b.dataset.tab); }); // 휴대폰 아래 탭
 $('zlines').addEventListener('click', () => state.lineMap ? closeLineMap() : openLineView()); // 엘리베이터 노선도(컴퓨터)
 $('q').addEventListener('focus', () => { if (state.tab !== 'map') { state.tab = 'map'; renderAll(); } }); // 검색하면 목록(지도 탭)으로
