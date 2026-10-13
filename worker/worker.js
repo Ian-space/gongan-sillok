@@ -30,7 +30,7 @@
 //   POST /photoplace { image: base64 JPEG 1장, x, y }        → 사진+위치로 그 자리의 가게 후보(간판 글자, AI가 고른 곳, 가까운 곳) (로그인 필요)
 
 const ALLOWED_ORIGINS = ['https://ian-space.github.io', 'http://localhost:8765'];
-const VERSION = '2026-10-14.2'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
+const VERSION = '2026-10-14.3'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
 // 로그인 확인용 Supabase 주소와 공개 키(사이트 코드에도 있는 공개 값)
 const SUPABASE_URL = 'https://qktrghajroxddrbpwtvn.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_j-kp8YKsQTczGcsQX74OxA_mfI7DoZw';
@@ -233,7 +233,7 @@ async function handle(kind, input, { request, env, ctx, send, reply }) {
       try {
         const r = await fetch(`${base}/openapi/${p}?${qs}`, { signal: AbortSignal.timeout(8000) });
         const t = await r.text();
-        out.push({ base, status: r.status, body: t.replaceAll(env.KRIC_KEY, '***').slice(0, 5000) });
+        out.push({ base, status: r.status, body: t.replaceAll(env.KRIC_KEY, '***').slice(0, 300000) });
         if (r.ok) break;
       } catch (e) { out.push({ base, err: String((e && e.message) || e).slice(0, 200) }); }
     }
