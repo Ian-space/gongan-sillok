@@ -24,6 +24,7 @@
 //   POST /odsay    { SX, SY, EX, EY }                           → ODsay 대중교통 경로(같은 구간은 하루 동안 같이 쓴다)
 //   POST /fstexit  { station }                                  → 빠른하차(엘리베이터·에스컬레이터·계단 가까운 문, 서울교통공사 1~8호선)
 //   POST /elevpath { station, line }                           → 엘리베이터 이동 동선(출입구↔승강장, 환승, KRIC, 서울교통공사 1~8호선)
+//   POST /fsttrans { station }                                 → 빠른 환승(갈아탈 노선으로 가장 빨리 가는 칸·문, 국토교통부)
 //   POST /sched    { type: bus|subway, ... }                    → 첫차·막차(서울·경기 버스, 서울 지하철 역별 시간표)
 //   POST /nearby   { rect: "왼쪽X,아래Y,오른쪽X,위Y", code? }      → 지도 한 칸 안의 장소 (NEARBY의 업종 코드)
 //   POST /intent   { text }                                     → 글로 적은 목적을 기록 항목 조건으로 (로그인 필요)
@@ -31,7 +32,7 @@
 //   POST /photoplace { image: base64 JPEG 1장, x, y }        → 사진+위치로 그 자리의 가게 후보(간판 글자, AI가 고른 곳, 가까운 곳) (로그인 필요)
 
 const ALLOWED_ORIGINS = ['https://ian-space.github.io', 'http://localhost:8765'];
-const VERSION = '2026-10-14.7'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
+const VERSION = '2026-10-14.8'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
 // 로그인 확인용 Supabase 주소와 공개 키(사이트 코드에도 있는 공개 값)
 const SUPABASE_URL = 'https://qktrghajroxddrbpwtvn.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_j-kp8YKsQTczGcsQX74OxA_mfI7DoZw';
@@ -95,7 +96,7 @@ const TMAP = {
   transit: 'https://apis.openapi.sk.com/transit/routes',
   walk: 'https://apis.openapi.sk.com/tmap/routes/pedestrian?version=1&format=json',
 };
-const PLACE_KINDS = ['search', 'nearby', 'station', 'addr', 'apt', 'bldreg', 'arrive', 'elev', 'odsay', 'fstexit', 'sched', 'clienterr', 'elevpath'];
+const PLACE_KINDS = ['search', 'nearby', 'station', 'addr', 'apt', 'bldreg', 'arrive', 'elev', 'odsay', 'fstexit', 'sched', 'clienterr', 'elevpath', 'fsttrans'];
 const ODSAY_WEB_KEY = 'vpfLJcZCiAwV7L5fibSQjA'; // 사이트(index.html)에도 공개된 웹 키. 따로 넣은 비밀값 ODSAY_API_KEY가 있으면 그걸 쓴다
 const AI_KINDS = ['intent', 'photo', 'photoplace'];
 
@@ -294,6 +295,30 @@ async function handle(kind, input, { request, env, ctx, send, reply }) {
     });
     if (!all) return reply(502, { error: 'fstexit upstream' });
     const list = JSON.parse(all).filter(x => x[0] === st).map(([, line, dir, door, fac]) => ({ line, dir, door, fac }));
+    return reply(200, { list });
+  }
+
+  /* 빠른 환승(공공데이터포털 국토교통부_철도역 빠른 환승 정보, odcloud): 역 이름 → 그 역에서 갈아탈 노선으로 가장 빨리 가는 칸·문
+     → { list: [{ op, line, end, xop, xline, xnext, xfrom, car, door }] } end: 타고 온 열차의 방향(종착역), xline·xnext: 갈아탈 노선과 그 방향(다음 역).
+     전체(수천 줄)를 하루 동안 저장해 두고 역별로 나눠 준다 */
+  if (kind === 'fsttrans') {
+    const st = stName(input.station);
+    if (!st || st.length > 20) return reply(400, { error: 'bad station' });
+    const gk = dataKey(); if (!gk) return reply(503, { error: 'fsttrans off' });
+    const s = v => String(v ?? '').trim();
+    const all = await edgeCached('ftr1:all', 86400, async () => {
+      const rows = [];
+      for (let page = 1; page <= 10; page++) {
+        const r = await fetch(`https://api.odcloud.kr/api/15151816/v1/uddi:e9c2bb71-05e8-4767-8397-9df787ee70f6?page=${page}&perPage=1000&returnType=JSON&serviceKey=${encodeURIComponent(gk)}`, { signal: AbortSignal.timeout(8000) });
+        const j = await r.json().catch(() => null);
+        if (!j || !Array.isArray(j.data)) return rows.length ? JSON.stringify(rows) : null;
+        for (const x of j.data) rows.push([stName(x['역명']), s(x['철도운영기관명']), s(x['노선명']), stName(x['종착역명']), s(x['환승철도운영기관명']), s(x['환승선']), stName(x['환승이후역명']), stName(x['환승기점역명']), +x['차량순서'] || 0, +x['차량출입문번호'] || 0]);
+        if (rows.length >= +j.totalCount || j.data.length < 1000) break;
+      }
+      return JSON.stringify(rows);
+    });
+    if (!all) return reply(502, { error: 'fsttrans upstream' });
+    const list = JSON.parse(all).filter(x => x[0] === st).map(([, op, line, end, xop, xline, xnext, xfrom, car, door]) => ({ op, line, end, xop, xline, xnext, xfrom, car, door }));
     return reply(200, { list });
   }
 
