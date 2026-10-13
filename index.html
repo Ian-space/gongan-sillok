@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<script src="i18n.js?v=29"></script>
+<script src="i18n.js?v=30"></script>
 <title>공간실록 시제품</title>
 <meta name="description" content="입구 계단, 화장실, 소음, 콘센트처럼 다녀온 사람만 아는 사실을 평점 대신 남기고 함께 보는 공간 지도예요.">
 <!-- 카톡 등에 링크를 보냈을 때 미리보기 -->
@@ -433,6 +433,9 @@ button.stat[aria-pressed="true"] span{color:#FFFFFF}
 .ext-info{display:grid;gap:10px}
 .ext-none,.ext-phone{margin:0;font-size:13px}
 .ext-phone.warn{color:var(--seal-ink);font-weight:600}
+.ext-more{display:block;margin:2px 0 8px;padding:6px 2px;border:0;background:none;font:inherit;font-size:13px;color:var(--muted);text-decoration:underline dotted;text-underline-offset:3px;cursor:pointer}
+.ext-more .t-caret{display:inline-block;width:5px;height:5px;margin:0 2px 2px 6px;border:solid currentColor;border-width:0 1.5px 1.5px 0;transform:rotate(45deg);vertical-align:middle}
+.ext-more[aria-expanded="true"] .t-caret{transform:rotate(-135deg);margin-bottom:-1px}
 .ext-acts{display:flex;gap:8px;flex-wrap:wrap}
 a.btn{display:inline-flex;align-items:center;text-decoration:none}
 .ext-tag.rec{color:var(--blue);border-color:var(--blue)}
@@ -3696,7 +3699,7 @@ function routeOption(r, i, t){
   // 출발 시각(고른 시각, 없으면 지금) – 도착 시각
   if (r.minutes) {
     const hm = m => `${String(Math.floor(m / 60) % 24).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`, s0 = routeNow().min;
-    opt.appendChild(el('div','d-ttime', `${hm(s0)} 출발 → ${hm(s0 + r.minutes)} 도착${s0 + r.minutes >= 1440 ? ' (다음 날)' : ''}`));
+    opt.appendChild(el('div','d-ttime', `${hm(s0)} – ${hm(s0 + r.minutes)}${s0 + r.minutes >= 1440 ? ' (다음 날)' : ''}`));
   }
   // 구간을 색 띠로 한 줄에 보여 준다
   const bar = el('div','d-tbar');
@@ -4002,7 +4005,8 @@ function accessChips(r, i){
   const enter = !(prevRide && prevRide.mode === 'subway' && nm(prevRide.to) === nm(s.from));
   const leave = !(nextRide && nextRide.mode === 'subway' && nm(nextRide.from) === nm(s.to));
   const chips = el('div','t-chips'), panel = el('div','t-accpanel'); panel.hidden = true;
-  panel.append(elevNote(s, 'from'), elevNote(s, 'to'), fastExitNote(s), elevPathNote(r, i, 'from'), elevPathNote(r, i, 'to'));
+  // 빠른하차(엘리베이터·계단과 가까운 문)는 길로 나가는 역에서만. 갈아타는 역은 빠른 환승 자리(자료가 오면)
+  panel.append(elevNote(s, 'from'), elevNote(s, 'to'), ...(leave ? [fastExitNote(s)] : []), elevPathNote(r, i, 'from'), elevPathNote(r, i, 'to'));
   const toggle = e => {
     e.stopPropagation(); panel.hidden = !panel.hidden;
     for (const c of chips.children) c.setAttribute('aria-expanded', String(!panel.hidden));
@@ -4026,11 +4030,13 @@ function accessChips(r, i){
       });
     }
     if (!enter && !leave) chip('', ELEV_ICON)('환승 엘리베이터');
-    const fast = chip('');
-    fastRows(s).then(rows => {
-      const x = rows.find(x => x.fac === '엘리베이터') || rows[0];
-      if (x && x.door) fast(`빠른하차 ${x.door}${x.fac === '엘리베이터' ? '' : ` ${x.fac}`}`);
-    });
+    if (leave) {
+      const fast = chip('');
+      fastRows(s).then(rows => {
+        const x = rows.find(x => x.fac === '엘리베이터') || rows[0];
+        if (x && x.door) fast(`빠른하차 ${x.door}${x.fac === '엘리베이터' ? '' : ` ${x.fac}`}`);
+      });
+    }
   }
   wrap.append(chips, panel);
   return wrap;
@@ -4191,7 +4197,10 @@ async function runExtSearch(query){
   const c = map && map.getCenter();
   const near = (c && { lat: c.lat(), lng: c.lng() }) || state.me;
   const key = `${query}|${near ? near.lat.toFixed(2) + ',' + near.lng.toFixed(2) : ''}`;
-  if (extCache.has(key)) { setExt({ query, status: '', ...extCache.get(key), results: extCache.get(key).results.filter(r => !isRecorded(r)) }); return; }
+  if (extCache.has(key)) {
+    const c = extCache.get(key), list = c.results.filter(r => !isRecorded(r)), stn = stationSearch(query, list);
+    setExt({ query, status: '', ...c, results: stn || list, ...(stn && { station: true, open: false }) }); return;
+  }
   setExt({ query, status: 'loading', results: state.ext.results });
   let results, fixed = '', shopP = Promise.resolve([]);
   try {
@@ -4255,10 +4264,32 @@ async function runExtSearch(query){
   const merged = byNum(kakaoHit ? [...results, ...shops.slice(0, 8)] : [...shops.slice(0, 10), ...results], query);
   extCache.set(key, { results: merged, fixed });
   const fresh = byNum([...hits, ...merged.filter(r => !hits.some(h => h.id === r.id))].filter(r => !isRecorded(r)), query);
-  setExt({ query, fixed, status: fresh.length ? '' : 'none', results: fresh });
+  const stn = stationSearch(query, fresh);
+  if (stn) { // 역을 찾았으면 지도를 그 역으로
+    setExt({ query, fixed, status: '', results: stn, station: true, open: false });
+    if (map) { if (map.getZoom() < 16) map.setZoom(16, false); map.panTo(new naver.maps.LatLng(stn[0].lat, stn[0].lng)); }
+  }
+  else setExt({ query, fixed, status: fresh.length ? '' : 'none', results: fresh });
   // 휴대폰: 결과가 보이도록 목록 패널을 반쯤 올린다 (검색 결과는 패널 맨 위에 있다)
   if (fresh.length && isPhone() && listSheet && !state.sel && (listSheet.height || 0) < vh(0.5) - 10) listSheet.set(vh(0.5), true);
 }
+// 역을 찾은 것('서울역', '서울역 4호선', 맨 위 결과가 지하철역): 노선별 결과(서울역 1호선·4호선…)를 역 카드 하나로 합쳐 맨 앞에 두고,
+// 이름만 비슷한 곳(서울역센트럴자이, ○○ 서울역점, 정류장)은 뒤에 둔다. 뒤의 것은 목록에서 접어 두고 지도 핀도 펼칠 때까지 띄우지 않는다
+function stationSearch(query, list){
+  const isStn = r => /지하철|전철/.test(r.category || '');
+  const base = v => String(v || '').replace(/\s.*$/, '').replace(/역$/, '');
+  const q = cleanText(query, 40).replace(/\s*(\d+호선|[가-힣A-Z-]+선)$/, '').replace(/\s+/g, '');
+  if (!q || !(/역$/.test(q) || (list[0] && isStn(list[0])))) return null;
+  const rows = list.filter(r => isStn(r) && base(r.name) === base(q));
+  if (!rows.length) return null;
+  const name = rows[0].name.replace(/\s.*$/, '');
+  const lines = [...new Set(rows.map(r => r.name.slice(name.length).trim()).filter(Boolean))].sort((x, y) => (parseInt(x, 10) || 99) - (parseInt(y, 10) || 99));
+  const card = { id: 'stn:' + name, ext: true, subway: true, kind: 'SW8', name, lines, category: '교통 > 지하철역', type: '지하철역',
+    addr: rows[0].addr, phone: '', url: '', lat: rows[0].lat, lng: rows[0].lng };
+  return [card, ...list.filter(r => !rows.includes(r))];
+}
+// 역 검색에서 접어 둔 '이름이 비슷한 곳'인지
+const extFolded = p => state.ext.station && !state.ext.open && p.id !== (state.ext.results[0] || {}).id;
 function setExt(next){
   state.ext = next; syncExtMarkers();
   if (state.sel && state.sel[0] === 'k' && !findPlace(state.sel)) select(null); else renderAll();
@@ -4268,6 +4299,7 @@ function syncExtMarkers(){
   extMarkers.clear();
   if (!map) return;
   for (const p of state.ext.results) {
+    if (extFolded(p) && p.id !== state.sel) continue;
     const mk = new naver.maps.Marker({ map, position: new naver.maps.LatLng(p.lat, p.lng), title: p.name });
     naver.maps.Event.addListener(mk, 'click', () => { pinTapAt = Date.now(); select(p.id); });
     extMarkers.set(p.id, mk);
@@ -4896,7 +4928,8 @@ function renderNearMarkers(){
     const p = state.near.get(id), sel = id === state.sel;
     const always = !!(NEAR_KIND[p.kind] || {}).always; // 건물 카드(BLD)처럼 종류 목록에 없는 것도 있다
     // 지도를 눌러 연 건물·가게는 건물 테두리로 이미 보이므로 핀을 따로 찍지 않는다(누른 자리에 핀이 생기면 핀을 찍은 것처럼 보인다)
-    const show = (sel && !p.ring) || (!sel && (on || always) && nearVisible(p));
+    const quiet = state.ext.station && !state.ext.open; // 역 검색 중에는 정류장·주변 장소 점을 숨겨 역 핀만 보이게
+    const show = (sel && !p.ring) || (!sel && !quiet && (on || always) && nearVisible(p));
     mk.setVisible(show);
     if (!show) continue;
     mk.setIcon(sel
@@ -4929,7 +4962,7 @@ function nearLegendRow(lg){
 }
 function renderExtMarkers(){
   renderNearMarkers();
-  const few = state.ext.results.length <= 6;
+  const few = state.ext.results.filter(p => !extFolded(p)).length <= 6;
   for (const p of state.ext.results) {
     const mk = extMarkers.get(p.id); if (!mk) continue;
     const sel = p.id === state.sel;
@@ -4950,15 +4983,25 @@ function renderExtList(){
   if (x.results.length) {
     const ul = el('ul','list ext-list');
     for (const p of x.results) {
+      if (extFolded(p)) continue;
       const li = el('li'), b = el('button','item'); b.type = 'button';
       if (state.sel === p.id) b.setAttribute('aria-current','true');
-      const nm = el('div','item-name'); nm.append(el('span','notranslate', p.name)); if (pubKnown(p)) nm.appendChild(el('span','ext-tag','기록 없음')); // 그 자리 공개 기록을 아직 안 불러왔으면 단정하지 않는다
-      const sub = [p.type, p.addr, state.me ? fmtDist(distM(state.me, p)) : ''].filter(Boolean).join(' · ');
+      const nm = el('div','item-name'); nm.append(el('span','notranslate', p.name)); if (pubKnown(p) && !p.subway) nm.appendChild(el('span','ext-tag','기록 없음')); // 그 자리 공개 기록을 아직 안 불러왔으면 단정하지 않는다
+      const sub = [p.subway && p.lines && p.lines.length ? p.lines.join('·') : p.type, p.addr, state.me ? fmtDist(distM(state.me, p)) : ''].filter(Boolean).join(' · ');
       b.append(nm, el('div','item-sub', sub));
       b.addEventListener('click', () => select(p.id, true));
       li.appendChild(b); ul.appendChild(li);
     }
     box.appendChild(ul);
+    // 역 검색: 이름만 비슷한 곳은 접어 둔다(펼치면 목록과 지도 핀이 함께 나온다)
+    const more = x.station ? x.results.length - 1 : 0;
+    if (more > 0) {
+      const tog = el('button','t-pass ext-more', x.open ? `이름이 비슷한 곳 ${more}개 접기` : `이름이 비슷한 곳 ${more}개`); tog.type = 'button';
+      tog.setAttribute('aria-expanded', String(!!x.open));
+      tog.appendChild(el('span','t-caret')); tog.lastChild.setAttribute('aria-hidden', 'true');
+      tog.addEventListener('click', () => { state.ext.open = !state.ext.open; syncExtMarkers(); renderAll(); });
+      box.appendChild(tog);
+    }
   }
   box.appendChild(el('p','add-src','누르면 지도에서 위치를 보고, 바로 기록할 수 있어요. 장소 정보: 카카오' + (x.results.some(r => r.shop) ? ', 소상공인시장진흥공단 상가(상권)정보' : '')));
 }
