@@ -31,7 +31,7 @@
 //   POST /photoplace { image: base64 JPEG 1장, x, y }        → 사진+위치로 그 자리의 가게 후보(간판 글자, AI가 고른 곳, 가까운 곳) (로그인 필요)
 
 const ALLOWED_ORIGINS = ['https://ian-space.github.io', 'http://localhost:8765'];
-const VERSION = '2026-10-14.6'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
+const VERSION = '2026-10-14.7'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
 // 로그인 확인용 Supabase 주소와 공개 키(사이트 코드에도 있는 공개 값)
 const SUPABASE_URL = 'https://qktrghajroxddrbpwtvn.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_j-kp8YKsQTczGcsQX74OxA_mfI7DoZw';
@@ -264,7 +264,7 @@ async function handle(kind, input, { request, env, ctx, send, reply }) {
       if (fresh) { if (kv) ctx.waitUntil(kv.put(key, JSON.stringify({ t: Date.now(), p: fresh })).catch(() => {})); return JSON.stringify(fresh); }
       return old ? JSON.stringify(old.p) : null; // KRIC가 멈췄으면 전에 받은 것
     });
-    return text ? send(`{"code":"${code}","paths":${text}}`, 200) : reply(502, { error: "elevpath upstream", code });
+    return text ? send(`{"code":${JSON.stringify(code)},"paths":${text}}`, 200) : reply(502, { error: "elevpath upstream", code });
   }
 
   if (kind === 'clienterr') {
@@ -558,7 +558,7 @@ async function handle(kind, input, { request, env, ctx, send, reply }) {
         from: flr(x.bgngFlrGrndUdgdSe, x.bgngFlr), to: flr(x.endFlrGrndUdgdSe, x.endFlr), pos: String(x.dtlPstn || '').slice(0, 40), ok: String(x.oprtngSitu || '') === 'M', code: String(x.oprtngSitu || '') })));
       memPut('elev1:all', all, 300);
     }
-    const list = JSON.parse(all).filter(x => x.st === st).map(({ st: _, ...x }) => x);
+    const list = JSON.parse(all).filter(x => x.st.replace(/역$/, '') === st).map(({ st: _, ...x }) => x);
     return reply(200, { list, covered: list.length > 0 });
   }
 
