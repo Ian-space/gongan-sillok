@@ -745,6 +745,7 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
 .lm-key::before{content:"";display:inline-block;width:9px;height:9px;margin-right:4px;border-radius:50%;vertical-align:-1px;box-sizing:border-box}
 .lm-key.ok::before{background:#2E9E6A}.lm-key.no::before{background:#D6453D}.lm-key.warn::before{border:2px solid #F2B705}.lm-key.none::before{border:1.5px solid #9AA1AD}
 body.linemap .topbar .qchips{display:none}
+body.linemap #map .pin:not(.sel),body.linemap #map .near-dot,body.linemap #map .pcell,body.linemap #map .pclus{display:none} /* 노선도를 켜면 다른 핀은 숨긴다 */
 .tp-linemap{display:grid;grid-template-columns:auto 1fr;column-gap:10px;align-items:center;width:100%;margin:6px 0 10px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--blue-soft);color:var(--ink);font:inherit;text-align:left;cursor:pointer}
 .tp-linemap svg{grid-row:span 2;width:22px;height:22px;color:var(--blue)}
 .tp-linemap span{font-size:14px;font-weight:700}
