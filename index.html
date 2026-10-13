@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<script src="i18n.js?v=41"></script>
+<script src="i18n.js?v=42"></script>
 <title>공간실록 시제품</title>
 <meta name="description" content="입구 계단, 화장실, 소음, 콘센트처럼 다녀온 사람만 아는 사실을 평점 대신 남기고 함께 보는 공간 지도예요.">
 <!-- 카톡 등에 링크를 보냈을 때 미리보기 -->
@@ -779,6 +779,15 @@ body.linemap #map .pin:not(.sel),body.linemap #map .near-dot,body.linemap #map .
 .lmv-stage.far2 text{display:none}
 .lmv-card{position:absolute;left:12px;right:12px;bottom:calc(12px + env(safe-area-inset-bottom,0px));padding:12px 14px;border-radius:14px;background:var(--panel);box-shadow:0 4px 18px rgba(15,20,40,.25)}
 .lmv-card[hidden]{display:none}
+.lmv-trip{position:absolute;left:0;right:0;bottom:0;max-height:46%;overflow-y:auto;padding:10px 12px calc(12px + env(safe-area-inset-bottom,0px));border-radius:16px 16px 0 0;background:var(--panel);box-shadow:0 -6px 24px rgba(15,20,40,.18)}
+.lmv-trip[hidden]{display:none}
+.lmv-trip .opt{display:block;width:100%;margin:0 0 8px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--panel);color:var(--ink);font:inherit;text-align:left;cursor:pointer}
+.lmv-trip .opt[aria-pressed="true"]{border:2px solid var(--blue)}
+.lmv-trip .opt b{font-size:15px}
+.lmv-trip .pills{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
+.lmv-trip .pill{padding:2px 8px;border-radius:999px;color:#FFFFFF;font-size:12px;font-weight:700}
+.lmv-trip .walk{padding:2px 6px;color:var(--muted);font-size:12px}
+.lmv-trip .head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;font-size:13px}
 .lmv-card h3{margin:0 0 2px;font-size:16px}
 .lmv-card p{margin:4px 0 0;font-size:13px}
 .lmv-card .warn{color:var(--seal-ink);font-weight:600}
@@ -1193,6 +1202,7 @@ html{touch-action:manipulation}
   <div class="lmv-route" id="lmvRoute" hidden></div>
   <div class="lmv-stage" id="lmvStage"><p class="muted lmv-wait">노선도를 불러오는 중…</p></div>
   <div class="lmv-card" id="lmvCard" hidden></div>
+  <div class="lmv-trip" id="lmvTrip" hidden></div>
 </section>
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 <dialog class="add-dlg" id="originDlg" aria-labelledby="originTitle">
@@ -6856,6 +6866,7 @@ function drawLineView(reset){
   const NS = 'http://www.w3.org/2000/svg', mk = (t, a) => { const n = document.createElementNS(NS, t); for (const k in a) n.setAttribute(k, a[k]); return n; };
   const svg = mk('svg', { viewBox: `0 0 ${stage.clientWidth || 360} ${stage.clientHeight || 600}` }), g = mk('g', {});
   const sel = lmvLine == null ? null : d.lines.findIndex(l => l[0] === lmvLine);
+  const trip = lineViewTripPaths(), onTrip = new Set(trip.flatMap(t => t.pts.map(([x, y]) => `${x},${y}`)));
   // 구간: 여러 노선이 지나면 LOOM이 정한 순서대로 나란히(굵기 5, 간격 5)
   for (const [cs, ls] of d.edges) {
     ls.forEach((li, i) => {
@@ -6864,13 +6875,19 @@ function drawLineView(reset){
         const a = Math.max(0, j - 2), b = Math.min(cs.length - 2, j + 2), dx = cs[b] - cs[a], dy = cs[b + 1] - cs[a + 1], L = Math.hypot(dx, dy) || 1;
         p += `${j ? 'L' : 'M'}${(cs[j] - dy / L * off).toFixed(1)} ${(cs[j + 1] + dx / L * off).toFixed(1)}`;
       }
-      g.appendChild(mk('path', { d: p, fill: 'none', stroke: d.lines[li][2], 'stroke-width': 4.5, 'stroke-linejoin': 'round', 'stroke-linecap': 'round', opacity: sel == null || sel === li ? 1 : 0.12 }));
+      g.appendChild(mk('path', { d: p, fill: 'none', stroke: d.lines[li][2], 'stroke-width': 4.5, 'stroke-linejoin': 'round', 'stroke-linecap': 'round', opacity: trip.length ? 0.18 : sel == null || sel === li ? 1 : 0.12 }));
     });
+  }
+  // 길찾기 경로: 흰 테두리 + 노선 색으로 굵게(나머지는 흐리게)
+  for (const t of trip) {
+    const dd = t.pts.map(([x, y], j) => `${j ? 'L' : 'M'}${x} ${y}`).join('');
+    g.appendChild(mk('path', { d: dd, fill: 'none', stroke: '#FFFFFF', 'stroke-width': 13, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }));
+    g.appendChild(mk('path', { d: dd, fill: 'none', stroke: t.color, 'stroke-width': 8, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }));
   }
   // 역: 상태 색 동그라미(갈아타는 역은 크게) + 이름
   const onSel = new Set(); if (sel != null) for (const [cs, ls] of d.edges) if (ls.includes(sel)) for (let j = 0; j < cs.length; j += 2) onSel.add(`${cs[j]},${cs[j + 1]}`);
   for (const [name, x, y, deg] of d.stations) {
-    const dim = sel != null && !onSel.has(`${x},${y}`);
+    const dim = (sel != null && !onSel.has(`${x},${y}`)) || (trip.length > 0 && !onTrip.has(`${x},${y}`));
     const st = lmvStatus(name), big = deg > 2, end = name === lmvRoute.from ? '#1F5EFF' : name === lmvRoute.to ? '#D6453D' : '';
     if (end) g.appendChild(mk('circle', { cx: x, cy: y, r: 11, fill: 'none', stroke: end, 'stroke-width': 4 })); // 고른 출발(파랑)·도착(빨강)
     const c = lmvElev
@@ -6925,7 +6942,7 @@ function showLineViewCard(name){
   const evLine = el('p', st.cls === 'no' ? 'warn' : '', ev + (st.broken ? ` · 점검·중지 ${st.broken}대` : ''));
   const btn = (t, cls, fn) => { const b = el('button', cls, t); b.type = 'button'; b.addEventListener('click', fn); return b; };
   // 역끼리 길찾기: [출발]·[도착]을 고르면 둘 다 정해졌을 때 경로를 찾는다
-  const pick = which => () => { lmvRoute[which] = name; if (lmvRoute.from === lmvRoute.to) lmvRoute[which === 'from' ? 'to' : 'from'] = null; card.hidden = true; drawLineView(false); renderLineViewRoute(); };
+  const pick = which => () => { lmvRoute[which] = name; if (lmvRoute.from === lmvRoute.to) lmvRoute[which === 'from' ? 'to' : 'from'] = null; card.hidden = true; lmvTrip = null; renderLineViewTrip(); drawLineView(false); renderLineViewRoute(); if (lmvRoute.from && lmvRoute.to) findLineViewTrip(); }; // 둘 다 고르면 바로 찾는다
   const acts = el('div','acts');
   acts.append(btn('출발', 'btn add', pick('from')), btn('도착', 'btn add rec', pick('to')),
     btn('역 정보', 'btn', () => { if (!p) return; closeLineView(); openShop(p); }), btn('닫기', 'btn', () => { card.hidden = true; }));
@@ -6939,17 +6956,98 @@ function renderLineViewRoute(){
   const t = el('span','grow');
   t.append('출발 ', el('b','notranslate', r.from ? nm(r.from) : '역을 고르세요'), ' → 도착 ', el('b','notranslate', r.to ? nm(r.to) : '역을 고르세요'));
   const x = el('button', null, '×'); x.type = 'button'; x.setAttribute('aria-label', '출발·도착 지우기');
-  x.addEventListener('click', () => { lmvRoute = { from: null, to: null }; renderLineViewRoute(); drawLineView(false); });
+  x.addEventListener('click', () => { lmvRoute = { from: null, to: null }; lmvTrip = null; renderLineViewRoute(); renderLineViewTrip(); drawLineView(false); });
   bar.replaceChildren(t, x);
   if (r.from && r.to) {
     const from = lineViewStation(r.from), to = lineViewStation(r.to); if (!from || !to) return;
     const go = el('button','btn add', '길찾기'); go.type = 'button'; go.style.fontSize = '13px';
-    go.addEventListener('click', () => {
-      lmvRoute = { from: null, to: null }; renderLineViewRoute(); closeLineView();
-      state.routeSwap = null; state.routeSubwayFor = to.id; openShop(to); setRouteFrom(from); // 도착역 화면에서 출발역 기준 경로(지하철만)
-    });
+    go.addEventListener('click', () => { $('lmvCard').hidden = true; findLineViewTrip(); }); // 노선도는 그대로 두고 경로를 찾는다
     bar.insertBefore(go, x);
   }
+}
+/* 노선도 안 길찾기: 노선도를 닫지 않고 지하철만 타는 경로(ODsay)를 찾아 아래 창에 보여 주고, 고른 경로를 노선도 위에 진하게 그린다 */
+let lmvTrip = null; // { routes, chosen, status }
+const lmvNm = v => String(v || '').replace(/\(.*\)$/, '').replace(/역$/, '').trim();
+async function findLineViewTrip(){
+  const from = lineViewStation(lmvRoute.from), to = lineViewStation(lmvRoute.to); if (!from || !to) return;
+  lmvTrip = { status: 'loading', routes: [], chosen: 0 }; renderLineViewTrip();
+  const r = await odsayRaw({ SX: String(from.lng), SY: String(from.lat), EX: String(to.lng), EY: String(to.lat), SearchPathType: '1' }).catch(() => ({ status: 'error' }));
+  if (!lmvTrip) return;
+  lmvTrip = r.status === 'ok' ? { status: 'ok', routes: r.routes.slice(0, 4), chosen: 0 } : { status: 'error', msg: r.msg || '경로를 찾지 못했어요.', routes: [] };
+  renderLineViewTrip(); drawLineView(false); fitLineViewTrip();
+}
+function renderLineViewTrip(){
+  const box = $('lmvTrip'), t = lmvTrip;
+  box.hidden = !t; if (!t) { box.replaceChildren(); return; }
+  const head = el('div','head'), x = el('button','linkbtn','닫기'); x.type = 'button';
+  x.addEventListener('click', () => { lmvTrip = null; renderLineViewTrip(); drawLineView(false); });
+  head.append(el('b', null, '지하철 경로'), x); box.replaceChildren(head);
+  if (t.status === 'loading') { box.appendChild(el('p','muted','경로를 찾는 중…')); return; }
+  if (t.status === 'error') { box.appendChild(el('p','muted', t.msg)); return; }
+  t.routes.forEach((r, i) => {
+    const b = el('button','opt'); b.type = 'button'; b.setAttribute('aria-pressed', String(i === t.chosen));
+    b.append(el('b', null, `${r.minutes}분`), el('span','muted', ` · 환승 ${r.transfers}회 · ${r.fare.toLocaleString('ko-KR')}원`));
+    const pills = el('div','pills');
+    for (const s of r.segs) {
+      if (s.mode === 'walk') { if (s.minutes > 0) pills.appendChild(el('span','walk', `도보 ${s.minutes}분`)); continue; }
+      const p = el('span','pill', s.name); p.style.background = s.color; pills.appendChild(p);
+    }
+    b.appendChild(pills);
+    b.addEventListener('click', () => { if (t.chosen === i) return; t.chosen = i; renderLineViewTrip(); drawLineView(false); fitLineViewTrip(); });
+    box.appendChild(b);
+  });
+  // 자세히(엘리베이터 이용 시·빠른환승·시간표): 지도 위 길찾기 화면으로
+  const more = el('button','btn add','자세히 보기 (엘리베이터·환승 칸·시간표)'); more.type = 'button'; more.style.width = '100%';
+  more.addEventListener('click', () => {
+    const from = lineViewStation(lmvRoute.from), to = lineViewStation(lmvRoute.to); if (!from || !to) return;
+    const chosen = t.chosen; closeLineView();
+    state.routeSwap = null; state.routeSubwayFor = to.id; openShop(to); setRouteFrom(from);
+    // 노선도에서 고른 경로를 그대로 고르도록(같은 지하철만 검색이라 순서가 같다)
+    const w = setInterval(() => { if (state.transit && state.transit.status === 'ok') { clearInterval(w); if (state.transit.routes && state.transit.routes[chosen]) { state.transit.chosen = chosen; renderDetail(); drawTransit(); } } }, 300);
+    setTimeout(() => clearInterval(w), 15000);
+  });
+  box.appendChild(more);
+}
+// 고른 경로가 아래 경로 창에 가리지 않고 다 보이게 노선도를 옮기고 확대한다
+function fitLineViewTrip(){
+  const trip = lineViewTripPaths(); if (!trip.length) return;
+  const pts = trip.flatMap(t => t.pts), xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
+  const stage = $('lmvStage'), W = stage.clientWidth, H = stage.clientHeight - ($('lmvTrip').offsetHeight || 0);
+  const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys), pad = 50;
+  const s = Math.min(4, Math.max(0.5, Math.min((W - pad * 2) / Math.max(1, x1 - x0), (H - pad * 2) / Math.max(1, y1 - y0))));
+  lmvView = { s, x: W / 2 - (x0 + x1) / 2 * s, y: H / 2 - (y0 + y1) / 2 * s }; applyLineView();
+}
+// 고른 경로가 지나는 노선도 위 길: 구간마다 (타는 역, 지나는 역…, 내리는 역)을 이웃끼리 노선도 그래프에서 찾아 잇는다
+function lineViewTripPaths(){
+  const t = lmvTrip; if (!t || t.status !== 'ok' || !lmvData) return [];
+  const d = lmvData, key = (x, y) => `${x},${y}`;
+  const adj = new Map(); // 점 → [{ to, cs(점들), lines }]
+  d.edges.forEach(([cs, ls]) => {
+    const a = key(cs[0], cs[1]), b = key(cs[cs.length - 2], cs[cs.length - 1]);
+    const pts = []; for (let j = 0; j < cs.length; j += 2) pts.push([cs[j], cs[j + 1]]);
+    (adj.get(a) || adj.set(a, []).get(a)).push({ to: b, pts, ls });
+    (adj.get(b) || adj.set(b, []).get(b)).push({ to: a, pts: pts.slice().reverse(), ls });
+  });
+  const at = new Map(); for (const [name, x, y] of d.stations) { const k = lmvNm(name); (at.get(k) || at.set(k, []).get(k)).push(key(x, y)); }
+  const lineIdx = label => d.lines.findIndex(l => l[1] === String(label || '').replace(/\(.*\)$/, '').trim());
+  // 두 역 사이(같은 노선 선 위에서, 너비 우선): 점 목록
+  const between = (a, b, li) => {
+    for (const s of at.get(lmvNm(a)) || []) for (const e of at.get(lmvNm(b)) || []) {
+      const prev = new Map([[s, null]]), q = [s];
+      while (q.length && !prev.has(e)) { const u = q.shift(); for (const ed of adj.get(u) || []) if (!prev.has(ed.to) && (li < 0 || ed.ls.includes(li))) { prev.set(ed.to, [u, ed]); q.push(ed.to); } }
+      if (!prev.has(e)) continue;
+      const out = []; for (let v = e; prev.get(v); v = prev.get(v)[0]) out.unshift(...prev.get(v)[1].pts.slice(out.length ? 0 : 0));
+      return out;
+    }
+    return null;
+  };
+  const res = [];
+  for (const s of t.routes[t.chosen].segs) {
+    if (s.mode !== 'subway') continue;
+    const li = lineIdx(s.name), seq = [s.from, ...(s.pass || []), s.to];
+    for (let i = 1; i < seq.length; i++) { const p = between(seq[i - 1], seq[i], li) || between(seq[i - 1], seq[i], -1); if (p) res.push({ pts: p, color: s.color }); }
+  }
+  return res;
 }
 function renderLineViewElev(){
   const b = $('lmvElev'); b.setAttribute('aria-pressed', String(lmvElev));
