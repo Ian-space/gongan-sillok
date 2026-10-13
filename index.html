@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<script src="i18n.js?v=24"></script>
+<script src="i18n.js?v=25"></script>
 <title>공간실록 시제품</title>
 <meta name="description" content="입구 계단, 화장실, 소음, 콘센트처럼 다녀온 사람만 아는 사실을 평점 대신 남기고 함께 보는 공간 지도예요.">
 <!-- 카톡 등에 링크를 보냈을 때 미리보기 -->
@@ -556,6 +556,9 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
 .d-tsteps .t-ttable[hidden]{display:none}
 .d-tsteps .t-passlist li{border:0;padding-left:16px;position:relative}
 .d-tsteps .t-passlist li::before{content:"";position:absolute;left:2px;top:50%;width:7px;height:7px;margin-top:-4px;border:2px solid var(--c);border-radius:50%;background:var(--paper);box-sizing:border-box}
+.d-tsteps .t-eplist[hidden]{display:none}
+.d-tsteps .t-eplist p{margin:6px 0 0;font-size:12px}
+.d-tsteps .t-eplist .t-epname{font-weight:600;color:var(--ink)}
 .d-tsteps .t-elev.warn{color:var(--seal-ink);font-weight:600}
 /* 정류장 실시간 도착 목록, 저상버스 표시 */
 .stop-arr{list-style:none;margin:4px 0 8px;padding:0;display:grid;gap:6px;font-size:14px}
@@ -3745,7 +3748,7 @@ function elevNote(s, which){ // which: 'from'(타는 역) | 'to'(내리는 역)
     const exits = [...new Set(outs.flatMap(exitsOf))];
     const broken = [...new Set([...list, ...outs])].filter(x => !x.ok);
     const parts = [];
-    if (!all.length) parts.push(`${station}역 엘리베이터 정보 없음`);
+    if (!all.length) parts.push(`${station.replace(/역$/, '')}역 엘리베이터 정보 없음`);
     else {
       if (exitWanted) parts.push(exits.includes(exitWanted) ? `${exitWanted}번 출구 엘리베이터 있음` : `${exitWanted}번 출구엔 엘리베이터 없음`);
       if (exits.length && !(exitWanted && exits.length === 1 && exits[0] === exitWanted)) parts.push(`엘리베이터 출구 ${exits.join('·')}번`);
@@ -3851,6 +3854,50 @@ function fastExitNote(s){
   });
   return box;
 }
+// 엘리베이터 이동 동선(중계 서버 /elevpath, KRIC, 서울교통공사 1~8호선): 출입구 엘리베이터 → 대합실 → 승강장, 환승역은 갈아타는 승강장까지.
+// 자료가 방면(다음 역)별 동선이라, 타는 역은 가는 방면, 내리는 역은 오는 방면(내리기 직전 역)이 아닌 쪽, 환승은 내린 승강장 → 탈 방면으로 고른다
+const epCache = new Map();
+function elevPathNote(r, i, which){ // which: 'from'(타는 역·갈아타는 역) | 'to'(마지막으로 내리는 역)
+  const box = el('span','t-elev'); box.hidden = true;
+  const s = r.segs[i], nm = v => String(v || '').replace(/\(.*\)$/, '').replace(/역$/, '').trim();
+  const prevRide = r.segs.slice(0, i).reverse().find(x => x.mode !== 'walk'), nextRide = r.segs.slice(i + 1).find(x => x.mode !== 'walk');
+  const xfer = which === 'from' && prevRide && prevRide.mode === 'subway' && nm(prevRide.to) === nm(s.from);
+  if (which === 'to' && nextRide && nextRide.mode === 'subway' && nm(nextRide.from) === nm(s.to)) return box; // 환승은 다음 구간에서
+  const at = xfer ? prevRide : s; // 환승 동선은 내린 노선 쪽에 올라 있다
+  if (!(at.lineCode >= 1 && at.lineCode <= 8)) return box;
+  const station = nm(which === 'to' ? s.to : s.from), k = `${station}|${at.lineCode}`;
+  if (!epCache.has(k)) epCache.set(k, proxyPost('/elevpath', { station, line: String(at.lineCode) }).then(x => x.ok ? x.json() : null).catch(() => null));
+  epCache.get(k).then(d => {
+    const dir = (t, name) => !!name && (t.includes(`${nm(name)} 방면`) || t.includes(`${nm(name)}역 방면`)); // '서울역 방면'
+    const has = (p, name) => p.steps.some(t => dir(t, name));
+    let paths = ((d && d.paths) || []).filter(p => p.steps.length);
+    if (xfer) paths = paths.filter(p => p.kind.includes('환승') && !dir(p.steps[0], prevRide.prevTo) && p.steps.slice(1).some(t => dir(t, s.next1)));
+    else {
+      paths = paths.filter(p => p.kind.includes('출입구'));
+      // 방면을 적지 않은 동선(양쪽이 같은 승강장인 역 등)은 어느 쪽이든 쓴다
+      const anyDir = p => !p.steps.some(t => t.includes('방면'));
+      paths = which === 'to' ? paths.filter(p => !has(p, s.prevTo)) : paths.filter(p => has(p, s.next1) || anyDir(p));
+      const exit = which === 'to' ? s.outExit : s.inExit; // 경로가 정한 출구 쪽 동선을 먼저
+      if (exit) paths.sort((a, b) => b.steps[0].includes(`${exit}번 출`) - a.steps[0].includes(`${exit}번 출`));
+    }
+    const seen = new Set(); paths = paths.filter(p => { const t = p.steps.join('|'); return !seen.has(t) && seen.add(t); }).slice(0, 2);
+    if (!paths.length) return;
+    const label = xfer ? `${station}역 환승 엘리베이터 동선` : which === 'to' ? `${station}역 나가는 엘리베이터 동선` : `${station}역 엘리베이터 동선`;
+    const tog = el('button','t-pass', label); tog.type = 'button'; tog.setAttribute('aria-expanded', 'false');
+    tog.appendChild(el('span','t-caret')); tog.lastChild.setAttribute('aria-hidden', 'true');
+    const list = el('div','t-eplist'); list.hidden = true;
+    if (which === 'to') list.appendChild(el('p','muted', '들어올 때 순서예요. 나갈 때는 아래에서 위로 거꾸로 가면 돼요.'));
+    paths.forEach((p, n) => {
+      if (paths.length > 1) list.appendChild(el('p','t-epname', `동선 ${n + 1}`));
+      const ol = el('ol','t-passlist'); ol.style.setProperty('--c', s.color);
+      for (const t of p.steps) ol.appendChild(el('li', null, t));
+      list.appendChild(ol);
+    });
+    tog.addEventListener('click', e => { e.stopPropagation(); const now = list.hidden; list.hidden = !now; tog.setAttribute('aria-expanded', String(now)); });
+    box.replaceChildren(tog, list); box.hidden = false;
+  });
+  return box;
+}
 // 고른 경로의 단계: 걷기(분·거리) → 지하철(방면, 몇 개 역·몇 분, 배차, 들어갈·나갈 출구) / 버스(같이 탈 수 있는 버스, 몇 정류장·몇 분, 배차, 정류장 번호) → … → 도착
 function routeSteps(r){
   const ol = el('ol','d-tsteps');
@@ -3896,7 +3943,7 @@ function routeSteps(r){
     if (sub && s.outExit) li.append(el('br'), el('span','t-exit', `${s.to}역 ${s.outExit}번 출구로 나가기`));
     if (sub) li.appendChild(fastExitNote(s));
     // 지하철역 엘리베이터(타는 역·내리는 역): 휠체어·유아차로 갈 수 있는지
-    if (sub) li.append(elevNote(s, 'from'), elevNote(s, 'to'));
+    if (sub) li.append(elevNote(s, 'from'), elevNote(s, 'to'), elevPathNote(r, i, 'from'), elevPathNote(r, i, 'to'));
     ol.appendChild(li);
   });
   if (r.source === 'tmap' && r.segs.some(s => s.mode === 'subway')) ol.appendChild(el('li','walk muted', '출구 번호는 이 경로 정보(TMAP)에 없어요.'));
