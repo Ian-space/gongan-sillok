@@ -33,7 +33,7 @@
 //   POST /photoplace { image: base64 JPEG 1장, x, y }        → 사진+위치로 그 자리의 가게 후보(간판 글자, AI가 고른 곳, 가까운 곳) (로그인 필요)
 
 const ALLOWED_ORIGINS = ['https://ian-space.github.io', 'http://localhost:8765'];
-const VERSION = '2026-10-14.9'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
+const VERSION = '2026-10-14.10'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
 // 로그인 확인용 Supabase 주소와 공개 키(사이트 코드에도 있는 공개 값)
 const SUPABASE_URL = 'https://qktrghajroxddrbpwtvn.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_j-kp8YKsQTczGcsQX74OxA_mfI7DoZw';
@@ -315,8 +315,22 @@ async function handle(kind, input, { request, env, ctx, send, reply }) {
       return JSON.stringify(rows);
     });
     if (!all) return reply(502, { error: 'lines upstream' });
+    // 역 좌표(서울 열린데이터광장 역사마스터): 역 이름(+노선)으로 붙인다. 못 받으면 좌표 없이
+    const geo = await edgeCached('lin1:geo', 30 * 86400, async () => {
+      const rows = [];
+      for (let start = 1; start <= 3001; start += 1000) {
+        const r = await fetch(`http://openapi.seoul.go.kr:8088/${encodeURIComponent(sk)}/json/subwayStationMaster/${start}/${start + 999}/`, { signal: AbortSignal.timeout(8000) });
+        const j = await r.json().catch(() => null); const s = j && j.subwayStationMaster;
+        if (!s) return rows.length ? JSON.stringify(rows) : null;
+        for (const x of s.row || []) rows.push([stName(x.BLDN_NM), String(x.ROUTE || ''), +x.LAT || 0, +x.LOT || 0]);
+        if (rows.length >= +s.list_total_count) break;
+      }
+      return JSON.stringify(rows);
+    }).catch(() => null);
+    const pos = new Map(), num = l => String(l).replace(/^0/, '').replace(/[^0-9A-Za-z가-힣]/g, '');
+    for (const [name, route, lat, lng] of geo ? JSON.parse(geo) : []) if (lat && lng) { pos.set(`${name}|${num(route)}`, [lat, lng]); if (!pos.has(name)) pos.set(name, [lat, lng]); }
     const lines = {};
-    for (const [line, name, fr, cd] of JSON.parse(all)) (lines[line] = lines[line] || []).push([name, fr, cd]);
+    for (const [line, name, fr, cd] of JSON.parse(all)) (lines[line] = lines[line] || []).push([name, fr, cd, ...(pos.get(`${name}|${num(line)}`) || pos.get(name) || [])]);
     for (const k of Object.keys(lines)) lines[k].sort((a, b) => a[1].localeCompare(b[1], 'en', { numeric: true }));
     return reply(200, { lines });
   }
