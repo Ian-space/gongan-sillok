@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<script src="i18n.js?v=36"></script>
+<script src="i18n.js?v=37"></script>
 <title>공간실록 시제품</title>
 <meta name="description" content="입구 계단, 화장실, 소음, 콘센트처럼 다녀온 사람만 아는 사실을 평점 대신 남기고 함께 보는 공간 지도예요.">
 <!-- 카톡 등에 링크를 보냈을 때 미리보기 -->
@@ -716,6 +716,37 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
 .tp-line.warn{color:var(--seal-ink);font-weight:600}
 .tp-ico svg{display:block;width:14px;height:14px;color:var(--blue)}
 .tp-card .stop-arr{margin-top:6px}
+/* 엘리베이터 노선도: 역 자리의 점과 위쪽 노선 줄 */
+.lm-dot{position:relative;display:flex;align-items:center;gap:4px;white-space:nowrap;pointer-events:auto}
+.lm-dot i{flex:none;width:12px;height:12px;border-radius:50%;box-sizing:border-box;border:2px solid var(--lc,#FFFFFF);box-shadow:0 0 0 1px rgba(15,20,40,.35)}
+.lm-dot.ok i{background:#2E9E6A}
+.lm-dot.no i{background:#D6453D}
+.lm-dot.none i{background:#FFFFFF;border-color:#9AA1AD;box-shadow:none}
+.lm-dot.warn i{outline:3px solid #F2B705;outline-offset:0}
+.lm-name{padding:1px 6px;border-radius:999px;background:rgba(255,255,255,.92);color:#1B1F2A;font-size:11px;font-weight:700;box-shadow:0 1px 3px rgba(15,20,40,.2)}
+.lm-name small{font-weight:600;color:#2E7D55}
+.collect-bar.line-bar{display:block;padding:8px 10px;align-self:stretch;min-width:0;max-width:100%;overflow:hidden;box-sizing:border-box}
+.collect-bar.line-bar[hidden]{display:none}
+.collect-bar.line-bar{background:var(--panel);color:var(--ink);font-weight:400}
+.collect-bar.line-bar span{flex:none}
+.collect-bar.line-bar button.lm-chip{height:32px;padding:0 12px;border:1px solid var(--line);background:var(--panel);color:var(--ink);font-size:13px;font-weight:600}
+.collect-bar.line-bar button.lm-chip[aria-pressed="true"]{background:var(--ink);border-color:var(--ink);color:var(--panel)}
+.collect-bar.line-bar button.lm-close{padding:0;background:transparent;color:var(--muted);font-size:20px;font-weight:400}
+.lm-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+.lm-close{width:28px;height:28px;border:0;border-radius:50%;background:transparent;color:var(--muted);font-size:20px;line-height:1;cursor:pointer}
+.lm-chips{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;padding-bottom:2px}
+.lm-chips::-webkit-scrollbar{display:none}
+.lm-chip{flex:none}
+.lm-chip i{display:inline-block;width:8px;height:8px;margin-right:5px;border-radius:50%;background:var(--nc)}
+.lm-chip small{margin-left:3px;color:var(--muted);font-weight:500}
+.lm-legend{display:flex;flex-wrap:wrap;gap:4px 12px;margin-top:6px;font-size:11px;color:var(--muted)}
+.lm-key::before{content:"";display:inline-block;width:9px;height:9px;margin-right:4px;border-radius:50%;vertical-align:-1px;box-sizing:border-box}
+.lm-key.ok::before{background:#2E9E6A}.lm-key.no::before{background:#D6453D}.lm-key.warn::before{border:2px solid #F2B705}.lm-key.none::before{border:1.5px solid #9AA1AD}
+body.linemap .topbar .qchips{display:none}
+.tp-linemap{display:grid;grid-template-columns:auto 1fr;column-gap:10px;align-items:center;width:100%;margin:6px 0 10px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--blue-soft);color:var(--ink);font:inherit;text-align:left;cursor:pointer}
+.tp-linemap svg{grid-row:span 2;width:22px;height:22px;color:var(--blue)}
+.tp-linemap span{font-size:14px;font-weight:700}
+.tp-linemap small{font-size:12px;color:var(--muted)}
 /* 필터 화면: 컴퓨터는 오른쪽에서, 휴대폰은 화면 가득 */
 .filter-dlg{width:min(460px,100vw);height:100dvh;max-width:none;max-height:none;margin:0 0 0 auto;padding:0;border:0;background:var(--panel);color:var(--ink);box-shadow:-10px 0 40px rgba(15,20,40,.25)}
 .filter-dlg[open]{display:grid;grid-template-rows:auto minmax(0,1fr) auto}
@@ -941,7 +972,7 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
   body.tabs.has-detail .tabbar,body.tabs.map-only .tabbar{display:none}
   body.tabs .side{bottom:var(--tab-h);padding-bottom:0}
   body.tabs:not(.has-detail) .mapctl{bottom:calc(var(--sheet-h,104px) + var(--tab-h) + 12px)}
-  body.tabs .peek .btn.add,body.tabs .tb-row .acct,body.tabs .mapctl #zsaved{display:none}
+  body.tabs .peek .btn.add,body.tabs .tb-row .acct,body.tabs .mapctl #zsaved,body.tabs .mapctl #zlines{display:none}
   body.tab-transit .side>.side-head,body.tab-transit .side>.scroll,body.tab-me .side>.side-head,body.tab-me .side>.scroll{display:none}
   .tabpane:not([hidden]){display:block;flex:1;min-height:0;overflow-y:auto;padding:0 16px 16px;overscroll-behavior:contain}
   #mePane .acct-menu{position:static;width:auto;max-height:none;margin:0;border:0;box-shadow:none;padding:0}
@@ -1072,6 +1103,7 @@ html{touch-action:manipulation}
       <div class="qchips nchips" id="nchips" role="toolbar" aria-label="주변 장소 종류" hidden></div>
       <div class="collect-bar" id="collectBar" hidden></div>
       <div class="collect-bar route-bar" id="routeBar" hidden></div>
+      <div class="collect-bar line-bar" id="lineBar" hidden aria-label="엘리베이터 노선도"></div>
       <div class="collect-bar guide-bar" id="guideBar" hidden role="status" aria-live="polite"></div>
     </div>
     <div class="legend" id="legend" hidden aria-label="장소 유형별 색"></div>
@@ -1079,6 +1111,9 @@ html{touch-action:manipulation}
       <button type="button" id="zin" aria-label="확대">+</button>
       <button type="button" id="zout" aria-label="축소">−</button>
       <button type="button" class="round" id="zfit" aria-label="기록한 장소 전체 보기" title="전체 보기"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/></svg></button>
+      <button type="button" class="round" id="zlines" aria-label="엘리베이터 노선도" title="엘리베이터 노선도">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M9 10l3-3 3 3M9 14l3 3 3-3"/></svg>
+      </button>
       <button type="button" class="round" id="zsaved" aria-pressed="false" aria-label="찜한 곳과 내 기록만 모아 보기" title="내 장소 모아 보기">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h12v18l-6-4.5L6 21z"/></svg>
       </button>
@@ -2423,6 +2458,9 @@ function initMap(){
     zoomControl: false, mapDataControl: false, scaleControl: true, logoControl: true
   });
   naver.maps.Event.addListener(map, 'zoom_changed', () => { renderMap(state.places.filter(matches)); renderNearMarkers(); renderLegend(); });
+  // 엘리베이터 노선도: 역 이름은 가까이(줌 14 이상) 볼 때만. 그 경계를 넘을 때만 다시 찍는다
+  let lmBig = null;
+  naver.maps.Event.addListener(map, 'zoom_changed', () => { const big = map.getZoom() >= 14; if (state.lineMap && lineData && big !== lmBig) drawLineMap(false); lmBig = big; });
   naver.maps.Event.addListener(map, 'dragstart', () => { lastDrag = Date.now(); state.homeMode = false; }); // 안내 중 지도를 직접 움직이면 잠시 따라가지 않는다
   naver.maps.Event.addListener(map, 'idle', queueNearby); // 지도가 멈추면 화면 안의 주변 카페를 불러온다
   naver.maps.Event.addListener(map, 'idle', onMapIdlePublic); // 지도가 멈추면 그 영역의 공개 기록(또는 넓게 볼 때 동네별 개수)
@@ -6638,6 +6676,94 @@ function setTab(t){
   renderAll();
   if (listSheet) listSheet.set(t === 'map' ? PEEK_H : vh(0.6), true);
 }
+/* ---------- 엘리베이터 노선도 ----------
+   노선 모양은 네이버 지도 바탕에 그려진 그대로 두고, 그 위 역 자리마다 엘리베이터 상태 점을 찍는다(수도권 24개 노선).
+   초록: 지상으로 가는 엘리베이터 출구 있음, 빨강: 자료는 있는데 지상 엘리베이터 없음, 테두리 노랑: 점검·중지 중, 회색 빈 점: 아직 정보 없음.
+   위 줄에서 노선을 고르면 그 노선 역만, 누르면 역 화면 */
+const LINE_INFO = { '01호선': ['1호선', '#0052A4'], '02호선': ['2호선', '#00A84D'], '03호선': ['3호선', '#EF7C1C'], '04호선': ['4호선', '#00A5DE'], '05호선': ['5호선', '#996CAC'],
+  '06호선': ['6호선', '#CD7C2F'], '07호선': ['7호선', '#747F00'], '08호선': ['8호선', '#E6186C'], '09호선': ['9호선', '#BDB092'], '경의선': ['경의중앙선', '#77C4A3'],
+  '경춘선': ['경춘선', '#0C8E72'], '수인분당선': ['수인분당선', '#F5A200'], '신분당선': ['신분당선', '#D4003B'], '공항철도': ['공항철도', '#0090D2'], '경강선': ['경강선', '#0054A6'],
+  '서해선': ['서해선', '#8FC31F'], 'GTX-A': ['GTX-A', '#9A6292'], '신림선': ['신림선', '#6789CA'], '우이신설경전철': ['우이신설선', '#B7C452'], '김포도시철도': ['김포골드라인', '#A17800'],
+  '용인경전철': ['용인에버라인', '#509F22'], '의정부경전철': ['의정부경전철', '#FDA600'], '인천선': ['인천1호선', '#7CA8D5'], '인천2호선': ['인천2호선', '#ED8B00'] };
+let lineData = null, lineMarkers = [];
+async function loadLineData(){
+  if (lineData) return lineData;
+  const [a, b] = await Promise.all([proxyPost('/lines', {}).then(r => r.ok ? r.json() : null), proxyPost('/elev', { all: true }).then(r => r.ok ? r.json() : null).catch(() => null)]);
+  if (!a || !a.lines) throw new Error('lines');
+  lineData = { lines: a.lines, elev: (b && b.stations) || {} };
+  return lineData;
+}
+async function openLineMap(line){
+  state.lineMap = { line: line || null, loading: !lineData };
+  if (state.tab !== 'map') { state.tab = 'map'; }
+  if (state.sel) select(null);
+  renderAll(); if (isPhone() && listSheet) listSheet.set(PEEK_H, true);
+  try { await loadLineData(); } catch { toast('노선도를 불러오지 못했어요. 잠시 뒤 다시 시도해 주세요.'); closeLineMap(); return; }
+  if (!state.lineMap) return;
+  state.lineMap.loading = false; drawLineMap(true); renderLineBar();
+}
+function closeLineMap(){ state.lineMap = null; clearOverlays(lineMarkers); renderLineBar(); }
+function drawLineMap(fit){
+  clearOverlays(lineMarkers);
+  const lm = state.lineMap; if (!map || !lm || !lineData) return;
+  const keys = lm.line ? [lm.line] : Object.keys(lineData.lines);
+  const st = new Map(); // 역 이름 → { lat, lng, lines }
+  for (const k of keys) for (const [name, , , lat, lng] of lineData.lines[k] || []) {
+    if (!lat || !lng) continue;
+    const s = st.get(name) || st.set(name, { name, lat, lng, lines: [] }).get(name);
+    if (!s.lines.includes(k)) s.lines.push(k);
+  }
+  const ring = lm.line ? (LINE_INFO[lm.line] || [])[1] : '';
+  const big = map.getZoom() >= 14;
+  for (const s of st.values()) {
+    const e = lineData.elev[s.name];
+    const cls = !e ? 'none' : e[0] ? 'ok' : 'no', warn = e && e[2] > 0;
+    const label = big ? `<span class="lm-name notranslate">${esc(s.name)}${e && e[0] ? ` <small>${esc(e[0])}</small>` : ''}</span>` : '';
+    const mk = new naver.maps.Marker({ map, position: new naver.maps.LatLng(s.lat, s.lng), zIndex: 120, title: s.name,
+      icon: { content: `<div class="lm-dot ${cls}${warn ? ' warn' : ''}"${ring ? ` style="--lc:${ring}"` : ''}><i></i>${label}</div>`, anchor: new naver.maps.Point(8, 8) } });
+    naver.maps.Event.addListener(mk, 'click', () => {
+      pinTapAt = Date.now();
+      const nm = /역$/.test(s.name) ? s.name : s.name + '역';
+      openShop({ id: 'stn:' + nm, ext: true, near: true, subway: true, kind: 'SW8', name: nm, lines: s.lines.map(k => (LINE_INFO[k] || [k])[0]),
+        category: '교통 > 지하철역', type: '지하철역', addr: '', phone: '', url: '', lat: s.lat, lng: s.lng, color: '#5B6475', icon: STN_ICON });
+    });
+    lineMarkers.push(mk);
+  }
+  if (fit && !lm.line) { map.setCenter(new naver.maps.LatLng(37.55, 126.99)); map.setZoom(isPhone() ? 11 : 12); } // 전체: 서울 가운데
+  else if (fit && st.size) {
+    const pts = [...st.values()], la = pts.map(p => p.lat), ln = pts.map(p => p.lng);
+    map.fitBounds(new naver.maps.LatLngBounds(new naver.maps.LatLng(Math.min(...la), Math.min(...ln)), new naver.maps.LatLng(Math.max(...la), Math.max(...ln))),
+      { top: 140, right: 30, bottom: isPhone() ? 220 : 40, left: 30 });
+  }
+}
+// 노선도를 켠 동안 검색창 아래 줄: [전체] [1호선] … [×]. 노선 이름 옆 숫자는 엘리베이터 정보가 있는 역 수/전체
+function renderLineBar(){
+  const bar = $('lineBar'), lm = state.lineMap;
+  document.body.classList.toggle('linemap', !!lm);
+  bar.hidden = !lm; if (!lm) { bar.replaceChildren(); return; }
+  const row = el('div','lm-chips');
+  const chip = (key, label, color, n) => {
+    const b = el('button','qchip lm-chip'); b.type = 'button'; b.setAttribute('aria-pressed', String((lm.line || null) === key));
+    if (color) { const i = el('i'); i.style.setProperty('--nc', color); b.appendChild(i); }
+    b.append(label); if (n) b.appendChild(el('small', null, n));
+    b.addEventListener('click', () => { state.lineMap.line = key; drawLineMap(true); renderLineBar(); });
+    row.appendChild(b);
+  };
+  chip(null, '전체', '', '');
+  if (lineData) {
+    const order = Object.keys(LINE_INFO).filter(k => lineData.lines[k]);
+    for (const k of order) {
+      const list = lineData.lines[k], have = list.filter(([n]) => lineData.elev[n]).length;
+      chip(k, LINE_INFO[k][0], LINE_INFO[k][1], have ? ` ${have}/${list.length}` : '');
+    }
+  } else row.appendChild(el('span','muted lm-wait','노선도를 불러오는 중…'));
+  const x = el('button','lm-close','×'); x.type = 'button'; x.setAttribute('aria-label','엘리베이터 노선도 닫기'); x.addEventListener('click', closeLineMap);
+  const legend = el('div','lm-legend');
+  legend.append(el('span','lm-key ok','엘리베이터 출구 있음'), el('span','lm-key no','지상 엘리베이터 없음'), el('span','lm-key warn','점검 중'), el('span','lm-key none','정보 없음'));
+  bar.replaceChildren(el('div','lm-top'), legend); bar.firstChild.append(el('b', null, '엘리베이터 노선도'), x); bar.insertBefore(row, legend);
+  bindDragScroll(row);
+  const on = row.querySelector('[aria-pressed="true"]'); if (on) row.scrollLeft = Math.max(0, on.getBoundingClientRect().left - row.getBoundingClientRect().left - 40); // 고른 노선이 보이게
+}
 // 자주 가는 역·정류장(별표): 이 기기에만 저장. 대중교통 창 맨 위에 실시간 도착과 함께 보여 준다
 const FAV_TRANSIT_KEY = 'gongan-sillok:fav-transit', FAV_TRANSIT_MAX = 8;
 const readFavTransit = () => readList(FAV_TRANSIT_KEY).filter(x => x && x.id && x.name && Number.isFinite(x.lat) && Number.isFinite(x.lng)).slice(0, FAV_TRANSIT_MAX);
@@ -6660,6 +6786,10 @@ function renderTransitPane(){
   const head = el('div','tp-head'); head.appendChild(el('h3','sec-title','내 주변 대중교통'));
   const re = el('button','linkbtn','새로고침'); re.type = 'button'; re.addEventListener('click', renderTransitPane); head.appendChild(re);
   box.appendChild(head);
+  const lmBtn = el('button','tp-linemap'); lmBtn.type = 'button';
+  lmBtn.innerHTML = ELEV_ICON; lmBtn.append(el('span', null, '엘리베이터 노선도'), el('small', null, '수도권 모든 노선의 역별 엘리베이터'));
+  lmBtn.addEventListener('click', () => openLineMap(null));
+  box.appendChild(lmBtn);
   if (!at) { box.appendChild(el('p','muted','지도를 불러온 뒤 다시 눌러 주세요.')); return; }
   if (state.me) box.appendChild(el('p','tp-note muted','내 위치 기준이에요.'));
   else {
@@ -6842,6 +6972,7 @@ $('fdClear').addEventListener('click', () => { $('btnClear').click(); setBadges(
 $('filterDlg').addEventListener('click', e => { if (e.target === $('filterDlg')) $('filterDlg').close(); }); // 바깥(어두운 부분)을 누르면 닫기
 $('zsaved').addEventListener('click', () => setCollect(!state.collect));
 $('tabbar').addEventListener('click', e => { const b = e.target.closest('button[data-tab]'); if (b) setTab(b.dataset.tab); }); // 휴대폰 아래 탭
+$('zlines').addEventListener('click', () => state.lineMap ? closeLineMap() : openLineMap(null)); // 엘리베이터 노선도(컴퓨터)
 $('q').addEventListener('focus', () => { if (state.tab !== 'map') { state.tab = 'map'; renderAll(); } }); // 검색하면 목록(지도 탭)으로
 matchMedia('(max-width:899px)').addEventListener('change', renderTabs);
 $('routeBtn').addEventListener('click', () => openDestPicker()); // 장소를 열지 않고 바로 길찾기: 도착지부터 고른다
