@@ -4042,17 +4042,16 @@ function accessChips(r, i){
   if (s.lineCode >= 1 && s.lineCode <= 8) { // 서울교통공사 자료가 있는 노선
     // 휠체어·유아차가 아니면 필요 없는 정보라 접어 둔다. '엘리베이터 이용 시'를 누르면 문장으로 풀어 보여 준다
     chip(ELEV_ICON, true)('엘리베이터 이용 시');
-    const ends = [enter && [s.from, s.inExit, '들어갈 때'], leave && [s.to, s.outExit, '나갈 때']].filter(Boolean);
-    for (const [station, exit, when] of ends) {
+    const ends = [enter && [s.from, '들어갈 때'], leave && [s.to, '나갈 때']].filter(Boolean);
+    for (const [station, when] of ends) {
       const line = el('p','t-elevline'); line.hidden = true; panel.appendChild(line);
       elevFetch(station).then(d => {
         const all = (d && d.list) || []; if (!all.length) return;
         const exits = elevExits(all).sort((a, b) => parseInt(a, 10) - parseInt(b, 10)), broken = all.filter(x => !x.ok).length;
-        const where = !exits.length ? '지상으로 가는 엘리베이터가 없어요.'
-          : exit && exits.includes(exit) ? `안내한 ${exit}번 출구에 엘리베이터가 있어요.`
-          : `엘리베이터는 ${exits.join('·')}번 출구에 있어요.${exit ? ` 안내한 ${exit}번 출구엔 없어요.` : ''}`;
+        // 엘리베이터가 있는 출구만 말한다(경로가 안내한 출구와 견주는 말은 오히려 헷갈려서 뺐다)
+        const where = exits.length ? `엘리베이터는 ${exits.join('·')}번 출구에 있어요.` : '지상으로 가는 엘리베이터가 없어요.';
         line.replaceChildren(el('b', null, `${nm(station)}역 ${when}`), ' ', where, broken ? ` 지금 점검·중지 ${broken}대.` : '');
-        line.classList.toggle('warn', !exits.length || (!!exit && !exits.includes(exit)));
+        line.classList.toggle('warn', !exits.length);
         line.hidden = false;
       });
     }
