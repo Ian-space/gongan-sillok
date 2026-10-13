@@ -31,7 +31,7 @@
 //   POST /photoplace { image: base64 JPEG 1장, x, y }        → 사진+위치로 그 자리의 가게 후보(간판 글자, AI가 고른 곳, 가까운 곳) (로그인 필요)
 
 const ALLOWED_ORIGINS = ['https://ian-space.github.io', 'http://localhost:8765'];
-const VERSION = '2026-10-14.4'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
+const VERSION = '2026-10-14.5'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
 // 로그인 확인용 Supabase 주소와 공개 키(사이트 코드에도 있는 공개 값)
 const SUPABASE_URL = 'https://qktrghajroxddrbpwtvn.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_j-kp8YKsQTczGcsQX74OxA_mfI7DoZw';
@@ -232,12 +232,16 @@ async function handle(kind, input, { request, env, ctx, send, reply }) {
     if (!st || st.length > 20 || !/^[1-8]$/.test(line)) return reply(400, { error: 'bad input' });
     if (!env.KRIC_KEY || !env.SEOUL_OPEN_KEY) return reply(503, { error: 'elevpath off' });
     // 역 이름 → 서울 역 코드(첫차·막차와 같은 저장 열쇠). KRIC는 앞의 0을 뺀 코드를 쓴다('0222' → '222')
-    const codes = await edgeCached(`sch1:stc:${st}`, 30 * 86400, async () => {
-      const r = await fetch(`http://openapi.seoul.go.kr:8088/${encodeURIComponent(env.SEOUL_OPEN_KEY)}/json/SearchInfoBySubwayNameService/1/20/${encodeURIComponent(st)}`, { signal: AbortSignal.timeout(6000) });
-      const j = await r.json().catch(() => null); const s = j && j.SearchInfoBySubwayNameService; if (!s) return null;
-      return JSON.stringify((s.row || []).map(x => [String(x.LINE_NUM || ''), String(x.STATION_CD || '')]));
-    });
-    const hit = codes && JSON.parse(codes).find(([l]) => l === `0${line}호선`);
+    const lookup = async name => {
+      const codes = await edgeCached(`sch1:stc:${name}`, 30 * 86400, async () => {
+        const r = await fetch(`http://openapi.seoul.go.kr:8088/${encodeURIComponent(env.SEOUL_OPEN_KEY)}/json/SearchInfoBySubwayNameService/1/20/${encodeURIComponent(name)}`, { signal: AbortSignal.timeout(6000) });
+        const j = await r.json().catch(() => null); const s = j && j.SearchInfoBySubwayNameService;
+        if (!s) return j && j.RESULT && j.RESULT.CODE === 'INFO-200' ? '[]' : null; // INFO-200: 그런 역 없음
+        return JSON.stringify((s.row || []).map(x => [String(x.LINE_NUM || ''), String(x.STATION_CD || '')]));
+      });
+      return codes && JSON.parse(codes).find(([l]) => l === `0${line}호선`);
+    };
+    const hit = await lookup(st) || await lookup(`${st}역`); // '서울역'처럼 이름에 '역'까지 들어간 역
     const code = hit ? hit[1].replace(/^0+/, '') : '';
     if (!code) return reply(200, { paths: [] });
     const key = `kric1:em:S1:${line}:${code}`;
