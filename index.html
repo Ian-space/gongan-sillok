@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<script src="i18n.js?v=33"></script>
+<script src="i18n.js?v=34"></script>
 <title>공간실록 시제품</title>
 <meta name="description" content="입구 계단, 화장실, 소음, 콘센트처럼 다녀온 사람만 아는 사실을 평점 대신 남기고 함께 보는 공간 지도예요.">
 <!-- 카톡 등에 링크를 보냈을 때 미리보기 -->
@@ -642,8 +642,6 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
 .tb-route{flex:none;display:grid;place-items:center;width:46px;height:46px;padding:0;border:0;border-radius:50%;background:var(--blue);color:#FFFFFF;box-shadow:0 2px 10px rgba(15,20,40,.25);cursor:pointer}
 .tb-route svg{width:22px;height:22px}
 .mapctl [hidden]{display:none}
-.mapctl #zlayer[aria-expanded="true"]{background:var(--blue);color:#FFFFFF}
-.mapctl #zlayer[aria-pressed="true"]:not([aria-expanded="true"]){color:var(--blue)}
 .qchips{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;padding:2px 2px 4px}
 /* 넘칠 때만 오른쪽 끝을 흐리게: 잘린 게 아니라 더 있다는 표시 */
 .qchips.more{-webkit-mask-image:linear-gradient(90deg,#000 calc(100% - 44px),transparent);mask-image:linear-gradient(90deg,#000 calc(100% - 44px),transparent)}
@@ -1046,9 +1044,6 @@ html{touch-action:manipulation}
       <button type="button" id="zin" aria-label="확대">+</button>
       <button type="button" id="zout" aria-label="축소">−</button>
       <button type="button" class="round" id="zfit" aria-label="기록한 장소 전체 보기" title="전체 보기"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/></svg></button>
-      <button type="button" class="round" id="zlayer" aria-pressed="false" aria-expanded="false" aria-controls="nchips" aria-label="주변 장소 종류 고르기" title="주변 장소" hidden>
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="m12 4 9 5-9 5-9-5z"/><path d="m3 14 9 5 9-5"/></svg>
-      </button>
       <button type="button" class="round" id="zsaved" aria-pressed="false" aria-label="찜한 곳과 내 기록만 모아 보기" title="내 장소 모아 보기">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h12v18l-6-4.5L6 21z"/></svg>
       </button>
@@ -6404,13 +6399,10 @@ function renderQuickChips(){
     else state.nearKinds = new Set(nearBefore && nearBefore.length ? nearBefore : nearPref());
     saveNearKinds(); renderAll(); loadNearby(); nearZoomHint();
   });
-  // 휴대폰: 위 칩은 빠른 조건 한 줄만 두고, 주변 장소 종류는 지도 오른쪽 레이어 단추(zlayer)를 눌렀을 때 그 아래 한 줄로 펼친다
-  const nrow = $('nchips'), phone = isPhone() && !nearOff && !!ROUTE_PROXY && !state.collect, showRow = phone && !!state.nearPanel;
+  // 휴대폰은 범례가 접혀 있어서, 주변 장소 종류를 빠른 조건 아래 한 줄로 늘 보여 준다(있는 줄 알도록)
+  const nrow = $('nchips'), showRow = isPhone() && !nearOff && !!ROUTE_PROXY && !state.collect;
   nrow.hidden = !showRow; nrow.replaceChildren();
-  const lb = $('zlayer');
-  if (lb) { lb.hidden = !phone; lb.setAttribute('aria-pressed', String(state.nearKinds.size > 0)); lb.setAttribute('aria-expanded', String(showRow)); }
-  if (!phone) { box.appendChild(nb); return; }
-  if (!showRow) return;
+  if (!showRow) { box.appendChild(nb); return; }
   nrow.appendChild(nb);
   for (const k of NEAR_TOGGLE) {
     const b = el('button','qchip nk'); b.type = 'button'; b.setAttribute('aria-pressed', String(state.nearKinds.has(k.code)));
@@ -6600,7 +6592,7 @@ const TOUR_KEY = 'gongan-sillok:tour-v2';
 const tourSteps = () => [
   { sel: '#btnAdd', text: '공간실록은 다녀온 사람들이 남긴 사실로 만들어져요. 입구에 계단이 있는지, 화장실은 어디인지, 시끄러운지를 평점 대신 남겨요. 다녀온 곳이 있다면 + 기록으로 함께 남겨 주세요.' },
   { sel: '#qchips', text: '턱 없음, 조용한 곳 같은 조건을 누르면 맞는 곳만 남아요. 필터에서는 모든 항목과 좌석·마감까지 고를 수 있어요.' },
-  { sel: isPhone() ? '#zlayer' : '#qchips > .qchip:last-child', text: isPhone() ? '이 단추를 누르면 주변 장소 종류가 나와요. 켜면 아직 기록이 없는 편의점·카페·약국·은행도 점으로 보여요.' : '주변 장소를 켜면 아직 기록이 없는 편의점·카페·약국·은행도 점으로 보여요. 눌러서 바로 기록할 수 있어요.' },
+  { sel: isPhone() ? '#nchips' : '#qchips > .qchip:last-child', text: '주변 장소를 켜면 아직 기록이 없는 편의점·카페·약국·은행도 점으로 보여요. 눌러서 바로 기록할 수 있어요.' },
   isPhone()
     ? { sel: '.peek', text: '아래 패널을 올리면 장소 목록이 나와요. 장소를 열면 기록과 함께 [출발]·[도착] 길찾기를 쓸 수 있어요.' }
     : { sel: '#list', text: '목록이나 지도의 핀을 누르면 그 장소의 기록이 열리고, [출발]·[도착]으로 길찾기도 할 수 있어요.' },
@@ -6688,7 +6680,6 @@ $('fdDone').addEventListener('click', () => $('filterDlg').close());
 $('fdClear').addEventListener('click', () => { $('btnClear').click(); setBadges([]); });
 $('filterDlg').addEventListener('click', e => { if (e.target === $('filterDlg')) $('filterDlg').close(); }); // 바깥(어두운 부분)을 누르면 닫기
 $('zsaved').addEventListener('click', () => setCollect(!state.collect));
-$('zlayer').addEventListener('click', () => { state.nearPanel = !state.nearPanel; renderAll(); }); // 휴대폰: 주변 장소 종류 줄 펼치고 접기
 $('routeBtn').addEventListener('click', () => openDestPicker()); // 장소를 열지 않고 바로 길찾기: 도착지부터 고른다
 $('btnFit').addEventListener('click', () => { fitAll(); if (isPhone() && listSheet) listSheet.set(PEEK_H, true); });
 state.saves = loadLocalSaves(); // 로그인 상태가 확인되면 계정의 찜으로 바꾼다
