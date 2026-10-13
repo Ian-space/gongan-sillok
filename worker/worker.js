@@ -33,7 +33,7 @@
 //   POST /photoplace { image: base64 JPEG 1장, x, y }        → 사진+위치로 그 자리의 가게 후보(간판 글자, AI가 고른 곳, 가까운 곳) (로그인 필요)
 
 const ALLOWED_ORIGINS = ['https://ian-space.github.io', 'http://localhost:8765'];
-const VERSION = '2026-10-14.10'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
+const VERSION = '2026-10-14.11'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
 // 로그인 확인용 Supabase 주소와 공개 키(사이트 코드에도 있는 공개 값)
 const SUPABASE_URL = 'https://qktrghajroxddrbpwtvn.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_j-kp8YKsQTczGcsQX74OxA_mfI7DoZw';
@@ -599,7 +599,7 @@ async function handle(kind, input, { request, env, ctx, send, reply }) {
      운행 상태가 5분마다 바뀌어서 전체 목록을 5분 동안 서버 메모리에만 둔다(KV에 쓰지 않는다) */
   if (kind === 'elev') {
     const st = String(input.station || '').replace(/역$/, '').replace(/\(.*\)$/, '').trim();
-    if (!st || st.length > 20) return reply(400, { error: 'bad station' });
+    if (input.all !== true && (!st || st.length > 20)) return reply(400, { error: 'bad station' }); // all: 모든 역 요약(노선도용)
     const gk = /%[0-9A-Fa-f]{2}/.test(env.DATA_GO_KR_KEY || '') ? decodeURIComponent(env.DATA_GO_KR_KEY) : (env.DATA_GO_KR_KEY || '');
     if (!gk) return reply(503, { error: 'elev off' });
     let all = memGet('elev1:all');
@@ -619,6 +619,20 @@ async function handle(kind, input, { request, env, ctx, send, reply }) {
       all = JSON.stringify(items.map(x => ({ st: String(x.stnNm || '').replace(/\(.*\)$/, '').trim(), line: String(x.lineNm || ''), exit: String(x.vcntEntrcNo || '').trim(),
         from: flr(x.bgngFlrGrndUdgdSe, x.bgngFlr), to: flr(x.endFlrGrndUdgdSe, x.endFlr), pos: String(x.dtlPstn || '').slice(0, 40), ok: String(x.oprtngSitu || '') === 'M', code: String(x.oprtngSitu || '') })));
       memPut('elev1:all', all, 300);
+    }
+    // 모든 역 요약(엘리베이터 노선도): { stations: { 역: [지상 엘리베이터 출구 '1·6·9', 승강장 엘리베이터 수, 점검·중지 수, 지상 엘리베이터 수] } }
+    if (input.all === true) {
+      const ground = f => /^1F?$/i.test(f);
+      const exitsOf = x => [...(/^\d/.test(x.exit) ? x.exit.split(',') : []), ...((/(\d+(?:,\d+)*)번 출입구/.exec(x.pos) || [])[1] || '').split(',')].map(v => v.trim()).filter(Boolean);
+      const by = new Map();
+      for (const x of JSON.parse(all)) { const k = x.st.replace(/역$/, ''); (by.get(k) || by.set(k, []).get(k)).push(x); }
+      const stations = {};
+      for (const [k, xs] of by) {
+        const outs = xs.filter(x => ground(x.from) || ground(x.to));
+        const exits = [...new Set(outs.flatMap(exitsOf))].sort((a, b) => parseInt(a, 10) - parseInt(b, 10));
+        stations[k] = [exits.join('·'), xs.length - outs.length, xs.filter(x => !x.ok).length, outs.length];
+      }
+      return reply(200, { stations });
     }
     const list = JSON.parse(all).filter(x => x.st.replace(/역$/, '') === st).map(({ st: _, ...x }) => x);
     return reply(200, { list, covered: list.length > 0 });
