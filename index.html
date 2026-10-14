@@ -1065,7 +1065,9 @@ body.linemap #map .pin:not(.sel),body.linemap #map .near-dot,body.linemap #map .
   .tabbar button{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 0;border:0;background:none;color:var(--muted);font:inherit;font-size:11px;font-weight:600;cursor:pointer}
   .tabbar svg{width:22px;height:22px}
   .tabbar button[aria-current="true"]{color:var(--blue)}
-  .tabbar .tab-add svg{width:34px;height:34px;margin-top:-6px;padding:8px;box-sizing:border-box;border-radius:50%;background:var(--seal);color:#FFFFFF}
+  .tabbar .tab-add svg{width:28px;height:28px;margin:0;padding:6px;box-sizing:border-box;border-radius:50%;background:var(--seal);color:#FFFFFF} /* 떠 있는 탭 줄 안에 들어가게(위로 튀어나오지 않게) */
+  .tabbar button{align-self:stretch;justify-content:flex-end;padding:0 0 7px} /* 글자 줄을 모든 탭에서 같은 높이(아래쪽)에 맞춘다 */
+  .tabbar .tab-add{gap:1px}
   .tabbar .tab-add span{color:var(--seal-ink)}
   body.tabs.has-detail .tabbar,body.tabs.map-only .tabbar{display:none}
   /* 목록 패널은 화면 맨 아래까지 이어지고(아래 탭 뒤까지 같은 바탕), 내용은 탭 위에서 끝난다 */
