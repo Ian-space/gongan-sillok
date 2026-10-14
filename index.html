@@ -1053,8 +1053,14 @@ body.linemap #map .pin:not(.sel),body.linemap #map .near-dot,body.linemap #map .
   body.map-only .side{transform:translateY(calc(100% + 10px));pointer-events:none}
   body.map-only .mapctl,body.map-only .legend,body.map-only .legend-help{opacity:0;pointer-events:none}
   /* 아래 탭: 떠 있는 둥근 줄. 목록 패널은 그 위에 얹고, 장소를 열거나 지도만 볼 때는 숨긴다 */
-  body.tabs{--tab-h:calc(72px + env(safe-area-inset-bottom,0px))}
-  body.tabs .tabbar{display:flex;align-items:center;position:fixed;left:12px;right:12px;bottom:calc(8px + env(safe-area-inset-bottom,0px));height:58px;padding:0 4px;z-index:18;background:var(--panel);border-radius:999px;box-shadow:0 4px 18px rgba(15,20,40,.22)}
+  /* 바닥·양옆과 띄우고 테두리·그림자를 둬서, 뒤에 흰 패널이 있어도 따로 떠 있는 줄로 보이게 */
+  body.tabs{--tab-h:calc(84px + env(safe-area-inset-bottom,0px))}
+  body.tabs .tabbar{display:flex;align-items:center;position:fixed;left:18px;right:18px;bottom:calc(14px + env(safe-area-inset-bottom,0px));height:58px;padding:0 4px;z-index:18;background:var(--panel);border:1px solid var(--line);border-radius:999px;box-shadow:0 6px 22px rgba(15,20,40,.24),0 1px 3px rgba(15,20,40,.12)}
+  /* 목록 패널을 끝까지 내리면: 패널 바탕은 사라지고 아래 탭 위에 손잡이만 떠 있다(누르거나 위로 끌면 다시 올라온다) */
+  body.tabs.sheet-h-min .side{background:transparent;box-shadow:none;pointer-events:none;border-color:transparent}
+  body.tabs.sheet-h-min .side>*:not(.sheet-handle){visibility:hidden}
+  body.tabs.sheet-h-min .sheet-handle{pointer-events:auto;width:72px;height:24px;margin:0 auto;border-radius:999px;background:var(--panel);border:1px solid var(--line);box-shadow:0 2px 10px rgba(15,20,40,.2)}
+  body.tabs.sheet-h-min .sheet-handle span{background:var(--muted)}
   .tabbar button{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 0;border:0;background:none;color:var(--muted);font:inherit;font-size:11px;font-weight:600;cursor:pointer}
   .tabbar svg{width:22px;height:22px}
   .tabbar button[aria-current="true"]{color:var(--blue)}
@@ -2740,7 +2746,8 @@ function makeSheet({ panel, varName, snaps, isGrab, onSettle, onDismiss }){
   let h = null, drag = null;
   // 높이는 문서 전체에도 알려 둔다(지도 위 둥근 버튼이 패널 바로 위에 붙도록)
   const set = (px, animate) => { panel.classList.toggle('anim', !!animate); h = px; panel.style.setProperty(varName, px + 'px'); document.documentElement.style.setProperty(varName, px + 'px');
-    document.body.classList.toggle(varName.slice(2) + '-high', px > innerHeight * 0.6); }; // 패널을 높이 올리면 지도 둥근 버튼이 검색창 줄과 겹치지 않게 숨긴다
+    document.body.classList.toggle(varName.slice(2) + '-high', px > innerHeight * 0.6); // 패널을 높이 올리면 지도 둥근 버튼이 검색창 줄과 겹치지 않게 숨긴다
+    document.body.classList.toggle(varName.slice(2) + '-min', px < 40); }; // 손잡이만 남기고 내린 상태(지도를 다 보이게)
   const settle = px => { set(px, true); if (onSettle) onSettle(px); };
   const cycle = () => { // 손잡이를 탭하면 다음 높이로
     const s = snaps(), cur = h ?? panel.getBoundingClientRect().height;
@@ -2755,8 +2762,8 @@ function makeSheet({ panel, varName, snaps, isGrab, onSettle, onDismiss }){
   panel.addEventListener('pointermove', e => {
     if (!drag) return;
     const dy = drag.y - e.clientY; if (Math.abs(dy) > 5) drag.moved = true;
-    const s = snaps(), floor = s[0] - (onDismiss ? 220 : 40); // 닫을 수 있는 패널은 더 아래까지 끌린다
-    set(Math.min(s[2], Math.max(floor, drag.h + dy)), false);
+    const s = snaps(), floor = onDismiss ? s[0] - 220 : Math.max(0, s[0] - 40); // 닫을 수 있는 패널은 더 아래까지 끌린다
+    set(Math.min(s[s.length - 1], Math.max(floor, drag.h + dy)), false);
     // 손가락 속도(위로 끌면 양수). 제자리 이벤트는 속도를 0으로 덮어쓰지 않게 건너뛴다
     const dt = e.timeStamp - drag.lastT;
     if (dt > 0 && e.clientY !== drag.lastY) { drag.v = (drag.lastY - e.clientY) / dt; drag.lastY = e.clientY; drag.lastT = e.timeStamp; }
@@ -2770,12 +2777,12 @@ function makeSheet({ panel, varName, snaps, isGrab, onSettle, onDismiss }){
     // 가장 낮은 높이보다 한참 아래로 끌었거나, 낮은 높이에서 아래로 휙 내리면 닫는다
     if (onDismiss && (h < s[0] - 60 || (d.v < -0.4 && h < s[0] + 10))) { onDismiss(); return; }
     let target;
-    if (Math.abs(d.v) > 0.4) target = d.v > 0 ? (s.find(x => x > h + 10) ?? s[2]) : ([...s].reverse().find(x => x < h - 10) ?? s[0]); // 휙 넘기면 그 방향 다음 칸
+    if (Math.abs(d.v) > 0.4) target = d.v > 0 ? (s.find(x => x > h + 10) ?? s[s.length - 1]) : ([...s].reverse().find(x => x < h - 10) ?? s[0]); // 휙 넘기면 그 방향 다음 칸
     else target = s.reduce((a, b) => Math.abs(b - h) < Math.abs(a - h) ? b : a); // 아니면 가장 가까운 칸
     settle(target);
   };
   panel.addEventListener('pointerup', up); panel.addEventListener('pointercancel', up);
-  addEventListener('resize', () => { if (isPhone() && h) set(Math.min(h, snaps()[2]), false); });
+  addEventListener('resize', () => { if (isPhone() && h) { const s = snaps(); set(Math.min(h, s[s.length - 1]), false); }; });
   return { set, cycle, snaps, get height(){ return h; } };
 }
 
@@ -2785,7 +2792,7 @@ const detailHeight = () => (isPhone() && detailSheet && detailSheet.height) || $
 function bindSheets(){
   listSheet = makeSheet({
     panel: $('side'), varName: '--sheet-h',
-    snaps: () => [PEEK_H, vh(0.5), sheetMax() - tabSpace()], // 한 줄(요약), 반, 검색창 바로 아래까지(아래 탭 위에 얹는다)
+    snaps: () => isPhone() && document.body.classList.contains('tabs') ? [SHEET_MIN, PEEK_H, vh(0.5), sheetMax() - tabSpace()] : [PEEK_H, vh(0.5), sheetMax() - tabSpace()], // (손잡이만,) 한 줄(요약), 반, 검색창 바로 아래까지(아래 탭 위에 얹는다)
     isGrab: t => !!t.closest('.sheet-handle, .side-head'),
     onSettle: () => renderLegendHelp() // 패널 높이가 바뀌면 지도 위 기준 상자 높이도 맞춘다
   });
@@ -2802,6 +2809,7 @@ function bindSheets(){
   if (isPhone()) listSheet.set(PEEK_H, false); // 처음에는 한 줄로 접어 두고 지도를 넓게
 }
 const PEEK_H = 104; // 접힌 목록 패널 높이: 손잡이 + 요약 한 줄 + 기록 버튼
+const SHEET_MIN = 30; // 끝까지 내린 목록 패널: 아래 탭 위에 손잡이만 떠 있다
 // 휴대폰 패널을 가장 높이 올렸을 때: 위쪽 검색창·빠른 조건 줄을 가리지 않는 높이
 const sheetMax = () => { const tb = $('topbar'); const top = tb && !document.body.classList.contains('map-only') ? tb.getBoundingClientRect().bottom + 8 : 0; return Math.min(vh(0.88), Math.round(innerHeight - top)); };
 function renderMap(vis){
