@@ -641,6 +641,7 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
 .detail[hidden]{display:none}
 .d-head{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
 .d-name{font-family:var(--sans);font-weight:700;font-size:24px;line-height:1.2;margin:0}
+.d-name .d-line{font-size:.8em;font-weight:800;white-space:nowrap}
 .d-meta{font-size:13px;color:var(--muted);margin:4px 0 0}
 .d-close{border:0;background:transparent;font-size:22px;line-height:1;cursor:pointer;color:var(--muted);padding:2px 4px}
 .d-head-acts{display:flex;align-items:center;gap:6px;flex:none}
@@ -2116,7 +2117,12 @@ function renderDetail(){
   grab.setAttribute('aria-label','상세 패널 높이 바꾸기'); grab.appendChild(el('span'));
   d.appendChild(grab);
   const head = el('div','d-head'); const t = el('div');
-  t.appendChild(el('h2','d-name notranslate', p.name));
+  const nameEl = el('h2','d-name notranslate', p.name);
+  // 지하철역: 이름 옆에 노선을 노선 색 글자로(네이버 지도처럼 '암사역 8호선', 환승역은 '천호역 5호선 8호선')
+  if (p.subway) for (const l of (p.lines || []).map(x => String(x).replace(/^(수도권|서울)\s*/, '')).filter(Boolean)) {
+    const s = el('span','d-line', l); s.style.color = lineColorOf(l); nameEl.append(' ', s);
+  }
+  t.appendChild(nameEl);
   // 종류(카페 등)는 번역돼도 되고, 주소는 번역하지 않게(브라우저 번역이 동네 이름을 뜻으로 바꾸지 않게)
   if (p.type || p.addr) { const mt = el('p','d-meta', p.type || ''); if (p.addr) mt.append(p.type ? ', ' : '', el('span','notranslate', p.addr)); t.appendChild(mt); }
   if (!p.ext && p.type !== '건물') closedNote(p, t);
@@ -4054,7 +4060,7 @@ function stationBoard(p){
   const draw = () => {
     const ids = [...new Set((list || []).map(x => x.line))].filter(subwayIdName).sort((a, b) => order(a) - order(b) || a - b);
     if (!ids.includes(pick)) pick = ids[0] || '';
-    tabs.replaceChildren(); tabs.hidden = !ids.length; // 한 노선이어도 몇 호선인지 보이게
+    tabs.replaceChildren(); tabs.hidden = ids.length < 2; // 한 노선뿐이면 이름 옆 노선으로 충분해서 고르기 단추는 환승역에만
     for (const id of ids) {
       const b = el('button','sb-tab', subwayIdName(id)); b.type = 'button'; b.style.setProperty('--c', lineColorOf(subwayIdName(id)));
       b.setAttribute('aria-pressed', String(id === pick));
