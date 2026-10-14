@@ -824,7 +824,11 @@ body.linemap #map .pin:not(.sel),body.linemap #map .near-dot,body.linemap #map .
 .lmv{position:fixed;inset:0;z-index:40;display:flex;flex-direction:column;background:var(--panel);color:var(--ink)}
 .lmv[hidden]{display:none}
 .lmv-head{display:flex;align-items:center;gap:8px;padding:calc(10px + env(safe-area-inset-top,0px)) 12px 6px}
-.lmv-head b{flex:1;font-size:16px}
+.lmv-head b{flex:1;min-width:0;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@media (max-width:480px){ #lmvAll{padding-left:8px;padding-right:8px;font-size:0;gap:0} #lmvAll svg{margin:0} #lmvToilet{font-size:0;gap:0;padding-left:8px;padding-right:8px} #lmvToilet .wc{font-size:11px} } /* 휴대폰: 전체 보기는 그림만(제목이 눌리지 않게) */
+/* 아주 멀리(전체 보기) 보면 선이 머리카락처럼 가늘어져서: 선 굵기를 화면 기준으로 고정, 역 점은 숨김 */
+.lmv-stage.far3 path{vector-effect:non-scaling-stroke;stroke-width:2px}
+.lmv-stage.far3 circle,.lmv-stage.far3 rect{display:none}
 .lmv-mapbtn{padding:6px 12px;border:1px solid var(--line);border-radius:999px;background:var(--panel);color:var(--ink);font:inherit;font-size:13px;font-weight:600;cursor:pointer}
 .lmv-x{width:36px;height:36px;border:0;background:transparent;color:var(--muted);font-size:26px;line-height:1;cursor:pointer}
 .lmv-chips{padding:0 12px 4px}
@@ -1305,6 +1309,7 @@ html{touch-action:manipulation}
     <b>지하철 노선도</b>
     <button type="button" class="lmv-elev" id="lmvElev" aria-pressed="false"></button>
     <button type="button" class="lmv-elev lmv-wc" id="lmvToilet" aria-pressed="false"><span class="wc">WC</span>화장실</button>
+    <button type="button" class="lmv-elev" id="lmvAll" aria-label="노선도 전체 보기" title="전체 보기"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>전체</button>
     <button type="button" class="lmv-x" id="lmvClose" aria-label="지하철 노선도 닫기">×</button>
   </div>
   <div class="lm-chips lmv-chips" id="lmvChips"></div>
@@ -7304,10 +7309,17 @@ function placeLineViewLabels(stage){
 function applyLineView(){
   const g = $('lmvStage').querySelector('svg > g'); if (!g) return;
   g.setAttribute('transform', `translate(${lmvView.x.toFixed(1)} ${lmvView.y.toFixed(1)}) scale(${lmvView.s.toFixed(3)})`);
-  $('lmvStage').classList.toggle('far', lmvView.s < 0.85); $('lmvStage').classList.toggle('far2', lmvView.s < 0.4); // 멀리 보면 작은 역 이름을 숨긴다
+  $('lmvStage').classList.toggle('far', lmvView.s < 0.85); $('lmvStage').classList.toggle('far2', lmvView.s < 0.4); $('lmvStage').classList.toggle('far3', lmvView.s < 0.22); // 멀리 보면 작은 역 이름을 숨긴다
+}
+// 노선도 전체가 화면에 들어가는 확대 정도와, 전체 보기(가운데 맞춤)
+const lineViewFitScale = () => { const st = $('lmvStage'), d = lmvData; return d ? Math.min((st.clientWidth || 360) / d.size[0], (st.clientHeight || 600) / d.size[1]) : 0.25; };
+function fitLineViewAll(){
+  const st = $('lmvStage'), d = lmvData; if (!d) return;
+  const s = lineViewFitScale() * 0.94;
+  lmvView = { s, x: (st.clientWidth - d.size[0] * s) / 2, y: (st.clientHeight - d.size[1] * s) / 2 }; applyLineView();
 }
 function zoomLineView(f, cx, cy){
-  const s = Math.min(8, Math.max(0.25, lmvView.s * f)); f = s / lmvView.s;
+  const s = Math.min(8, Math.max(Math.min(0.25, lineViewFitScale() * 0.9), lmvView.s * f)); f = s / lmvView.s; // 노선도 전체가 한 화면에 들어올 때까지 줄일 수 있다
   lmvView = { s, x: cx - (cx - lmvView.x) * f, y: cy - (cy - lmvView.y) * f }; applyLineView();
 }
 function renderLineViewChips(){
@@ -7542,6 +7554,7 @@ function renderLineViewElev(){
   stage.addEventListener('pointerup', up); stage.addEventListener('pointercancel', up);
   stage.addEventListener('wheel', e => { e.preventDefault(); const r = stage.getBoundingClientRect(); zoomLineView(e.deltaY < 0 ? 1.15 : 1 / 1.15, e.clientX - r.left, e.clientY - r.top); }, { passive: false });
   $('lmvClose').addEventListener('click', closeLineView);
+  $('lmvAll').addEventListener('click', fitLineViewAll);
   $('lmvMap').addEventListener('click', () => { closeLineView(); openLineMap(lmvLine); });
   $('lmvToilet').addEventListener('click', () => { lmvToilet = !lmvToilet; try { localStorage.setItem('gongan-sillok:lmv-toilet', lmvToilet ? '1' : '0'); } catch {} renderLineViewToilet(); drawLineView(false); });
   $('lmvElev').addEventListener('click', () => { lmvElev = !lmvElev; try { localStorage.setItem('gongan-sillok:lmv-elev', lmvElev ? '1' : '0'); } catch {} renderLineViewElev(); drawLineView(false); });
