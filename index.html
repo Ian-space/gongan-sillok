@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<script src="i18n.js?v=42"></script>
+<script src="i18n.js?v=43"></script>
 <title>공간실록 시제품</title>
 <meta name="description" content="입구 계단, 화장실, 소음, 콘센트처럼 다녀온 사람만 아는 사실을 평점 대신 남기고 함께 보는 공간 지도예요.">
 <!-- 카톡 등에 링크를 보냈을 때 미리보기 -->
@@ -766,6 +766,11 @@ body.linemap #map .pin:not(.sel),body.linemap #map .near-dot,body.linemap #map .
 .lmv-elev svg{width:16px;height:16px;color:#2E9E6A}
 .lmv-elev[aria-pressed="true"]{background:#2E9E6A;border-color:#2E9E6A;color:#FFFFFF}
 .lmv-elev[aria-pressed="true"] svg{color:#FFFFFF}
+.lmv-wc .wc{font-size:10px;font-weight:800;padding:0 3px;border-radius:3px;background:#1F5EFF;color:#FFFFFF}
+.lmv-wc[aria-pressed="true"]{background:#1F5EFF;border-color:#1F5EFF;color:#FFFFFF}
+.lmv-wc[aria-pressed="true"] .wc{background:#FFFFFF;color:#1F5EFF}
+.lm-key.tl-in::before{border-radius:2px;background:#1F5EFF}.lm-key.tl-out::before{border-radius:2px;border:2px solid #1F5EFF}
+.lmv-head{flex-wrap:wrap}
 .lmv-route{display:flex;align-items:center;gap:8px;margin:0 12px 6px;padding:8px 12px;border-radius:10px;background:var(--blue-soft);font-size:13px}
 .lmv-route b{font-weight:700}
 .lmv-route .grow{flex:1;min-width:0}
@@ -1195,10 +1200,12 @@ html{touch-action:manipulation}
   <div class="lmv-head">
     <b>지하철 노선도</b>
     <button type="button" class="lmv-elev" id="lmvElev" aria-pressed="false"></button>
+    <button type="button" class="lmv-elev lmv-wc" id="lmvToilet" aria-pressed="false"><span class="wc">WC</span>화장실</button>
     <button type="button" class="lmv-x" id="lmvClose" aria-label="지하철 노선도 닫기">×</button>
   </div>
   <div class="lm-chips lmv-chips" id="lmvChips"></div>
   <div class="lm-legend lmv-legend" id="lmvLegend" hidden><span class="lm-key ok">엘리베이터 있음</span><span class="lm-key no">지상 엘리베이터 없음</span><span class="lm-key warn">점검 중</span><span class="lm-key none">정보 없음</span><button type="button" class="linkbtn" id="lmvMap">지도에서 보기</button></div>
+  <div class="lm-legend lmv-legend" id="lmvTlLegend" hidden><span class="lm-key tl-in">개찰구 안 화장실</span><span class="lm-key tl-out">개찰구 밖만</span><span class="muted">모으는 중인 역은 아직 안 보여요</span></div>
   <div class="lmv-route" id="lmvRoute" hidden></div>
   <div class="lmv-stage" id="lmvStage"><p class="muted lmv-wait">노선도를 불러오는 중…</p></div>
   <div class="lmv-card" id="lmvCard" hidden></div>
@@ -2267,9 +2274,16 @@ function renderDetail(){
       ev.textContent = [exits.length ? `엘리베이터 출구 ${exits.join('·')}번` : '지상으로 가는 엘리베이터 없음', inside.length && '승강장 엘리베이터 있음', broken.length && `점검·중지 ${broken.length}대`].filter(Boolean).join(' · ');
       ev.classList.toggle('warn', !exits.length || !!broken.length);
     });
+    box.appendChild(el('h3','sec-title','화장실'));
+    const tl = el('div','ext-phone','확인 중…'); box.appendChild(tl);
+    toiletFetch(p.name.replace(/역$/, '')).then(list => {
+      const ls = toiletLines(list, 4); tl.replaceChildren();
+      if (!ls.length) { tl.textContent = '이 역은 화장실 정보가 없어요.'; return; }
+      for (const t of ls) tl.appendChild(el('div', null, t));
+    });
     box.appendChild(el('h3','sec-title','실시간 도착'));
     box.appendChild(stationArrivals(p));
-    box.appendChild(el('p','add-src', '역: 카카오 · 엘리베이터: 서울교통공사 교통약자이용정보 · 도착: 서울 열린데이터광장 실시간 지하철'));
+    box.appendChild(el('p','add-src', '역: 카카오 · 엘리베이터: 서울교통공사 교통약자이용정보 · 화장실: 철도산업정보센터 · 도착: 서울 열린데이터광장 실시간 지하철'));
     d.appendChild(box);
   } else if (p.bus) { // 버스정류장(우리 DB): 정류장 번호와 이 정류장에 오는 버스 실시간 도착
     const box = el('div','ext-info');
@@ -4123,7 +4137,7 @@ function fastExitNote(s){
   });
   return box;
 }
-// 엘리베이터 이동 동선(중계 서버 /elevpath, KRIC, 서울교통공사 1~8호선): 출입구 엘리베이터 → 대합실 → 승강장, 환승역은 갈아타는 승강장까지.
+// 엘리베이터 이동 동선(중계 서버 /elevpath, KRIC, 수도권 모든 노선): 출입구 엘리베이터 → 대합실 → 승강장, 환승역은 갈아타는 승강장까지.
 // 자료가 방면(다음 역)별 동선이라, 타는 역은 가는 방면, 내리는 역은 오는 방면(내리기 직전 역)이 아닌 쪽, 환승은 내린 승강장 → 탈 방면으로 고른다
 const epCache = new Map();
 function elevPathNote(r, i, which){ // which: 'from'(타는 역·갈아타는 역) | 'to'(마지막으로 내리는 역)
@@ -4133,7 +4147,7 @@ function elevPathNote(r, i, which){ // which: 'from'(타는 역·갈아타는 �
   const xfer = which === 'from' && prevRide && prevRide.mode === 'subway' && nm(prevRide.to) === nm(s.from);
   if (which === 'to' && nextRide && nextRide.mode === 'subway' && nm(nextRide.from) === nm(s.to)) return box; // 환승은 다음 구간에서
   const at = xfer ? prevRide : s; // 환승 동선은 내린 노선 쪽에 올라 있다
-  if (!(at.lineCode >= 1 && at.lineCode <= 8)) return box;
+  if (!at.lineCode) return box; // KRIC 자료: 수도권 모든 운영기관
   const station = nm(which === 'to' ? s.to : s.from), k = `${station}|${at.lineCode}`;
   if (!epCache.has(k)) epCache.set(k, proxyPost('/elevpath', { station, line: String(at.lineCode) }).then(x => x.ok ? x.json() : null).catch(() => null));
   epCache.get(k).then(d => {
@@ -4164,6 +4178,7 @@ function elevPathNote(r, i, which){ // which: 'from'(타는 역·갈아타는 �
     });
     tog.addEventListener('click', e => { e.stopPropagation(); const now = list.hidden; list.hidden = !now; tog.setAttribute('aria-expanded', String(now)); });
     box.replaceChildren(tog, list); box.hidden = false;
+    box.dispatchEvent(new CustomEvent('gs-show', { bubbles: true })); // 펼칠 내용이 생겼다고 알린다(서울교통공사 밖 노선은 이때 '엘리베이터 이용 시' 칩이 나타난다)
   });
   return box;
 }
@@ -4184,6 +4199,29 @@ function fastTransfer(s, n){
     const doors = [...new Set(rows.filter(x => x.car && x.door).map(x => `${x.car}-${x.door}`))];
     return doors.length === 1 ? doors[0] : null;
   });
+}
+// 역 화장실(중계 서버 /toilet, KRIC): 개찰구 안팎·층·자리, 기저귀 교환대. 같은 자리의 남녀 칸은 하나로
+const toiletCache = new Map();
+const toiletFetch = (station, line) => {
+  const k = `${station}|${line || ''}`;
+  if (!toiletCache.has(k)) toiletCache.set(k, proxyPost('/toilet', { station, ...(line && { line: String(line) }) }).then(r => r.ok ? r.json() : null).then(d => (d && d.list) || []).catch(() => []));
+  return toiletCache.get(k);
+};
+function toiletLines(list, max = 3){
+  const by = new Map();
+  for (const x of list) { const k = `${x.gate}|${x.floor}|${x.loc}`; const v = by.get(k) || by.set(k, { ...x }).get(k); v.diaper = v.diaper || x.diaper; }
+  return [...by.values()].sort((a, b) => (a.gate === '내' ? 0 : 1) - (b.gate === '내' ? 0 : 1)).slice(0, max)
+    .map(v => `${v.gate === '내' ? '개찰구 안' : '개찰구 밖'} ${v.floor} · ${v.loc}${v.diaper ? ' · 기저귀 교환대' : ''}`);
+}
+function toiletNote(station, line, label){
+  const p = el('p','t-elevline'); p.hidden = true;
+  const nm = String(station || '').replace(/\(.*\)$/, '').replace(/역$/, '').trim();
+  toiletFetch(nm, line).then(list => {
+    const ls = toiletLines(list, 2); if (!ls.length) return;
+    p.replaceChildren(el('b', null, `${nm}역 화장실`), ` (${label}) `, ls.join(' / ')); p.hidden = false;
+    p.dispatchEvent(new CustomEvent('gs-show', { bubbles: true }));
+  });
+  return p;
 }
 // 지하철 구간의 접근 정보: 평소엔 칩 한 줄([엘리베이터 이용 시], 빠른하차·빠른환승 문). 엘리베이터는 누르면 문장으로 풀어 보여 준다:
 // 들어갈 때·나갈 때 엘리베이터 출구(경로가 안내한 출구에 없으면 그렇다고), 점검 중인 대수, 엘리베이터 동선
@@ -4207,9 +4245,12 @@ function accessChips(r, i){
     b.appendChild(el('span')); chips.appendChild(b);
     return text => { b.lastChild.textContent = text; b.hidden = false; wrap.hidden = false; };
   };
+  // 휠체어·유아차가 아니면 필요 없는 정보라 접어 둔다. '엘리베이터 이용 시'를 누르면 문장으로 풀어 보여 준다.
+  // 칩은 펼칠 내용(엘리베이터 출구, 동선, 화장실)이 하나라도 생기면 나타난다
+  const showElev = (set => () => set('엘리베이터 이용 시'))(chip(ELEV_ICON, true));
+  panel.addEventListener('gs-show', showElev);
   if (s.lineCode >= 1 && s.lineCode <= 8) { // 서울교통공사 자료가 있는 노선
-    // 휠체어·유아차가 아니면 필요 없는 정보라 접어 둔다. '엘리베이터 이용 시'를 누르면 문장으로 풀어 보여 준다
-    chip(ELEV_ICON, true)('엘리베이터 이용 시');
+    showElev();
     const ends = [enter && [s.from, '들어갈 때'], leave && [s.to, '나갈 때']].filter(Boolean);
     for (const [station, when] of ends) {
       const line = el('p','t-elevline'); line.hidden = true; panel.appendChild(line);
@@ -4223,7 +4264,6 @@ function accessChips(r, i){
         line.hidden = false;
       });
     }
-    panel.append(elevPathNote(r, i, 'from'), elevPathNote(r, i, 'to'));
     if (leave) {
       const fast = chip('');
       fastRows(s).then(rows => {
@@ -4232,6 +4272,8 @@ function accessChips(r, i){
       });
     }
   }
+  // 엘리베이터 동선(KRIC, 모든 노선)과 내리는·갈아타는 역 화장실
+  if (s.lineCode) panel.append(elevPathNote(r, i, 'from'), elevPathNote(r, i, 'to'), toiletNote(s.to, s.lineCode, leave ? '내리는 역' : '갈아타는 역'));
   if (!leave) { // 갈아타는 역: 갈아탈 노선으로 가장 빨리 가는 칸·문(국토교통부 자료라 코레일 등 다른 노선도)
     const set = chip('');
     fastTransfer(s, nextRide).then(d => { if (d) set(`빠른환승 ${d}`); });
@@ -6847,13 +6889,16 @@ function renderLineBar(){
 let lmvData = null, lmvView = { s: 1, x: 0, y: 0 }, lmvLine = null, lmvRoute = { from: null, to: null };
 // 엘리베이터 정보 켜기(이 기기에 기억). 끄면 보통 노선도처럼 흰 역
 let lmvElev = (() => { try { return localStorage.getItem('gongan-sillok:lmv-elev') === '1'; } catch { return false; } })();
+// 화장실 표시 켜기(이 기기에 기억)와 모든 역 화장실 요약(중계 서버 /toiletsum, 예약 작업이 채우는 중)
+let lmvToilet = (() => { try { return localStorage.getItem('gongan-sillok:lmv-toilet') === '1'; } catch { return false; } })(), lmvTl = null;
+const loadLineViewToilets = () => lmvTl ? Promise.resolve(lmvTl) : proxyPost('/toiletsum', {}).then(r => r.ok ? r.json() : null).then(d => { lmvTl = (d && d.stations) || {}; return lmvTl; }).catch(() => ({}));
 const lmvStatus = name => {
   const e = lineData && lineData.elev[name], has = lineData && lineData.posSt.has(name);
   return { cls: e ? (e[0] || has ? 'ok' : 'no') : has ? 'ok' : 'none', exits: e ? e[0] : '', warn: !!(e && e[2] > 0), broken: e ? e[2] : 0 };
 };
 const LMV_FILL = { ok: '#2E9E6A', no: '#D6453D', none: '#FFFFFF' };
 async function openLineView(){
-  $('lmView').hidden = false; $('lmvCard').hidden = true; renderLineViewElev(); renderLineViewRoute();
+  $('lmView').hidden = false; $('lmvCard').hidden = true; renderLineViewElev(); renderLineViewToilet(); renderLineViewRoute();
   try {
     const [m] = await Promise.all([lmvData ? lmvData : fetch('linemap.json?v=1').then(r => { if (!r.ok) throw new Error('linemap'); return r.json(); }), loadLineData()]);
     lmvData = m;
@@ -6896,6 +6941,9 @@ function drawLineView(reset){
     c.addEventListener('click', e => { e.stopPropagation(); showLineViewCard(name); });
     g.appendChild(c);
     if (!dim) { const t = mk('text', { x: x + 7, y: y - 6, 'font-size': big ? 10 : 8, 'font-weight': big ? 700 : 500, class: big ? '' : 'minor' }); t.textContent = name; g.appendChild(t); }
+    // 화장실 표시(켰을 때): 개찰구 안에 있으면 채운 네모, 밖에만 있으면 빈 네모
+    const tl = lmvToilet && lmvTl && lmvTl[lmvNm(name)];
+    if (tl && tl[0] > 0 && !dim) g.appendChild(mk('rect', { x: x - 11, y: y + 3, width: 7, height: 7, rx: 1.5, fill: tl[1] ? '#1F5EFF' : '#FFFFFF', stroke: '#1F5EFF', 'stroke-width': 1.6 }));
   }
   svg.appendChild(g); stage.replaceChildren(svg);
   if (reset) {
@@ -6946,7 +6994,9 @@ function showLineViewCard(name){
   const acts = el('div','acts');
   acts.append(btn('출발', 'btn add', pick('from')), btn('도착', 'btn add rec', pick('to')),
     btn('역 정보', 'btn', () => { if (!p) return; closeLineView(); openShop(p); }), btn('닫기', 'btn', () => { card.hidden = true; }));
-  card.replaceChildren(el('h3','notranslate', nm), el('p','muted', p ? p.lines.join(' · ') : ''), evLine, acts); card.hidden = false;
+  const tlLine = el('p', null); tlLine.hidden = true;
+  toiletFetch(lmvNm(name)).then(list => { const ls = toiletLines(list, 1); if (!ls.length || !tlLine.isConnected) return; tlLine.textContent = `화장실 ${ls[0]}`; tlLine.hidden = false; });
+  card.replaceChildren(el('h3','notranslate', nm), el('p','muted', p ? p.lines.join(' · ') : ''), evLine, tlLine, acts); card.hidden = false;
 }
 // 출발·도착 줄. 둘 다 고르면 지도에서 그 경로를 찾는다(도착역을 열고 출발역에서 출발)
 function renderLineViewRoute(){
@@ -7049,6 +7099,10 @@ function lineViewTripPaths(){
   }
   return res;
 }
+function renderLineViewToilet(){
+  $('lmvToilet').setAttribute('aria-pressed', String(lmvToilet)); $('lmvTlLegend').hidden = !lmvToilet;
+  if (lmvToilet && !lmvTl) loadLineViewToilets().then(() => drawLineView(false));
+}
 function renderLineViewElev(){
   const b = $('lmvElev'); b.setAttribute('aria-pressed', String(lmvElev));
   b.innerHTML = ELEV_ICON; b.append(lmvElev ? '엘리베이터 켜짐' : '엘리베이터');
@@ -7072,6 +7126,7 @@ function renderLineViewElev(){
   stage.addEventListener('wheel', e => { e.preventDefault(); const r = stage.getBoundingClientRect(); zoomLineView(e.deltaY < 0 ? 1.15 : 1 / 1.15, e.clientX - r.left, e.clientY - r.top); }, { passive: false });
   $('lmvClose').addEventListener('click', closeLineView);
   $('lmvMap').addEventListener('click', () => { closeLineView(); openLineMap(lmvLine); });
+  $('lmvToilet').addEventListener('click', () => { lmvToilet = !lmvToilet; try { localStorage.setItem('gongan-sillok:lmv-toilet', lmvToilet ? '1' : '0'); } catch {} renderLineViewToilet(); drawLineView(false); });
   $('lmvElev').addEventListener('click', () => { lmvElev = !lmvElev; try { localStorage.setItem('gongan-sillok:lmv-elev', lmvElev ? '1' : '0'); } catch {} renderLineViewElev(); drawLineView(false); });
 })();
 // 자주 가는 역·정류장(별표): 이 기기에만 저장. 대중교통 창 맨 위에 실시간 도착과 함께 보여 준다
