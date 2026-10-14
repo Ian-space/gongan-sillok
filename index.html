@@ -20,7 +20,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="공간실록">
 <meta name="theme-color" content="#EEF1EE" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#141A1D" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#24292C" media="(prefers-color-scheme: dark)">
 <script>/* 고른 화면 테마(밝게·어둡게)를 그리기 전에 적용한다(깜빡임 방지). 없으면 기기 설정을 따른다 */ try { const t = localStorage.getItem("gongan-sillok:theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch {}</script>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
 <style>
@@ -35,17 +35,17 @@
 }
 @media (prefers-color-scheme:dark){
   :root:not([data-theme="light"]){
-    --paper:#141A1D; --panel:#1A2125; --ink:#E4E8E5; --muted:#9AA6A4; --line:#2E3A3E;
-    --blue:#6E9BFF; --mark:#FFD43B; --mark-ink:#141A1D; --faint:.4;
+    --paper:#24292C; --panel:#2C3236; --ink:#E6E9E7; --muted:#A8B2B0; --line:#434B50;
+    --blue:#6E9BFF; --mark:#FFD43B; --mark-ink:#24292C; --faint:.4;
     --seal:#C8402C; --seal-ink:#F08A70;
-    --route:#1FCB72; --route-ink:#0B1F14; --blue-soft:#22355E;
+    --route:#1FCB72; --route-ink:#0B1F14; --blue-soft:#2D3F66;
   }
 }
 :root[data-theme="dark"]{
-  --paper:#141A1D; --panel:#1A2125; --ink:#E4E8E5; --muted:#9AA6A4; --line:#2E3A3E;
-  --blue:#6E9BFF; --mark:#FFD43B; --mark-ink:#141A1D; --faint:.4;
+  --paper:#24292C; --panel:#2C3236; --ink:#E6E9E7; --muted:#A8B2B0; --line:#434B50;
+  --blue:#6E9BFF; --mark:#FFD43B; --mark-ink:#24292C; --faint:.4;
   --seal:#C8402C; --seal-ink:#F08A70; /* 어두운 화면: 버튼 바탕은 그대로(흰 글자 대비), 글자·도장 선은 밝게 */
-  --route:#1FCB72; --route-ink:#0B1F14; --blue-soft:#22355E;
+  --route:#1FCB72; --route-ink:#0B1F14; --blue-soft:#2D3F66;
 }
 *,*::before,*::after{box-sizing:inherit}
 html{height:100%;scroll-padding-top:env(safe-area-inset-top,0px)}
@@ -7513,7 +7513,7 @@ const THEME_KEY = 'gongan-sillok:theme';
 function applyTheme(t){
   if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme;
   const dark = t === 'dark' || (t !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches);
-  for (const m of document.querySelectorAll('meta[name="theme-color"]')) { if (t === 'light' || t === 'dark') m.removeAttribute('media'); m.content = dark ? '#141A1D' : '#EEF1EE'; }
+  for (const m of document.querySelectorAll('meta[name="theme-color"]')) { if (t === 'light' || t === 'dark') m.removeAttribute('media'); m.content = dark ? '#24292C' : '#EEF1EE'; }
   for (const b of $('themeRow').querySelectorAll('button')) b.setAttribute('aria-pressed', String(b.dataset.t === (t || 'system')));
 }
 $('themeRow').addEventListener('click', e => {
