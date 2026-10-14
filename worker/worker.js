@@ -23,7 +23,9 @@
 //   POST /elev     { station }                                  → 지하철역 엘리베이터(출구·층·운행 상태, 서울교통공사 1~8호선)
 //   POST /odsay    { SX, SY, EX, EY }                           → ODsay 대중교통 경로(같은 구간은 하루 동안 같이 쓴다)
 //   POST /fstexit  { station }                                  → 빠른하차(엘리베이터·에스컬레이터·계단 가까운 문, 서울교통공사 1~8호선)
-//   POST /elevpath { station, line }                           → 엘리베이터 이동 동선(출입구↔승강장, 환승, KRIC, 서울교통공사 1~8호선)
+//   POST /elevpath { station, line? }                         → 엘리베이터 이동 동선(출입구↔승강장, 환승, KRIC, 수도권 모든 운영기관)
+//   POST /toilet   { station, line? }                         → 역 화장실(개찰구 안팎, 층, 출구, 기저귀 교환대, KRIC)
+//   POST /toiletsum {}                                        → 모든 역 화장실 요약(예약 작업이 채운다, 노선도용)
 //   POST /fsttrans { station }                                 → 빠른 환승(갈아탈 노선으로 가장 빨리 가는 칸·문, 국토교통부)
 //   POST /lines    {}                                         → 노선별 역 목록(수도권, 서울 열린데이터광장)
 //   POST /elevpos  {}                                         → 지하철역 엘리베이터 자리(서울 안 모든 운영사, 서울 열린데이터광장)
@@ -34,7 +36,7 @@
 //   POST /photoplace { image: base64 JPEG 1장, x, y }        → 사진+위치로 그 자리의 가게 후보(간판 글자, AI가 고른 곳, 가까운 곳) (로그인 필요)
 
 const ALLOWED_ORIGINS = ['https://ian-space.github.io', 'http://localhost:8765'];
-const VERSION = '2026-10-14.18'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
+const VERSION = '2026-10-14.19'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
 // 로그인 확인용 Supabase 주소와 공개 키(사이트 코드에도 있는 공개 값)
 const SUPABASE_URL = 'https://qktrghajroxddrbpwtvn.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_j-kp8YKsQTczGcsQX74OxA_mfI7DoZw';
@@ -98,14 +100,14 @@ const TMAP = {
   transit: 'https://apis.openapi.sk.com/transit/routes',
   walk: 'https://apis.openapi.sk.com/tmap/routes/pedestrian?version=1&format=json',
 };
-const PLACE_KINDS = ['search', 'nearby', 'station', 'addr', 'apt', 'bldreg', 'arrive', 'elev', 'odsay', 'fstexit', 'sched', 'clienterr', 'elevpath', 'fsttrans', 'lines', 'elevpos', 'kricprobe'];
+const PLACE_KINDS = ['search', 'nearby', 'station', 'addr', 'apt', 'bldreg', 'arrive', 'elev', 'odsay', 'fstexit', 'sched', 'clienterr', 'elevpath', 'fsttrans', 'lines', 'elevpos', 'kricprobe', 'toilet', 'toiletsum'];
 const ODSAY_WEB_KEY = 'vpfLJcZCiAwV7L5fibSQjA'; // 사이트(index.html)에도 공개된 웹 키. 따로 넣은 비밀값 ODSAY_API_KEY가 있으면 그걸 쓴다
 const AI_KINDS = ['intent', 'photo', 'photoplace'];
 
 export default {
   // 예약 작업(wrangler.toml [triggers]): 매일 한 번 1년 지난 '사진으로 찾기' 사진 지우기, 10분마다 새 신고를 운영자 메일로
   async scheduled(event, env, ctx) {
-    if (event.cron === '*/10 * * * *') ctx.waitUntil(notifyReports(env));
+    if (event.cron === '*/10 * * * *') { ctx.waitUntil(notifyReports(env)); ctx.waitUntil(fillToiletSum(env)); }
     else ctx.waitUntil(expireFinds(env));
   },
   async fetch(request, env, ctx) {
@@ -237,47 +239,51 @@ async function handle(kind, input, { request, env, ctx, send, reply }) {
     return reply(200, { status: r.status, body: (await r.text()).replaceAll(env.KRIC_KEY, '***').slice(0, 300000) });
   }
 
-  /* 엘리베이터 이동 동선(철도산업정보센터 KRIC 교통약자 역사 내 엘리베이터 이동동선, 지금은 서울교통공사 1~8호선만):
-     { station, line: 1~8 } → { paths: [{ kind: '출입구-승강장'|'환승경로'…, steps: ['(1F) 1번 출입구 옆 엘리베이터 탑승', …] }] }
-     KRIC 서버가 자주 멈춰서 실시간으로 묻지 않는다. 받은 것을 KV에 두고 7일 지나면 새로 받되, 실패하면 전에 받은 것을 그대로 준다 */
+  /* 엘리베이터 이동 동선(KRIC 교통약자 역사 내 엘리베이터 이동동선, 수도권 모든 운영기관):
+     { station, line: 1~9 또는 ODsay 노선 번호(101 공항철도 등), 없으면 그 역 모든 노선 } → { paths: [{ kind: '출입구-승강장'|'환승경로'…, steps: [...] }] }
+     역 코드는 KRIC 도시철도 전체노선정보. 받은 동선은 KV에 두고 7일 지나면 새로, 실패하면 전 것 */
   if (kind === 'elevpath') {
     const st = stName(input.station), line = String(input.line || '');
-    if (!st || st.length > 20 || !/^[1-8]$/.test(line)) return reply(400, { error: 'bad input' });
-    if (!env.KRIC_KEY || !env.SEOUL_OPEN_KEY) return reply(503, { error: 'elevpath off' });
-    // 역 이름 → 서울 역 코드(첫차·막차와 같은 저장 열쇠). KRIC는 앞의 0을 뺀 코드를 쓴다('0222' → '222')
-    const lookup = async name => {
-      const codes = await edgeCached(`sch1:stc:${name}`, 30 * 86400, async () => {
-        const r = await fetch(`http://openapi.seoul.go.kr:8088/${encodeURIComponent(env.SEOUL_OPEN_KEY)}/json/SearchInfoBySubwayNameService/1/20/${encodeURIComponent(name)}`, { signal: AbortSignal.timeout(6000) });
-        const j = await r.json().catch(() => null); const s = j && j.SearchInfoBySubwayNameService;
-        if (!s) return j && j.RESULT && j.RESULT.CODE === 'INFO-200' ? '[]' : null; // INFO-200: 그런 역 없음
-        return JSON.stringify((s.row || []).map(x => [String(x.LINE_NUM || ''), String(x.STATION_CD || '')]));
-      });
-      return codes && JSON.parse(codes).find(([l]) => l === `0${line}호선`);
-    };
-    const hit = await lookup(st) || await lookup(`${st}역`); // '서울역'처럼 이름에 '역'까지 들어간 역
-    const code = hit ? hit[1].replace(/^0+/, '') : '';
-    if (!code) return reply(200, { paths: [], code: "" });
-    const key = `kric1:em:S1:${line}:${code}`;
-    const text = await edgeCached(key, 3600, async () => {
-      const old = kv ? await kv.get(key, 'json').catch(() => null) : null;
-      if (old && Date.now() - old.t < 7 * 86400000) return JSON.stringify(old.p);
-      const fresh = await (async () => {
-        const qs = new URLSearchParams({ serviceKey: env.KRIC_KEY, format: 'json', railOprIsttCd: 'S1', lnCd: line, stinCd: code });
-        const r = await fetch(`https://openapi.kric.go.kr/openapi/trafficWeekInfo/stinElevatorMovement?${qs}`, { signal: AbortSignal.timeout(6000) });
-        const j = await r.json().catch(() => null); const h = j && j.header;
-        if (!h || (h.resultCode !== '00' && h.resultCode !== '03')) return null; // 03: 이 역은 자료 없음(빈 목록으로 저장)
-        const g = new Map();
-        for (const x of j.body || []) {
-          const k = `${x.mvPathDvCd}:${x.mvPathMgNo}`;
-          if (!g.has(k)) g.set(k, { kind: String(x.mvPathDvNm || ''), steps: [] });
-          g.get(k).steps.push([+x.mvTpOrdr || 0, String(x.mvContDtl || '').replace(/^\s*\d+\)\s*/, '').trim()]);
-        }
-        return [...g.values()].map(p => ({ kind: p.kind, steps: p.steps.sort((a, b) => a[0] - b[0]).map(s => s[1]).filter(Boolean) }));
-      })().catch(() => null);
-      if (fresh) { if (kv) ctx.waitUntil(kv.put(key, JSON.stringify({ t: Date.now(), p: fresh })).catch(() => {})); return JSON.stringify(fresh); }
-      return old ? JSON.stringify(old.p) : null; // KRIC가 멈췄으면 전에 받은 것
-    });
-    return text ? send(`{"code":${JSON.stringify(code)},"paths":${text}}`, 200) : reply(502, { error: "elevpath upstream", code });
+    if (!st || st.length > 20) return reply(400, { error: 'bad input' });
+    if (!env.KRIC_KEY) return reply(503, { error: 'elevpath off' });
+    await allow();
+    const all = await kricStations(env, ctx); if (!all) return reply(502, { error: 'elevpath upstream' });
+    const want = /^[1-9]$/.test(line) ? line : ODSAY_KRIC[line] || '';
+    const codes = (all[st] || []).filter(c => !want || c[1] === want).slice(0, 4);
+    const lists = await Promise.all(codes.map(([op, ln, stin]) => kvFresh(env, ctx, `kric2:em:${op}:${ln}:${stin}`, 7 * 86400000, async () => {
+      const b = await kricGet(env, 'trafficWeekInfo/stinElevatorMovement', { railOprIsttCd: op, lnCd: ln, stinCd: stin }); if (b == null) return null;
+      const g = new Map();
+      for (const x of b) {
+        const k = `${x.mvPathDvCd}:${x.mvPathMgNo}`;
+        if (!g.has(k)) g.set(k, { kind: String(x.mvPathDvNm || ''), steps: [] });
+        g.get(k).steps.push([+x.mvTpOrdr || 0, String(x.mvContDtl || '').replace(/^\s*\d+\)\s*/, '').trim()]);
+      }
+      return [...g.values()].map(p => ({ kind: p.kind, steps: p.steps.sort((a, b) => a[0] - b[0]).map(s => s[1]).filter(Boolean) }));
+    })));
+    return reply(200, { paths: lists.flatMap(l => l || []) });
+  }
+
+  /* 역 화장실(KRIC 역사별 화장실 현황): { station, line? } → { list: [{ gate: '내'(개찰구 안)|'외', floor: 'B1', exit, loc, sex, n, diaper }] } */
+  if (kind === 'toilet') {
+    const st = stName(input.station), line = String(input.line || '');
+    if (!st || st.length > 20) return reply(400, { error: 'bad input' });
+    if (!env.KRIC_KEY) return reply(503, { error: 'toilet off' });
+    await allow();
+    const all = await kricStations(env, ctx); if (!all) return reply(502, { error: 'toilet upstream' });
+    const want = /^[1-9]$/.test(line) ? line : ODSAY_KRIC[line] || '';
+    const codes = (all[st] || []).filter(c => !want || c[1] === want).slice(0, 4);
+    const lists = await Promise.all(codes.map(c => kricToilets(env, ctx, c).then(l => (l || []).map(x => ({ ...x, line: c[3] })))));
+    const seen = new Set(), list = lists.flat().filter(x => { const k = `${x.loc}|${x.sex}`; return !seen.has(k) && seen.add(k); });
+    return reply(200, { list });
+  }
+
+  /* 노선도 화장실 표시: 예약 작업이 모아 둔 요약 → { stations: { 역: [화장실 수, 개찰구 안에 있음 1|0, 기저귀 교환대 1|0] } } */
+  if (kind === 'toiletsum') {
+    const m = memGet('tlsum'); if (m) return send(m, 200);
+    const sum = kv ? await kv.get('kric2:tlsum', 'json').catch(() => null) : null;
+    const text = JSON.stringify({ stations: Object.fromEntries(Object.entries(sum || {}).map(([k, v]) => [k, v.slice(0, 3)])) });
+    memPut('tlsum', text, 600);
+    return send(text, 200);
   }
 
   if (kind === 'clienterr') {
@@ -966,6 +972,72 @@ ${list}
 
 // 1년 지난 '사진으로 찾기' 사진(supabase/26_find_photos.sql) 지우기: 저장소 파일을 먼저, 그다음 표의 줄. 한 번에 500개씩.
 // 관리자 키(비밀 변수 SUPABASE_SERVICE_KEY)가 있어야 한다. 없으면 아무것도 하지 않는다
+
+/* ---------- KRIC(철도산업정보센터) 공통: 수도권 모든 역의 운영기관·노선·역 코드, 엘리베이터 동선, 화장실 ----------
+   KRIC 서버가 자주 멈춰서 받은 것은 KV에 두고(정해진 기간이 지나면 새로), 못 받으면 전에 받은 것을 쓴다 */
+const KRIC_LINES = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'K1', 'K2', 'K4', 'K5', 'A1', 'D1', 'U1', 'UI', 'E1', 'G1', 'I1', 'I2', 'WS', 'A'];
+// ODsay 지하철 노선 번호 → KRIC 노선 코드(1~9호선은 같다)
+const ODSAY_KRIC = { 101: 'A1', 104: 'K4', 107: 'E1', 108: 'K2', 109: 'D1', 110: 'U1', 112: 'K5', 113: 'UI', 114: 'WS', 115: 'G1', 116: 'K1', 21: 'I1', 22: 'I2' };
+const kStName = v => String(v || '').replace(/\(.*\)$/, '').replace(/역$/, '').trim();
+async function kricGet(env, path, params){
+  const qs = new URLSearchParams({ serviceKey: env.KRIC_KEY, format: 'json', ...params });
+  const r = await fetch(`https://openapi.kric.go.kr/openapi/${path}?${qs}`, { signal: AbortSignal.timeout(8000) }).catch(() => null);
+  const j = r ? await r.json().catch(() => null) : null; const h = j && j.header;
+  if (!h || (h.resultCode !== '00' && h.resultCode !== '03')) return null; // 03: 자료 없음(빈 목록)
+  return Array.isArray(j.body) ? j.body : [];
+}
+// KV 값: maxAge 안이면 그대로, 지났으면 새로 받고, 못 받으면 전 것. 서버 메모리에도 1시간
+async function kvFresh(env, ctx, key, maxAgeMs, make){
+  const m = memGet(key); if (m) return m;
+  const kv = env.ROUTE_CACHE;
+  const old = kv ? await kv.get(key, 'json').catch(() => null) : null;
+  if (old && Date.now() - old.t < maxAgeMs) { memPut(key, old.v, 3600); return old.v; }
+  const v = await make().catch(() => null);
+  if (v != null) {
+    memPut(key, v, 3600);
+    if (kv) { const p = kv.put(key, JSON.stringify({ t: Date.now(), v })).catch(() => {}); if (ctx) ctx.waitUntil(p); else await p; }
+    return v;
+  }
+  return old ? old.v : null;
+}
+// 역 이름 → [[운영기관, 노선 코드, 역 코드, 노선 이름]](30일마다 새로)
+function kricStations(env, ctx){
+  return kvFresh(env, ctx, 'kric2:stations', 30 * 86400000, async () => {
+    const lists = await Promise.all(KRIC_LINES.map(ln => kricGet(env, 'trainUseInfo/subwayRouteInfo', { mreaWideCd: '01', lnCd: ln })));
+    if (lists.filter(l => l && l.length).length < KRIC_LINES.length / 2) return null; // 반 넘게 못 받았으면 실패로
+    const out = {};
+    for (const list of lists) for (const x of list || []) {
+      const n = kStName(x.stinNm), c = [String(x.railOprIsttCd || ''), String(x.lnCd || ''), String(x.stinCd || ''), String(x.routNm || '')];
+      if (!(out[n] = out[n] || []).some(o => o[0] === c[0] && o[1] === c[1] && o[2] === c[2])) out[n].push(c);
+    }
+    return out;
+  });
+}
+// 역 하나(운영기관·노선·역 코드)의 화장실 → [{ gate: '내'|'외', floor: 'B1', exit, loc, sex, n, diaper }]
+function kricToilets(env, ctx, [op, ln, stin]){
+  return kvFresh(env, ctx, `kric2:tl:${op}:${ln}:${stin}`, 30 * 86400000, async () => {
+    const b = await kricGet(env, 'convenientInfo/stationToilet', { railOprIsttCd: op, lnCd: ln, stinCd: stin }); if (b == null) return null;
+    return b.map(x => ({ gate: String(x.gateInotDvNm || ''), floor: `${x.grndDvNm === '지하' ? 'B' : ''}${x.stinFlor ?? ''}`, exit: String(x.exitNo || ''),
+      loc: String(x.dtlLoc || '').slice(0, 80), sex: String(x.mlFmlDvNm || ''), n: +x.toltNum || 0, diaper: +x.diapExchNum || 0 }));
+  });
+}
+// 예약 작업(10분마다): 노선도에 화장실 표시를 하려고 모든 역의 화장실 요약을 조금씩(한 번에 15역) 채운다. 7일 지나면 다시
+async function fillToiletSum(env){
+  if (!env.KRIC_KEY || !env.ROUTE_CACHE) return;
+  const all = await kricStations(env, null); if (!all) return;
+  const kv = env.ROUTE_CACHE, sum = (await kv.get('kric2:tlsum', 'json').catch(() => null)) || {}, now = Date.now();
+  const names = Object.keys(all).filter(n => !sum[n] || now - sum[n][3] > 7 * 86400000).slice(0, 15);
+  if (!names.length) return;
+  let changed = false;
+  for (const n of names) {
+    const lists = []; let ok = true;
+    // KV 쓰기 한도(하루 1,000번)를 아끼려고 역마다 따로 저장하지 않고 바로 묻는다. 요약만 한 번 저장
+    for (const [op, ln, stin] of all[n].slice(0, 3)) { const b = await kricGet(env, 'convenientInfo/stationToilet', { railOprIsttCd: op, lnCd: ln, stinCd: stin }); if (b == null) { ok = false; break; } lists.push(...b.map(x => ({ gate: String(x.gateInotDvNm || ''), diaper: +x.diapExchNum || 0 }))); }
+    if (!ok) continue; // KRIC가 멈췄으면 다음에
+    sum[n] = [lists.length, lists.some(x => x.gate === '내') ? 1 : 0, lists.some(x => x.diaper > 0) ? 1 : 0, now]; changed = true;
+  }
+  if (changed) await kv.put('kric2:tlsum', JSON.stringify(sum)).catch(() => {});
+}
 async function expireFinds(env) {
   const key = env.SUPABASE_SERVICE_KEY; if (!key) { console.log(JSON.stringify({ expireFinds: 'no key' })); return; }
   const h = { apikey: key, ...(/^eyJ/.test(key) && { Authorization: 'Bearer ' + key }) }; // 예전 형식(JWT) 키는 Authorization도
