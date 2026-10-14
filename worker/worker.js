@@ -34,7 +34,7 @@
 //   POST /photoplace { image: base64 JPEG 1장, x, y }        → 사진+위치로 그 자리의 가게 후보(간판 글자, AI가 고른 곳, 가까운 곳) (로그인 필요)
 
 const ALLOWED_ORIGINS = ['https://ian-space.github.io', 'http://localhost:8765'];
-const VERSION = '2026-10-14.17'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
+const VERSION = '2026-10-14.18'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
 // 로그인 확인용 Supabase 주소와 공개 키(사이트 코드에도 있는 공개 값)
 const SUPABASE_URL = 'https://qktrghajroxddrbpwtvn.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_j-kp8YKsQTczGcsQX74OxA_mfI7DoZw';
@@ -98,7 +98,7 @@ const TMAP = {
   transit: 'https://apis.openapi.sk.com/transit/routes',
   walk: 'https://apis.openapi.sk.com/tmap/routes/pedestrian?version=1&format=json',
 };
-const PLACE_KINDS = ['search', 'nearby', 'station', 'addr', 'apt', 'bldreg', 'arrive', 'elev', 'odsay', 'fstexit', 'sched', 'clienterr', 'elevpath', 'fsttrans', 'lines', 'elevpos'];
+const PLACE_KINDS = ['search', 'nearby', 'station', 'addr', 'apt', 'bldreg', 'arrive', 'elev', 'odsay', 'fstexit', 'sched', 'clienterr', 'elevpath', 'fsttrans', 'lines', 'elevpos', 'kricprobe'];
 const ODSAY_WEB_KEY = 'vpfLJcZCiAwV7L5fibSQjA'; // 사이트(index.html)에도 공개된 웹 키. 따로 넣은 비밀값 ODSAY_API_KEY가 있으면 그걸 쓴다
 const AI_KINDS = ['intent', 'photo', 'photoplace'];
 
@@ -228,6 +228,15 @@ async function handle(kind, input, { request, env, ctx, send, reply }) {
   const stName = v => String(v || '').replace(/\(.*\)$/, '').replace(/역$/, '').trim();
 
   /* 사이트 화면에서 난 스크립트 오류: 대시보드 로그에 한 줄만 남긴다(IP·입력 내용은 남기지 않는다) */
+  /* 임시: KRIC 응답 모양 확인용(키는 가린다). 확인 끝나면 지운다 */
+  if (kind === 'kricprobe') {
+    if (!env.KRIC_KEY) return reply(503, { error: 'no KRIC_KEY' });
+    const p = String(input.p || ''); if (!/^[A-Za-z]+\/[A-Za-z]+$/.test(p)) return reply(400, { error: 'bad p' });
+    const qs = new URLSearchParams({ serviceKey: env.KRIC_KEY, format: 'json', ...(input.q || {}) });
+    const r = await fetch(`https://openapi.kric.go.kr/openapi/${p}?${qs}`, { signal: AbortSignal.timeout(10000) });
+    return reply(200, { status: r.status, body: (await r.text()).replaceAll(env.KRIC_KEY, '***').slice(0, 300000) });
+  }
+
   /* 엘리베이터 이동 동선(철도산업정보센터 KRIC 교통약자 역사 내 엘리베이터 이동동선, 지금은 서울교통공사 1~8호선만):
      { station, line: 1~8 } → { paths: [{ kind: '출입구-승강장'|'환승경로'…, steps: ['(1F) 1번 출입구 옆 엘리베이터 탑승', …] }] }
      KRIC 서버가 자주 멈춰서 실시간으로 묻지 않는다. 받은 것을 KV에 두고 7일 지나면 새로 받되, 실패하면 전에 받은 것을 그대로 준다 */
