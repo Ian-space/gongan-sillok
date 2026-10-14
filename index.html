@@ -748,6 +748,26 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
 .peek .btn.add{flex:none}
 /* 휴대폰 아래 탭과 탭 창 (컴퓨터에서는 쓰지 않는다) */
 .tabbar,.tabpane{display:none}
+.side-top{display:none}
+/* 컴퓨터: 왼쪽 패널 맨 위에 검색 줄 + 주요 메뉴(길찾기·대중교통·지하철 노선도·찜·내 정보). 지도 위에는 빠른 조건 줄만 남는다 */
+@media (min-width:900px){
+  .side-top{display:block;flex:none;padding:14px 16px 10px;border-bottom:1px solid var(--line)}
+  .side-top .tb-main{position:relative}
+  .side-top .tb-search{box-shadow:none;border:1px solid var(--line);background:var(--paper)}
+  .side-top .acct,.side-top .tb-route{display:none}
+  .side-top .recent{right:0;top:52px}
+  .desk-nav{display:grid;grid-template-columns:repeat(5,1fr);gap:4px;margin-top:10px}
+  .dn-btn{display:flex;flex-direction:column;align-items:center;gap:3px;padding:7px 2px;border:0;border-radius:10px;background:transparent;color:var(--ink);font:inherit;font-size:12px;font-weight:600;cursor:pointer;line-height:1.2;text-align:center}
+  .dn-btn svg{width:22px;height:22px;color:var(--muted)}
+  .dn-btn:hover{background:var(--paper)}
+  .dn-btn[aria-pressed="true"]{background:var(--blue-soft);color:var(--blue)}
+  .dn-btn[aria-pressed="true"] svg{color:var(--blue)}
+  .mapctl #zlines,.mapctl #zsaved{display:none} /* 왼쪽 메뉴로 옮겼다 */
+  .side-head{padding-top:14px}
+  body.tab-transit .side>.side-head,body.tab-transit .side>.scroll,body.tab-me .side>.side-head,body.tab-me .side>.scroll{display:none}
+  .tabpane:not([hidden]){display:block;flex:1;min-height:0;overflow-y:auto;padding:12px 16px 16px}
+  #mePane .acct-menu{position:static;width:auto;max-height:none;margin:0;border:0;box-shadow:none;padding:0}
+}
 /* 아래 탭 '대중교통' 창 */
 .tp-head{display:flex;align-items:center;justify-content:space-between;margin-top:4px}
 .tp-note{margin:2px 0 8px;font-size:12px}
@@ -826,11 +846,15 @@ body.linemap #map .pin:not(.sel),body.linemap #map .near-dot,body.linemap #map .
 .lmv-stage.far2 text{display:none}
 .lmv-card{position:absolute;left:12px;right:12px;bottom:calc(12px + env(safe-area-inset-bottom,0px));padding:12px 14px;border-radius:14px;background:var(--panel);box-shadow:0 4px 18px rgba(15,20,40,.25)}
 .lmv-card[hidden]{display:none}
-.lmv-trip{position:absolute;left:0;right:0;bottom:0;max-height:46%;overflow-y:auto;padding:10px 12px calc(12px + env(safe-area-inset-bottom,0px));border-radius:16px 16px 0 0;background:var(--panel);box-shadow:0 -6px 24px rgba(15,20,40,.18)}
+.lmv-trip{position:absolute;left:0;right:0;bottom:0;max-height:46%;overflow-y:auto;touch-action:pan-y;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;padding:10px 12px calc(12px + env(safe-area-inset-bottom,0px));border-radius:16px 16px 0 0;background:var(--panel);box-shadow:0 -6px 24px rgba(15,20,40,.18)}
 .lmv-trip[hidden]{display:none}
 .lmv-trip.full{max-height:80%}
+.lmv-trip.sized{max-height:none} /* 손잡이로 높이를 직접 바꾼 뒤 */
+.lmv-grip{position:sticky;top:-10px;z-index:1;display:flex;justify-content:center;align-items:center;height:22px;margin:-10px -12px 4px;background:var(--panel);touch-action:none;cursor:ns-resize}
+.lmv-grip span{width:40px;height:5px;border-radius:999px;background:var(--line)}
 .lmv-steps{margin:-2px 0 10px;padding:10px 12px;border:1px solid var(--line);border-radius:12px} /* 노선도 안에서 펼친 경로 단계 */
-.lmv-route .via-x{font-size:14px;padding:0 4px}
+.lmv-route .via-x{font-size:15px;padding:0 4px;line-height:1}
+.lmv-route .clear-all{font-size:12px;white-space:nowrap;text-decoration:underline}
 .lmv-trip .opt{display:block;width:100%;margin:0 0 8px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--panel);color:var(--ink);font:inherit;text-align:left;cursor:pointer}
 .lmv-trip .opt[aria-pressed="true"]{border:2px solid var(--blue)}
 .lmv-trip .opt b{font-size:15px}
@@ -1075,10 +1099,10 @@ body.linemap #map .pin:not(.sel),body.linemap #map .near-dot,body.linemap #map .
       border:1px solid rgba(255,255,255,.55);
       /* 바깥: 테두리를 두르는 1px 선 + 1~2px 짧은 그림자 + 넓은 그림자. 안쪽: 위는 밝고 아래는 어두운 양각 */
       box-shadow:0 0 0 1px rgba(15,20,40,.10),0 1px 2px rgba(15,20,40,.22),0 3px 6px rgba(15,20,40,.12),0 12px 32px rgba(15,20,40,.22),inset 0 1.5px 0 rgba(255,255,255,.9),inset 0 -2px 4px rgba(15,20,40,.10)}
-    :root[data-theme="dark"] body.tabs .tabbar,:root[data-theme="dark"] body.tabs.sheet-h-min .sheet-handle{border-color:rgba(255,255,255,.22);background-image:linear-gradient(180deg,rgba(255,255,255,.10),rgba(255,255,255,0) 55%,rgba(0,0,0,.12));box-shadow:0 0 0 1px rgba(0,0,0,.55),0 1px 2px rgba(0,0,0,.6),0 3px 6px rgba(0,0,0,.4),0 12px 32px rgba(0,0,0,.5),inset 0 1.5px 0 rgba(255,255,255,.34),inset 0 -2.5px 5px rgba(0,0,0,.45)} /* 어두운 화면: 위쪽 빛과 아래쪽 그늘을 더 세게(양각) */
+    :root[data-theme="dark"] body.tabs .tabbar,:root[data-theme="dark"] body.tabs.sheet-h-min .sheet-handle{border-color:rgba(255,255,255,.22);background-color:color-mix(in srgb,var(--panel) 94%,transparent);background-image:linear-gradient(180deg,rgba(255,255,255,0) 50%,rgba(0,0,0,.14));box-shadow:0 0 0 1px rgba(0,0,0,.55),0 1px 2px rgba(0,0,0,.6),0 3px 6px rgba(0,0,0,.4),0 12px 32px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.22),inset 0 -2.5px 5px rgba(0,0,0,.45)} /* 어두운 화면: 윗면 바탕은 검색창과 같은 색, 가는 빛줄과 아래 그늘로 양각 */
   }
   @media (prefers-color-scheme:dark){ @supports ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
-    :root:not([data-theme="light"]) body.tabs .tabbar,:root:not([data-theme="light"]) body.tabs.sheet-h-min .sheet-handle{border-color:rgba(255,255,255,.22);background-image:linear-gradient(180deg,rgba(255,255,255,.10),rgba(255,255,255,0) 55%,rgba(0,0,0,.12));box-shadow:0 0 0 1px rgba(0,0,0,.55),0 1px 2px rgba(0,0,0,.6),0 3px 6px rgba(0,0,0,.4),0 12px 32px rgba(0,0,0,.5),inset 0 1.5px 0 rgba(255,255,255,.34),inset 0 -2.5px 5px rgba(0,0,0,.45)} /* 어두운 화면: 위쪽 빛과 아래쪽 그늘을 더 세게(양각) */
+    :root:not([data-theme="light"]) body.tabs .tabbar,:root:not([data-theme="light"]) body.tabs.sheet-h-min .sheet-handle{border-color:rgba(255,255,255,.22);background-color:color-mix(in srgb,var(--panel) 94%,transparent);background-image:linear-gradient(180deg,rgba(255,255,255,0) 50%,rgba(0,0,0,.14));box-shadow:0 0 0 1px rgba(0,0,0,.55),0 1px 2px rgba(0,0,0,.6),0 3px 6px rgba(0,0,0,.4),0 12px 32px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.22),inset 0 -2.5px 5px rgba(0,0,0,.45)} /* 어두운 화면: 윗면 바탕은 검색창과 같은 색, 가는 빛줄과 아래 그늘로 양각 */
   }}
   .tabbar button{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 0;border:0;background:none;color:var(--muted);font:inherit;font-size:11px;font-weight:600;cursor:pointer}
   .tabbar svg{width:22px;height:22px}
@@ -1131,6 +1155,8 @@ html{touch-action:manipulation}
 <div class="app">
   <aside class="side" id="side">
     <div class="sheet-handle grab" id="sheetHandle" role="button" tabindex="0" aria-label="목록 패널 높이 바꾸기"><span></span></div>
+    <!-- 컴퓨터: 왼쪽 패널 맨 위에 검색 줄과 주요 메뉴(길찾기·대중교통·지하철 노선도·찜·내 정보) -->
+    <div class="side-top" id="sideTop"><nav class="desk-nav" id="deskNav" aria-label="주요 메뉴"></nav></div>
     <div class="side-head">
       <div class="brand-row">
         <h1 class="brand" translate="no">공간실록<span class="brand-en" lang="en">Gonggan Sillok</span></h1>
@@ -1196,6 +1222,8 @@ html{touch-action:manipulation}
     <div class="mapmsg" id="mapmsg" hidden><p id="mapmsgText"></p></div>
     <!-- 지도 위 맨 윗줄: 검색창과 계정, 그 아래 빠른 조건 한 줄 -->
     <div class="topbar" id="topbar">
+      <!-- 검색 줄(검색창·계정·길찾기)과 최근 검색어: 휴대폰은 지도 위, 컴퓨터는 왼쪽 패널 맨 위로 옮긴다(placeSearch) -->
+      <div class="tb-main" id="tbMain">
       <div class="tb-row">
         <div class="tb-search">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
@@ -1219,6 +1247,7 @@ html{touch-action:manipulation}
         </div>
       </div>
       <div class="recent" id="recent" hidden></div>
+      </div>
       <div class="qchips" id="qchips" role="toolbar" aria-label="빠른 조건"></div>
       <div class="qchips nchips" id="nchips" role="toolbar" aria-label="주변 장소 종류" hidden></div>
       <div class="collect-bar" id="collectBar" hidden></div>
@@ -6971,28 +7000,58 @@ async function toggleSave(p){
 state.tab = 'map';
 // 아래 탭이 차지하는 높이(목록 패널을 그 위에 얹는다)
 const tabSpace = () => { const r = document.body.classList.contains('tabs') && $('tabbar').getBoundingClientRect(); return r && r.height ? Math.round(innerHeight - r.top + 6) : 0; };
+// 컴퓨터 주요 메뉴(왼쪽 패널 맨 위, 검색창 아래): 휴대폰 아래 탭과 같은 일. 지하철 노선도는 지도 오른쪽 둥근 단추 대신 여기서 연다
+const DESK_NAV = [
+  ['route', '길찾기', '<path d="M5 12h11M12 6l6 6-6 6"/>'],
+  ['transit', '대중교통', '<rect x="5" y="3" width="14" height="14" rx="3"/><path d="M5 10h14M8.5 14h.01M15.5 14h.01M8 17l-2 3M16 17l2 3"/>'],
+  ['lines', '노선도', '<circle cx="6" cy="6" r="2.2"/><circle cx="18" cy="18" r="2.2"/><path d="M8 6h4a3 3 0 0 1 3 3v6a3 3 0 0 0 3 3"/><path d="M4 18h6"/>'],
+  ['saved', '찜', '<path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"/>'],
+  ['me', '내 정보', '<circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/>'],
+];
+function renderDeskNav(t){
+  const nav = $('deskNav');
+  if (!nav.children.length) for (const [k, label, path] of DESK_NAV) {
+    const b = el('button','dn-btn'); b.type = 'button'; b.dataset.k = k;
+    b.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${path}</svg>`;
+    b.appendChild(el('span', null, label));
+    b.addEventListener('click', () => {
+      if (k === 'route') $('routeBtn').click();
+      else if (k === 'lines') openLineView();
+      else if (k === 'saved') setTab('saved');
+      else setTab(state.tab === k ? 'map' : k); // 대중교통·내 정보는 다시 누르면 목록으로
+    });
+    nav.appendChild(b);
+  }
+  const cur = state.collect ? 'saved' : t;
+  for (const b of nav.children) b.setAttribute('aria-pressed', String(b.dataset.k === cur));
+}
+// 검색 줄 자리: 휴대폰은 지도 위 맨 윗줄, 컴퓨터는 왼쪽 패널 맨 위(주요 메뉴 바로 위)
+function placeSearch(on){
+  const m = $('tbMain'), want = on ? $('topbar') : $('sideTop');
+  if (m.parentElement !== want) want.insertBefore(m, want.firstChild);
+}
 function renderTabs(){
-  const on = isPhone(), t = on ? state.tab : 'map';
+  const on = isPhone(), t = state.tab; // 컴퓨터도 대중교통·내 정보 창을 왼쪽 패널에 연다
+  placeSearch(on); if (!on) renderDeskNav(t);
   document.body.classList.toggle('tabs', on);
   document.body.classList.toggle('tab-transit', t === 'transit');
   document.body.classList.toggle('tab-me', t === 'me');
   $('transitPane').hidden = t !== 'transit'; $('mePane').hidden = t !== 'me';
   const cur = state.collect ? 'saved' : t;
   for (const b of $('tabbar').querySelectorAll('button')) b.setAttribute('aria-current', String(b.dataset.tab === cur));
-  // 계정 메뉴: 휴대폰은 '내 정보' 창 안에, 컴퓨터는 검색창 옆 단추 아래
+  // 계정 메뉴: 휴대폰·컴퓨터 모두 '내 정보' 창 안에(컴퓨터는 왼쪽 패널 주요 메뉴의 '내 정보')
   const m = $('acctMenu');
-  if (on && m.parentElement !== $('mePane')) $('mePane').appendChild(m);
-  else if (!on && m.parentElement === $('mePane')) { $('acctBtn').after(m); m.hidden = true; }
-  if (on && t === 'me') { m.hidden = false; m.style.cssText = ''; }
+  if (m.parentElement !== $('mePane')) $('mePane').appendChild(m);
+  if (t === 'me') { m.hidden = false; m.style.cssText = ''; }
 }
 function setTab(t){
   if (t === 'add') { $('btnAdd').click(); return; }
-  if (t === 'saved') { state.tab = 'map'; setCollect(!state.collect); if (state.collect && listSheet) listSheet.set(vh(0.5), true); return; }
+  if (t === 'saved') { state.tab = 'map'; setCollect(!state.collect); if (state.collect && listSheet && isPhone()) listSheet.set(vh(0.5), true); return; }
   if (state.collect) setCollect(false);
   state.tab = t;
   if (t === 'transit') renderTransitPane();
   renderAll();
-  if (listSheet) listSheet.set(t === 'map' ? PEEK_H : vh(0.6), true);
+  if (listSheet && isPhone()) listSheet.set(t === 'map' ? PEEK_H : vh(0.6), true);
 }
 /* ---------- 엘리베이터 노선도 ----------
    노선 모양은 네이버 지도 바탕에 그려진 그대로 두고, 그 위 역 자리마다 엘리베이터 상태 점을 찍는다(수도권 24개 노선).
@@ -7253,14 +7312,16 @@ function renderLineViewRoute(){
   bar.hidden = !r.from && !r.to; if (bar.hidden) { bar.replaceChildren(); return; }
   const nm = n => n ? (/역$/.test(n) ? n : n + '역') : '';
   const t = el('span','grow');
-  t.append('출발 ', el('b','notranslate', r.from ? nm(r.from) : '역을 고르세요'));
-  if (r.via) {
-    const vx = el('button','via-x','×'); vx.type = 'button'; vx.setAttribute('aria-label', '경유 지우기');
-    vx.addEventListener('click', e => { e.stopPropagation(); lmvRoute.via = null; lmvTrip = null; renderLineViewRoute(); renderLineViewTrip(); drawLineView(false); if (lmvRoute.from && lmvRoute.to) findLineViewTrip(); });
-    t.append(' → 경유 ', el('b','notranslate', nm(r.via)), vx);
-  }
-  t.append(' → 도착 ', el('b','notranslate', r.to ? nm(r.to) : '역을 고르세요'));
-  const x = el('button', null, '×'); x.type = 'button'; x.setAttribute('aria-label', '출발·도착 지우기');
+  // 고른 역마다 이름 옆 ×: 그 역만 지운다(출발·경유·도착 따로). 출발·도착이 다 남아 있으면 다시 찾는다
+  const clear = k => e => { e.stopPropagation(); lmvRoute[k] = null; lmvTrip = null; lmvTripH = 0; renderLineViewRoute(); renderLineViewTrip(); drawLineView(false); if (lmvRoute.from && lmvRoute.to) findLineViewTrip(); };
+  const part = (label, k, empty) => {
+    t.append(label, el('b','notranslate', r[k] ? nm(r[k]) : empty));
+    if (r[k]) { const b = el('button','via-x','×'); b.type = 'button'; b.setAttribute('aria-label', `${label.replace('→', '').trim()} 지우기`); b.addEventListener('click', clear(k)); t.appendChild(b); }
+  };
+  part('출발 ', 'from', '역을 고르세요');
+  if (r.via) part(' → 경유 ', 'via');
+  part(' → 도착 ', 'to', '역을 고르세요');
+  const x = el('button','clear-all', '모두 지우기'); x.type = 'button'; // 역마다 ×가 있어서 전체 지우기는 글자로
   x.addEventListener('click', () => { lmvRoute = { from: null, via: null, to: null }; lmvTrip = null; renderLineViewRoute(); renderLineViewTrip(); drawLineView(false); });
   bar.replaceChildren(t, x);
   if (r.from && r.to) {
@@ -7298,12 +7359,27 @@ async function findLineViewTrip(){
   lmvTrip = r.status === 'ok' ? { status: 'ok', routes: r.routes.slice(0, 4), chosen: 0 } : { status: 'error', msg: r.msg || '경로를 찾지 못했어요.', routes: [] };
   renderLineViewTrip(); drawLineView(false); fitLineViewTrip();
 }
+// 경로 창 높이 손잡이: 위아래로 끌면 창 높이가 바뀌고(노선도와 단계를 함께 보게), 누르면 반 ↔ 거의 전체. 안의 내용은 손가락으로 위아래 스크롤
+let lmvTripH = 0;
+function lineViewTripGrip(box){
+  const g = el('div','lmv-grip'); g.appendChild(el('span')); g.setAttribute('role', 'button'); g.tabIndex = 0; g.setAttribute('aria-label', '경로 창 높이 바꾸기');
+  const maxH = () => Math.round($('lmView').clientHeight * 0.9);
+  const set = h => { lmvTripH = Math.max(120, Math.min(maxH(), Math.round(h))); box.classList.add('sized'); box.style.height = lmvTripH + 'px'; };
+  let d = null;
+  g.addEventListener('pointerdown', e => { d = { y: e.clientY, h: box.offsetHeight, moved: false }; try { g.setPointerCapture(e.pointerId); } catch {} });
+  g.addEventListener('pointermove', e => { if (!d) return; if (Math.abs(e.clientY - d.y) > 4) d.moved = true; if (d.moved) set(d.h + d.y - e.clientY); });
+  const up = () => { if (!d) return; const tap = !d.moved; d = null; if (tap) set(box.offsetHeight < maxH() * 0.7 ? maxH() : $('lmView').clientHeight * 0.46); };
+  g.addEventListener('pointerup', up); g.addEventListener('pointercancel', up);
+  g.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); set(box.offsetHeight < maxH() * 0.7 ? maxH() : $('lmView').clientHeight * 0.46); } });
+  return g;
+}
 function renderLineViewTrip(){
   const box = $('lmvTrip'), t = lmvTrip;
   box.hidden = !t; if (!t) { box.replaceChildren(); return; }
   const head = el('div','head'), x = el('button','linkbtn','닫기'); x.type = 'button';
-  x.addEventListener('click', () => { lmvTrip = null; renderLineViewTrip(); drawLineView(false); });
-  head.append(el('b', null, '지하철 경로'), x); box.replaceChildren(head);
+  x.addEventListener('click', () => { lmvTrip = null; lmvTripH = 0; renderLineViewTrip(); drawLineView(false); });
+  head.append(el('b', null, '지하철 경로'), x); box.replaceChildren(lineViewTripGrip(box), head);
+  box.classList.toggle('sized', !!lmvTripH); box.style.height = lmvTripH ? lmvTripH + 'px' : '';
   if (t.status === 'loading') { box.appendChild(el('p','muted','경로를 찾는 중…')); return; }
   if (t.status === 'error') { box.appendChild(el('p','muted', t.msg)); return; }
   t.routes.forEach((r, i) => {
