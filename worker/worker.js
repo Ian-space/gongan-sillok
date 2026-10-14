@@ -289,7 +289,7 @@ async function handle(kind, input, { request, env, ctx, send, reply }) {
   // 임시 확인: 서울 열린데이터 빠른하차(getFstExit)에 어떤 노선이 있는지(키는 응답에 넣지 않는다)
   if (kind === 'fstprobe') {
     const sk = env.SEOUL_OPEN_KEY; if (!sk) return reply(503, { error: 'off' });
-    const r = await fetch(`http://openapi.seoul.go.kr:8088/${encodeURIComponent(sk)}/json/getFstExit/1/1000/`, { signal: AbortSignal.timeout(8000) });
+    const r = await fetch(`http://openapi.seoul.go.kr:8088/${encodeURIComponent(sk)}/json/getFstExit/${+input.a || 1}/${+input.b || 1000}/`, { signal: AbortSignal.timeout(8000) });
     const t = await r.text(); let j = null; try { j = JSON.parse(t); } catch {}
     const b = j && j.response && j.response.body, it = b && b.items && b.items.item;
     const s = { list_total_count: b && b.totalCount, RESULT: j && j.response && j.response.header };
