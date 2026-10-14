@@ -36,7 +36,7 @@
 //   POST /photoplace { image: base64 JPEG 1장, x, y }        → 사진+위치로 그 자리의 가게 후보(간판 글자, AI가 고른 곳, 가까운 곳) (로그인 필요)
 
 const ALLOWED_ORIGINS = ['https://ian-space.github.io', 'http://localhost:8765'];
-const VERSION = '2026-10-14.25'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
+const VERSION = '2026-10-14.26'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
 // 로그인 확인용 Supabase 주소와 공개 키(사이트 코드에도 있는 공개 값)
 const SUPABASE_URL = 'https://qktrghajroxddrbpwtvn.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_j-kp8YKsQTczGcsQX74OxA_mfI7DoZw';
@@ -100,7 +100,7 @@ const TMAP = {
   transit: 'https://apis.openapi.sk.com/transit/routes',
   walk: 'https://apis.openapi.sk.com/tmap/routes/pedestrian?version=1&format=json',
 };
-const PLACE_KINDS = ['search', 'nearby', 'station', 'addr', 'apt', 'bldreg', 'arrive', 'elev', 'odsay', 'fstexit', 'sched', 'clienterr', 'elevpath', 'fsttrans', 'lines', 'elevpos', 'toilet', 'toiletsum'];
+const PLACE_KINDS = ['search', 'nearby', 'station', 'addr', 'apt', 'bldreg', 'arrive', 'elev', 'odsay', 'fstexit', 'sched', 'clienterr', 'elevpath', 'fsttrans', 'lines', 'elevpos', 'toilet', 'toiletsum', 'fstprobe'];
 const ODSAY_WEB_KEY = 'vpfLJcZCiAwV7L5fibSQjA'; // 사이트(index.html)에도 공개된 웹 키. 따로 넣은 비밀값 ODSAY_API_KEY가 있으면 그걸 쓴다
 const AI_KINDS = ['intent', 'photo', 'photoplace'];
 
@@ -286,6 +286,16 @@ async function handle(kind, input, { request, env, ctx, send, reply }) {
 
   /* 빠른하차(공공데이터포털 서울교통공사_빠른하차정보, 1~8호선): 역 이름 → 그 역의 방면별 '이 문에서 내리면 엘리베이터·에스컬레이터·계단이 가깝다'
      → { list: [{ line: '8호선', dir: '다음 역 이름(방면)', door: '4-4', fac: '엘리베이터' }] }. 전체(약 2,400줄)를 하루 동안 저장해 두고 역별로 나눠 준다 */
+  // 임시 확인: 서울 열린데이터 빠른하차(getFstExit)에 어떤 노선이 있는지(키는 응답에 넣지 않는다)
+  if (kind === 'fstprobe') {
+    const sk = env.SEOUL_OPEN_KEY; if (!sk) return reply(503, { error: 'off' });
+    const r = await fetch(`http://openapi.seoul.go.kr:8088/${encodeURIComponent(sk)}/json/getFstExit/1/1000/`, { signal: AbortSignal.timeout(8000) });
+    const t = await r.text(); let j = null; try { j = JSON.parse(t); } catch {}
+    const s = j && (j.getFstExit || Object.values(j)[0]);
+    const rows = (s && s.row) || [];
+    const lines = {}; for (const x of rows) { const k = String(x.LINE_NM || x.lineNm || x.LINE || Object.values(x)[1] || ''); lines[k] = (lines[k] || 0) + 1; }
+    return reply(200, { status: r.status, total: s && s.list_total_count, result: s && s.RESULT, keys: rows[0] ? Object.keys(rows[0]) : [], sample: rows.slice(0, 3), lines, raw: rows.length ? '' : t.replace(new RegExp(sk, 'g'), '***').slice(0, 300) });
+  }
   if (kind === 'fstexit') {
     const st = stName(input.station);
     if (!st || st.length > 20) return reply(400, { error: 'bad station' });
