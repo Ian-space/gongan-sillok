@@ -291,8 +291,9 @@ async function handle(kind, input, { request, env, ctx, send, reply }) {
     const sk = env.SEOUL_OPEN_KEY; if (!sk) return reply(503, { error: 'off' });
     const r = await fetch(`http://openapi.seoul.go.kr:8088/${encodeURIComponent(sk)}/json/getFstExit/1/1000/`, { signal: AbortSignal.timeout(8000) });
     const t = await r.text(); let j = null; try { j = JSON.parse(t); } catch {}
-    const s = j && (j.getFstExit || Object.values(j)[0]);
-    const rows = (s && s.row) || [];
+    const b = j && j.response && j.response.body, it = b && b.items && b.items.item;
+    const s = { list_total_count: b && b.totalCount, RESULT: j && j.response && j.response.header };
+    const rows = !it ? [] : Array.isArray(it) ? it : [it];
     const lines = {}; for (const x of rows) { const k = String(x.LINE_NM || x.lineNm || x.LINE || Object.values(x)[1] || ''); lines[k] = (lines[k] || 0) + 1; }
     return reply(200, { status: r.status, total: s && s.list_total_count, result: s && s.RESULT, keys: rows[0] ? Object.keys(rows[0]) : [], sample: rows.slice(0, 3), lines, raw: rows.length ? '' : t.replace(new RegExp(sk, 'g'), '***').slice(0, 300) });
   }
