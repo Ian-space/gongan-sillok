@@ -602,6 +602,20 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
 .sb-foot{display:flex;justify-content:flex-end;align-items:center;gap:6px;font-size:12px}
 .sb-re{width:28px;height:28px;border-radius:50%;border:1px solid var(--line);background:var(--panel);color:var(--ink);display:grid;place-items:center;cursor:pointer;padding:0}
 .sb-re svg{width:15px;height:15px}
+/* 버스 정류장 실시간 도착: 버스마다 한 칸(번호·방면 / 종점 방향 / 빨간 시간·정류장 수) */
+.bus-arr{list-style:none;margin:4px 0 8px;padding:0}
+.bus-arr > li{padding:10px 2px;border-bottom:1px solid var(--line)}
+.bus-arr > li.muted{border:0;font-size:13px;color:var(--muted)}
+.ba-top{display:flex;align-items:center;gap:6px;min-width:0}
+.ba-ic{width:18px;height:18px;flex:none;display:grid}
+.ba-ic svg{width:18px;height:18px}
+.ba-no{font-size:18px;font-weight:800;white-space:nowrap}
+.ba-dir{color:var(--muted);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ba-end{font-size:14px;margin:2px 0 0 24px}
+.ba-times{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 6px;margin:3px 0 0 24px;font-size:13px;color:var(--muted)}
+.ba-times b{color:#D93025;font-weight:700}
+.ba-times b.off{color:var(--muted);font-weight:500}
+.ba-times span + b{margin-left:6px}
 .stop-arr{list-style:none;margin:4px 0 8px;padding:0;display:grid;gap:6px;font-size:14px}
 .stop-arr li{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px}
 .stop-arr .muted{color:var(--muted);font-size:12px}
@@ -617,6 +631,8 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
 .d-go:hover{filter:brightness(1.06)}
 .d-go:disabled{opacity:.7;cursor:default}
 .d-go2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.d-go2.small{display:flex;gap:6px;margin:2px 0 4px}
+.d-go2.small .d-go{width:auto;padding:6px 18px;font-size:14px;border-radius:999px}
 .d-go.ghost{background:var(--panel);color:var(--route)}
 .d-nlinks{display:flex;justify-content:center;gap:8px;margin:8px 0 0;font-size:13px;color:var(--muted)}
 .d-nlinks a{color:var(--muted);text-decoration:underline;text-underline-offset:2px}
@@ -2155,8 +2171,13 @@ function renderDetail(){
   }
   if (facts.length) d.appendChild(similarBox(p, facts));
 
-  const st = p.subway ? null : nearestStation(p); // 역 카드에서 가장 가까운 역은 자기 자신이라 뺀다
-  if (state.me || st) {
+  // 역·정류장: 가장 궁금한 건 언제 오는지라, 작은 [출발][도착] 바로 아래에 실시간 도착(스크롤 없이 보이게). 거리 칸은 뺀다
+  const stop = p.subway || p.bus;
+  const st = stop ? null : nearestStation(p); // 역 카드에서 가장 가까운 역은 자기 자신이라 뺀다
+  if (stop) {
+    renderTransit(d, p);
+    d.appendChild(p.subway ? stationBoard(p) : stopArrivals(p));
+  } else if (state.me || st) {
     d.appendChild(el('h3','sec-title','위치'));
     const w = el('div','d-where');
     if (state.me) {
@@ -2170,8 +2191,8 @@ function renderDetail(){
     w.appendChild(el('div','muted','직선거리로 계산한 대략적인 값이에요.'));
     d.appendChild(w);
   }
-  renderTransit(d, p);
-  d.appendChild(el('h3','sec-title','공간 정보'));
+  if (!stop) renderTransit(d, p);
+  d.appendChild(el('h3','sec-title', p.subway ? '역 정보' : p.bus ? '정류장 정보' : '공간 정보'));
   // 이 장소가 든 건물의 기록(입구·엘리베이터)이 있으면 가게 화면에도 보여 준다
   if (!p.building && p.type !== '건물') { const br = buildingRecFor(p); if (br) d.appendChild(buildingNote(br)); }
   if (p.building) { // 지도에서 누른 건물: 주소와 이 건물 안 가게(상가정보)
@@ -2284,10 +2305,6 @@ function renderDetail(){
     d.appendChild(box);
   } else if (p.subway) { // 지하철역(지도에서 누른 역, 카카오): 노선, 엘리베이터(서울교통공사), 실시간 도착(서울 열린데이터광장)
     const box = el('div','ext-info');
-    if (p.lines && p.lines.length) box.appendChild(el('p','ext-phone', p.lines.join(' · ')));
-    // 역에서 가장 궁금한 건 언제 오는지라 실시간 도착을 맨 위에
-    box.appendChild(el('h3','sec-title','실시간 도착'));
-    box.appendChild(stationBoard(p));
     box.appendChild(el('h3','sec-title','엘리베이터'));
     const ev = el('p','ext-phone','확인 중…'); box.appendChild(ev);
     elevFetch(p.name.replace(/역$/, '')).then(d => {
@@ -2310,8 +2327,6 @@ function renderDetail(){
   } else if (p.bus) { // 버스정류장(우리 DB): 정류장 번호와 이 정류장에 오는 버스 실시간 도착
     const box = el('div','ext-info');
     if (p.ars) box.appendChild(el('p','ext-phone', `정류장 번호 ${p.ars}`));
-    box.appendChild(el('h3','sec-title','실시간 도착'));
-    box.appendChild(stopArrivals(p));
     box.appendChild(el('p','add-src', '정류장: 국토교통부 전국 버스정류장 위치정보 · 도착: ' + (p.city === 'seoul' ? '서울특별시 버스도착정보' : '경기도 버스도착정보')));
     d.appendChild(box);
   } else if (p.ext) { // 카카오에서 찾은, 아직 기록 안 된 장소
@@ -3789,6 +3804,8 @@ function renderTransit(d, p){
     to.addEventListener('click', () => { if (state.me) { state.routeSwap = null; setRouteFrom(null); } else openOriginPicker(p, false); });
     pair.append(from, to); box.appendChild(pair);
     if (state.locError && state.routeAfterFix === p.id) box.appendChild(el('p','d-tnote err', state.locError));
+    // 역·정류장은 작은 단추 한 줄만(바로 아래 실시간 도착이 첫 화면에 보이게). 네이버 지도 링크도 뺀다
+    if (p.subway || p.bus) { pair.classList.add('small'); d.appendChild(box); return; }
     naverLinks(box, p, true);
     d.appendChild(box); return;
   }
@@ -4029,7 +4046,7 @@ function stationBoard(p){
   const draw = () => {
     const ids = [...new Set((list || []).map(x => x.line))].filter(subwayIdName).sort((a, b) => order(a) - order(b) || a - b);
     if (!ids.includes(pick)) pick = ids[0] || '';
-    tabs.replaceChildren(); tabs.hidden = ids.length < 2;
+    tabs.replaceChildren(); tabs.hidden = !ids.length; // 한 노선이어도 몇 호선인지 보이게
     for (const id of ids) {
       const b = el('button','sb-tab', subwayIdName(id)); b.type = 'button'; b.style.setProperty('--c', lineColorOf(subwayIdName(id)));
       b.setAttribute('aria-pressed', String(id === pick));
@@ -4073,25 +4090,55 @@ function stationBoard(p){
   setTimeout(tick, 0); // 상세에 붙은 뒤에 그린다
   return box;
 }
-// 정류장 하나에 오는 모든 버스의 실시간 도착(곧 오는 순). 상세가 열려 있는 동안 30초마다 새로
+// 정류장 하나에 오는 모든 버스의 실시간 도착(곧 오는 순, 네이버 지도처럼 버스마다 한 칸): 노선 색 버스 그림·번호·방면(다음 정류장),
+// 가는 쪽 종점, 빨간 시간과 몇 정류장 전(이번·다음 차). 상세가 열려 있는 동안 30초마다 새로
+const BUS_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="3" width="16" height="15" rx="3" fill="currentColor"/><rect x="6.5" y="6" width="11" height="5" rx="1" fill="#fff"/><circle cx="8" cy="14.5" r="1.3" fill="#fff"/><circle cx="16" cy="14.5" r="1.3" fill="#fff"/><rect x="6" y="18" width="3" height="3" rx="1" fill="currentColor"/><rect x="15" y="18" width="3" height="3" rx="1" fill="currentColor"/></svg>';
+// 노선 종류 색: 서울(routeType 1 공항·2 마을·3 간선·4 지선·5 순환·6 광역), 경기(routeTypeCd 11·14·21 직행·광역 빨강, 12·22 좌석 파랑, 13·23 일반 초록, 30 마을 노랑, 41~53 시외·공항)
+function busColor(city, type, name){
+  const t = +type;
+  if (city === 'seoul') return { 1: '#8E5BD0', 2: '#53B332', 3: '#3D5BAB', 4: '#53B332', 5: '#F2B70A', 6: '#E60012' }[t] || (/^N/i.test(name) ? '#1E2A2F' : '#3D5BAB');
+  if ([11, 14, 16, 21].includes(t)) return '#E60012';
+  if ([12, 22].includes(t)) return '#0068B7';
+  if ([13, 23, 15].includes(t)) return '#33A23D';
+  if (t === 30) return '#F2B70A';
+  if (t >= 41) return '#8E5BD0';
+  return '#33A23D';
+}
 function stopArrivals(p, max = 15){
-  const ul = el('ul','stop-arr'); ul.appendChild(el('li','muted','실시간 도착 확인 중…'));
+  const ul = el('ul','bus-arr'); ul.appendChild(el('li','muted','실시간 도착 확인 중…'));
   const body = p.city === 'seoul' && p.ars ? { type: 'bus', city: 'seoul', ars: p.ars } : p.city === 'gg' && p.sid ? { type: 'bus', city: 'gg', station: p.sid } : null;
   if (!body) { ul.replaceChildren(el('li','muted','이 정류장은 실시간 도착 정보가 없어요')); return ul; }
-  const minOf = x => p.city === 'seoul' ? (/곧 도착/.test(x.msg) ? 0 : (/(\d+)분/.exec(x.msg) || [])[1] ?? (/(\d+)초/.test(x.msg) ? 0 : 999)) : x.min ?? 999;
-  const short = m => String(m || '').replace(/(\d+)분(\d+초)?후/, '$1분 후').replace(/(\d+)초후/, '곧 도착').trim();
+  // 이번·다음 차: [보이는 시간, 몇 정류장 전, 정렬용 분]. 서울은 '3분12초후[2번째 전]'·'곧 도착'·'운행종료'·'출발대기' 같은 글을 나눈다
+  const seoul = m => {
+    m = String(m || '');
+    const st = (/\[(\d+)번째 전\]/.exec(m) || [])[1], mn = /(\d+)분/.exec(m), sc = /(\d+)초후/.exec(m);
+    if (/곧 도착/.test(m) || (!mn && sc)) return ['곧 도착', st, 0];
+    if (mn) return [`${mn[1]}분`, st, +mn[1]];
+    return m ? [m.replace(/\[.*\]/, '').trim(), null, 999] : null;
+  };
+  const times = x => p.city === 'seoul' ? [seoul(x.msg), seoul(x.next)]
+    : [x.min != null ? [x.min <= 1 ? '곧 도착' : `${x.min}분`, x.stops, x.min] : null, x.next != null ? [`${x.next}분`, x.stops2, x.next] : null];
   const draw = list => {
     if (!ul.isConnected) return false;
     ul.replaceChildren();
     if (list === null) { ul.appendChild(el('li','muted','실시간 도착 정보를 불러오지 못했어요')); return true; }
-    const rows = list.map(x => ({ x, m: +minOf(x) })).sort((a, b) => a.m - b.m).slice(0, max);
+    const rows = list.map(x => ({ x, t: times(x) })).sort((a, b) => ((a.t[0] || [])[2] ?? 999) - ((b.t[0] || [])[2] ?? 999)).slice(0, max);
     if (!rows.length) { ul.appendChild(el('li','muted','지금 도착 예정인 버스 정보가 없어요')); return true; }
-    for (const { x } of rows) {
-      const now = p.city === 'seoul' ? short(x.msg) : x.min != null ? `${x.min}분 후${x.stops != null ? ` [${x.stops}번째 전]` : ''}` : '도착 정보 없음';
-      const next = p.city === 'seoul' ? short(x.next) : x.next != null ? `${x.next}분 후` : '';
-      const li = el('li'); li.append(el('b', null, busLabel(x.name)), ` ${now}`);
-      if (next && next !== now) li.appendChild(el('span','muted', ` · 다음 ${next}`));
-      if (x.low) li.appendChild(el('span','t-low', '저상'));
+    for (const { x, t } of rows) {
+      const li = el('li'), top = el('div','ba-top'), ic = el('span','ba-ic');
+      ic.innerHTML = BUS_ICON; ic.style.color = busColor(p.city, x.type, x.name);
+      top.append(ic, el('b','ba-no', busLabel(x.name)));
+      if (x.nxt) top.appendChild(el('span','ba-dir', `${x.nxt} 방면`));
+      li.appendChild(top);
+      if (x.dir) li.appendChild(el('div','ba-end', `${x.dir} 방향`));
+      const tl = el('div','ba-times');
+      const tt = t.filter(Boolean); if (tt[1] && tt[1][2] >= 999 && tt[1][0] === (tt[0] || [])[0]) tt.pop(); // '운행종료' 두 번은 한 번만
+      for (const v of tt) {
+        const live = v[2] < 999;
+        tl.append(el('b', live ? null : 'off', v[0]), v[1] != null && v[1] !== '' ? el('span', null, `${v[1]}정류장`) : '');
+      }
+      if (x.low) tl.appendChild(el('span','t-low', '저상'));
+      li.appendChild(tl);
       ul.appendChild(li);
     }
     return true;
