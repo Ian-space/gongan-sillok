@@ -36,7 +36,7 @@
 //   POST /photoplace { image: base64 JPEG 1장, x, y }        → 사진+위치로 그 자리의 가게 후보(간판 글자, AI가 고른 곳, 가까운 곳) (로그인 필요)
 
 const ALLOWED_ORIGINS = ['https://ian-space.github.io', 'http://localhost:8765'];
-const VERSION = '2026-10-14.24'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
+const VERSION = '2026-10-14.25'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
 // 로그인 확인용 Supabase 주소와 공개 키(사이트 코드에도 있는 공개 값)
 const SUPABASE_URL = 'https://qktrghajroxddrbpwtvn.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_j-kp8YKsQTczGcsQX74OxA_mfI7DoZw';
@@ -604,7 +604,8 @@ async function handle(kind, input, { request, env, ctx, send, reply }) {
         const j = await get(`http://ws.bus.go.kr/api/rest/stationinfo/getStationByUid?serviceKey=${encodeURIComponent(gk)}&arsId=${ars}&resultType=json`);
         const items = arr(j && j.msgBody && j.msgBody.itemList);
         // arrmsg: '3분12초후[2번째 전]', '곧 도착', '운행종료', '출발대기'. busType1: 1이면 저상버스
-        return JSON.stringify({ list: items.slice(0, 40).map(x => ({ name: String(x.rtNm || ''), msg: String(x.arrmsg1 || ''), next: String(x.arrmsg2 || ''), low: String(x.busType1) === '1' })) });
+        return JSON.stringify({ list: items.slice(0, 40).map(x => ({ name: String(x.rtNm || ''), msg: String(x.arrmsg1 || ''), next: String(x.arrmsg2 || ''), low: String(x.busType1) === '1',
+          nxt: String(x.nxtStn || ''), dir: String(x.adirection || ''), type: String(x.routeType || '') })) }); // nxt: 다음 정류장(방면), dir: 가는 쪽 종점, type: 1 공항·2 마을·3 간선·4 지선·5 순환·6 광역·7 인천·8 경기
       });
     }
     if (type === 'bus' && input.city === 'gg') {
@@ -613,7 +614,8 @@ async function handle(kind, input, { request, env, ctx, send, reply }) {
         const j = await get(`https://apis.data.go.kr/6410000/busarrivalservice/v2/getBusArrivalListv2?serviceKey=${encodeURIComponent(gk)}&stationId=${st}&format=json`);
         const items = arr(j && j.response && j.response.msgBody && j.response.msgBody.busArrivalList);
         const n = v => (v === '' || v == null) ? null : +v;
-        return JSON.stringify({ list: items.slice(0, 40).map(x => ({ name: String(x.routeName || ''), min: n(x.predictTime1), stops: n(x.locationNo1), next: n(x.predictTime2), low: String(x.lowPlate1) === '1', flag: String(x.flag || '') })) });
+        return JSON.stringify({ list: items.slice(0, 40).map(x => ({ name: String(x.routeName || ''), min: n(x.predictTime1), stops: n(x.locationNo1), next: n(x.predictTime2), stops2: n(x.locationNo2), low: String(x.lowPlate1) === '1', flag: String(x.flag || ''),
+          dir: String(x.routeDestName || ''), type: String(x.routeTypeCd || '') })) }); // dir: 가는 쪽 종점, type: 경기 노선 종류(11 직행좌석·13 일반·14 광역급행·30 마을 등)
       });
     }
     if (type === 'subway') {
