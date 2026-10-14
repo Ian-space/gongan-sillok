@@ -605,6 +605,7 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
 .sb-row span{color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .sb-row b{white-space:nowrap;color:#D93025}
 .sb-row b.now{color:#D93025}
+.sb-row b.off{color:var(--muted);font-weight:600}
 .sb-col p{margin:0;font-size:13px}
 .sb-foot{display:flex;justify-content:flex-end;align-items:center;gap:6px;font-size:12px}
 .sb-re{width:28px;height:28px;border-radius:50%;border:1px solid var(--line);background:var(--panel);color:var(--ink);display:grid;place-items:center;cursor:pointer;padding:0}
@@ -863,6 +864,11 @@ body.linemap #map .pin:not(.sel),body.linemap #map .near-dot,body.linemap #map .
 .lmv-stage.far2 text{display:none}
 .lmv-card{position:absolute;z-index:3;left:12px;right:12px;bottom:calc(12px + env(safe-area-inset-bottom,0px));padding:12px 14px;border-radius:14px;background:var(--panel);box-shadow:0 4px 18px rgba(15,20,40,.25)}
 .lmv-card[hidden]{display:none}
+.lmv-card{max-height:72%;overflow-y:auto;overscroll-behavior:contain} /* 역 정보를 펼치면 카드 안에서 스크롤 */
+.lmv-info{margin-top:10px;padding-top:10px;border-top:1px solid var(--line)}
+.lmv-card .acts{display:flex;flex-wrap:wrap;gap:6px}
+.lmv-card .acts .btn{flex:0 0 auto;white-space:nowrap;padding:8px 12px;width:auto}
+.lmv-info .linkbtn{display:block;margin:6px auto 0;font-size:13px}
 .lmv-trip{position:absolute;z-index:3;left:0;right:0;bottom:0;max-height:46%;overflow-y:auto;touch-action:pan-y;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;padding:10px 12px calc(12px + env(safe-area-inset-bottom,0px));border-radius:16px 16px 0 0;background:var(--panel);box-shadow:0 -6px 24px rgba(15,20,40,.18)}
 .lmv-trip[hidden]{display:none}
 /* 휴대폰 노선도 역 찾기 칸(컴퓨터는 왼쪽 패널 입력칸을 쓴다) */
@@ -4243,32 +4249,44 @@ function stationBoard(p){
   grid.appendChild(el('p','muted','실시간 도착 확인 중…'));
   const body = { type: 'subway', station: here };
   let list = [], pick = '', timer = 0;
-  const order = id => { const i = (p.lines || []).indexOf(subwayIdName(id)); return i < 0 ? 99 : i; };
+  // 노선 이웃 역(노선도 자료): 실시간 정보가 없을 때도 막대와 방면 칸을 그리려고. 자료가 아직 없으면 불러온 뒤 다시 그린다
+  let askedLines = false;
+  const neighbors = label => {
+    if (!lineData) { if (!askedLines) { askedLines = true; loadLineData().then(() => { if (box.isConnected) draw(); }).catch(() => {}); } return ['', '']; }
+    const k = Object.keys(LINE_INFO).find(x => LINE_INFO[x][0] === label), seq = (k && lineData.lines[k]) || [];
+    const i = seq.findIndex(x => sbName(x[0]) === here);
+    return i < 0 ? ['', ''] : [sbName((seq[i - 1] || [])[0]), sbName((seq[i + 1] || [])[0])];
+  };
+  // 운행이 없는 새벽(1시~5시 반)은 '운행 종료', 낮에 비어 있으면 '도착 정보 없음'
+  const quiet = () => { const n = seoulNow().min; return n >= 60 && n < 330 ? '운행 종료' : '도착 정보 없음'; };
   const draw = () => {
-    const ids = [...new Set((list || []).map(x => x.line))].filter(subwayIdName).sort((a, b) => order(a) - order(b) || a - b);
-    if (!ids.includes(pick)) pick = ids[0] || '';
-    tabs.replaceChildren(); tabs.hidden = ids.length < 2; // 한 노선뿐이면 이름 옆 노선으로 충분해서 고르기 단추는 환승역에만
-    for (const id of ids) {
-      const b = el('button','sb-tab', subwayIdName(id)); b.type = 'button'; b.style.setProperty('--c', lineColorOf(subwayIdName(id)));
-      b.setAttribute('aria-pressed', String(id === pick));
-      b.addEventListener('click', e => { e.stopPropagation(); pick = id; draw(); });
+    // 고를 노선: 이 역의 노선(역 카드) + 실시간 자료에 나온 노선. 실시간이 없어도 노선 단추·막대·방면 칸은 그대로 두고 시간 칸만 비운다
+    const live = [...new Set((list || []).map(x => subwayIdName(x.line)).filter(Boolean))];
+    const labels = [...new Set([...(p.lines || []).map(x => String(x).replace(/^(수도권|서울)\s*/, '')), ...live])];
+    if (!labels.includes(pick)) pick = labels.find(l => live.includes(l)) || labels[0] || '';
+    tabs.replaceChildren(); tabs.hidden = labels.length < 2; // 한 노선뿐이면 이름 옆 노선으로 충분해서 고르기 단추는 환승역에만
+    for (const l of labels) {
+      const b = el('button','sb-tab', l); b.type = 'button'; b.style.setProperty('--c', lineColorOf(l));
+      b.setAttribute('aria-pressed', String(l === pick));
+      b.addEventListener('click', e => { e.stopPropagation(); pick = l; draw(); });
       tabs.appendChild(b);
     }
     grid.replaceChildren(); bar.replaceChildren(); bar.hidden = !pick;
     if (!pick) { grid.appendChild(el('p','muted', list === null ? '실시간 도착 정보를 불러오지 못했어요' : '지금 들어오는 열차 정보가 없어요. 서울시 실시간 자료가 있는 수도권 역만 나와요.')); return; }
-    const label = subwayIdName(pick), c = lineColorOf(label);
-    const mine = (list || []).filter(x => x.line === pick).sort((a, b) => arrRank(a, here) - arrRank(b, here));
+    const c = lineColorOf(pick);
+    const mine = (list || []).filter(x => subwayIdName(x.line) === pick).sort((a, b) => arrRank(a, here) - arrRank(b, here));
     const side = x => /하행|외선/.test(x.updn) ? 1 : 0;
     const toward = x => sbName((/-\s*(.+?)방면/.exec(x.dir) || [])[1]);
     const dest = x => sbName((/^(.+?)행/.exec(x.dir) || [])[1]);
     const cols = [0, 1].map(k => mine.filter(x => side(x) === k));
-    const near = cols.map(xs => (xs.find(toward) && toward(xs.find(toward))) || '');
+    const nb = mine.length ? ['', ''] : neighbors(pick);
+    const near = cols.map((xs, k) => (xs.find(toward) && toward(xs.find(toward))) || nb[k] || '');
     bar.style.setProperty('--c', c);
     bar.append(el('span','sb-end l', near[0] ? `‹ ${near[0]}` : ''), el('span','sb-here', here), el('span','sb-end r', near[1] ? `${near[1]} ›` : ''));
     cols.forEach((xs, k) => {
       const card = el('div','sb-col');
       card.appendChild(el('b','sb-dir', near[k] ? `${near[k]} 방면` : k ? '하행' : '상행'));
-      if (!xs.length) card.appendChild(el('p','muted','들어오는 열차 없음'));
+      if (!xs.length) { const row = el('div','sb-row'); row.append(el('span', null, '-'), el('b','off', list === null ? '정보 없음' : quiet())); card.appendChild(row); }
       for (const x of xs.slice(0, 2)) {
         const row = el('div','sb-row'), t = arrShort(x, here);
         row.append(el('span', null, (dest(x) || '') + (/급행/.test(x.express) ? ' (급행)' : '')), el('b', /곧/.test(t) ? 'now' : null, t));
@@ -4324,7 +4342,12 @@ function stopArrivals(p, max = 15){
     ul.replaceChildren();
     if (list === null) { ul.appendChild(el('li','muted','실시간 도착 정보를 불러오지 못했어요')); return true; }
     const rows = list.map(x => ({ x, t: times(x) })).sort((a, b) => ((a.t[0] || [])[2] ?? 999) - ((b.t[0] || [])[2] ?? 999)).slice(0, max);
-    if (!rows.length) { ul.appendChild(el('li','muted','지금 도착 예정인 버스 정보가 없어요')); return true; }
+    if (!rows.length) { // 오는 버스가 없어도 칸 모양은 남기고 시간 칸만 비운다(새벽엔 '운행 종료')
+      const n = seoulNow().min, li = el('li'), top = el('div','ba-top'), ic = el('span','ba-ic'); ic.innerHTML = BUS_ICON; ic.style.color = 'var(--muted)';
+      top.append(ic, el('b','ba-no', '도착 예정 버스 없음')); li.appendChild(top);
+      const tl = el('div','ba-times'); tl.appendChild(el('b','off', n >= 60 && n < 270 ? '운행 종료' : '지금은 정보 없음')); li.appendChild(tl);
+      ul.appendChild(li); return true;
+    }
     for (const { x, t } of rows) {
       const li = el('li'), top = el('div','ba-top'), ic = el('span','ba-ic');
       ic.innerHTML = BUS_ICON; ic.style.color = busColor(p.city, x.type, x.name);
@@ -7437,11 +7460,26 @@ function showLineViewCard(name){
     if (lmvRoute.from && lmvRoute.to) findLineViewTrip(); // 출발·도착이 다 정해지면 바로 찾는다
   };
   const acts = el('div','acts');
+  // 역 정보: 노선도를 떠나지 않고 카드 안에 실시간 도착판을 펼친다(컴퓨터는 처음부터 펼침). 지도에서 보고 싶으면 아래 '지도에서 보기'
+  const info = el('div','lmv-info'); info.hidden = true;
+  const openInfo = () => {
+    if (!p) return;
+    if (!info.children.length) {
+      const onMap = btn('지도에서 이 역 보기', 'linkbtn', () => {
+        closeLineView(); openShop(p);
+        if (map) { map.setZoom(17); map.setCenter(new naver.maps.LatLng(p.lat, p.lng)); if (isPhone()) centerAboveDetail(p.id); } // 그 역으로 옮겨 크게
+      });
+      info.append(stationBoard(p), onMap);
+    }
+    info.hidden = !info.hidden; infoBtn.setAttribute('aria-expanded', String(!info.hidden)); infoBtn.textContent = info.hidden ? '역 정보' : '역 정보 접기';
+  };
+  const infoBtn = btn('역 정보', 'btn', openInfo); infoBtn.setAttribute('aria-expanded', 'false');
   acts.append(btn('출발', 'btn add', pick('from')), btn('경유', 'btn', pick('via')), btn('도착', 'btn add rec', pick('to')),
-    btn('역 정보', 'btn', () => { if (!p) return; closeLineView(); openShop(p); }), btn('닫기', 'btn', lmvCardHide));
+    infoBtn, btn('닫기', 'btn', lmvCardHide));
   const tlLine = el('p', null); tlLine.hidden = true;
   toiletFetch(lmvNm(name)).then(list => { const ls = toiletLines(list, 1); if (!ls.length || !tlLine.isConnected) return; tlLine.textContent = `화장실 ${ls[0]}`; tlLine.hidden = false; });
-  card.replaceChildren(el('h3','notranslate', nm), el('p','muted', p ? p.lines.join(' · ') : ''), evLine, tlLine, acts); card.hidden = false;
+  card.replaceChildren(el('h3','notranslate', nm), el('p','muted', p ? p.lines.join(' · ') : ''), evLine, tlLine, acts, info); card.hidden = false;
+  if (!isPhone()) openInfo(); // 컴퓨터는 왼쪽 패널에 자리가 있어 바로 펼친다
   lmvSel = name; markLineViewSel();
   // 고른 역이 아래 카드에 가려지면 노선도를 위로 조금 올린다
   const ring = $('lmvStage').querySelector('.sel-ring:not(.pulse)'), cr = card.getBoundingClientRect();
