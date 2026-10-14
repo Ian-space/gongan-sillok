@@ -3941,11 +3941,16 @@ function liveArrival(s){
     if (list === null) { box.textContent = '실시간 도착 정보를 불러오지 못했어요'; return true; }
     const lines = [];
     if (s.mode === 'subway') {
-      // 같은 노선(1~9호선)이고, 다음 역 방면(ODsay의 way)인 열차만
+      // 같은 노선(1~9호선)이고, 탄 다음 역 쪽으로 가는 열차만. 도착 정보의 방면('천호(풍납토성)방면')은 다음 역이라 next1과 맞춘다
+      // (ODsay의 way는 내리는 역일 때가 많아 암사 → 석촌처럼 다음 역과 다르면 열차를 못 찾았다)
       const want = s.lineCode >= 1 && s.lineCode <= 9 ? String(1000 + s.lineCode) : LIVE_LINE[s.lineCode] || '';
-      let mine = list.filter(x => (!want || x.line === want) && (!s.way || x.dir.includes(s.way)));
-      if (!mine.length && LIVE_LINE[s.lineCode]) mine = list.filter(x => !s.way || x.dir.includes(s.way)); // 노선 번호 짝이 틀렸을 때를 대비해 방면만으로
-      if (mine.length) lines.push(`${s.way ? `${s.way} 방면 ` : ''}${mine[0].msg}` + (mine[1] ? ` · 다음 ${mine[1].msg}` : ''));
+      const toward = String(s.next1 || '').replace(/\(.*\)$/, '').replace(/역$/, '').trim();
+      const goes = x => { const m = /-\s*(.+?)방면/.exec(x.dir); return toward ? !!m && m[1].replace(/\(.*\)$/, '').trim() === toward : !s.way || x.dir.includes(s.way); };
+      let mine = list.filter(x => (!want || x.line === want) && goes(x));
+      if (!mine.length && LIVE_LINE[s.lineCode]) mine = list.filter(goes); // 노선 번호 짝이 틀렸을 때를 대비해 방면만으로
+      const here = String(s.from || '').replace(/\(.*\)$/, '').replace(/역$/, '').trim();
+      mine.sort((a, b) => arrRank(a, here) - arrRank(b, here)); // 곧 오는 순
+      if (mine.length) lines.push(`${toward ? `${toward} 방면 ` : s.way ? `${s.way} 방면 ` : ''}${mine[0].msg}` + (mine[1] ? ` · 다음 ${mine[1].msg}` : ''));
     } else {
       const wanted = new Set(s.busNos);
       for (const x of list.filter(x => wanted.has(x.name)).slice(0, 4)) {
