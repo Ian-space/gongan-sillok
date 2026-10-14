@@ -883,8 +883,30 @@ body.linemap #map .pin:not(.sel),body.linemap #map .near-dot,body.linemap #map .
   .lmv-qbtn:hover{border-color:var(--blue)}
   .lmv-qbtn small{color:var(--muted);font-weight:500;font-size:12px;white-space:nowrap}
   .lmv-tip{margin:4px 0 0;font-size:12px;line-height:1.6;color:var(--muted)}
-  .lmv-side:has(> .lmv-card:not([hidden])) .lmv-hint,.lmv-side:has(> .lmv-trip:not([hidden])) .lmv-hint,.lmv-side:has(> .lmv-route:not([hidden])) .lmv-hint{display:none}
-  .lmv-side .lmv-route{margin:0}
+  .lmv-hint{background:transparent;padding:4px 2px}
+  .lmv-regions{display:grid;grid-template-columns:repeat(5,1fr);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  .lmv-regions button{padding:10px 0;border:0;border-left:1px solid var(--line);background:var(--panel);color:var(--ink);font:inherit;font-size:14px;cursor:pointer}
+  .lmv-regions button:first-child{border-left:0}
+  .lmv-regions button[aria-pressed="true"]{background:var(--blue);color:#FFFFFF;font-weight:700}
+  .lmv-regions button[aria-pressed="false"]{color:var(--muted)}
+  .lmv-inputs{display:grid;border:1px solid var(--muted);border-radius:10px;overflow:hidden}
+  .lmv-inputs input{height:50px;padding:0 18px;border:0;border-top:1px solid var(--line);background:var(--panel);color:var(--ink);font:inherit;font-size:16px;outline-offset:-2px}
+  .lmv-inputs input:first-child{border-top:0}
+  .lmv-acts{display:flex;gap:8px}
+  .lmv-acts button{height:40px;padding:0 12px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--ink);font:inherit;font-size:13px;cursor:pointer}
+  .lmv-acts .lmv-go{margin-left:auto;padding:0 16px;color:var(--blue);font-size:15px;font-weight:700}
+  .lmv-hint h4{margin:14px 0 0;padding-bottom:10px;border-bottom:1px solid var(--line);font-size:15px;color:var(--ink)}
+  .lmv-recent{display:grid;gap:2px}
+  .lmv-recent p{margin:4px 0;font-size:13px}
+  .lmv-rrow{display:flex;flex-wrap:wrap;align-items:center;gap:6px;width:100%;padding:8px 2px;border:0;background:transparent;color:var(--ink);font:inherit;font-size:15px;text-align:left;cursor:pointer;border-radius:8px}
+  .lmv-rrow:hover{background:var(--paper)}
+  .lmv-st{display:inline-flex;align-items:center;gap:6px}
+  .lmv-st .d-lb{height:18px;font-size:11px}.lmv-st .d-lb.num{width:18px}
+  .lmv-arrow{color:var(--muted)}
+  .lmv-secs{display:grid;gap:4px}
+  .lmv-side:has(> .lmv-trip:not([hidden])) .lmv-secs,.lmv-side:has(> .lmv-card:not([hidden])) .lmv-secs{display:none}
+  .lmv-side .lmv-hint{order:-1}
+  .lmv-side .lmv-route{display:none} /* 컴퓨터는 위 입력칸이 출발·도착 줄을 대신한다 */
   .lmv-side .lmv-card,.lmv-side .lmv-trip{position:static;max-height:none;overflow:visible;border:1px solid var(--line);border-radius:12px;box-shadow:none;padding:12px 14px}
   .lmv-side .lmv-trip.sized{height:auto!important}
   .lmv-side .lmv-trip.full{max-height:none}
@@ -7422,44 +7444,88 @@ function saveLineViewRecent(){
   writeList(LMV_RECENT_KEY, [r, ...readList(LMV_RECENT_KEY).filter(x => x && k(x) !== k(r))].slice(0, 6));
 }
 // 역으로 옮겨 가운데 두고 역 카드를 연다
-function focusLineViewStation(name){
+function focusLineViewStation(name, noCard){ // noCard: 입력칸에서 고를 때는 옮기기만
   const st = lmvData && lmvData.stations.find(s => s[0] === name); if (!st) return false;
   const stage = $('lmvStage'), s = Math.max(lmvView.s, 1.15);
   lmvView = { s, x: stage.clientWidth / 2 - st[1] * s, y: stage.clientHeight / 2 - st[2] * s }; applyLineView();
-  showLineViewCard(name); return true;
+  if (!noCard) showLineViewCard(name); return true;
 }
+// 최근 검색에 역 하나도 남긴다(역 카드를 연 역)
+function saveLineViewRecentStation(name){
+  writeList(LMV_RECENT_KEY, [{ st: name }, ...readList(LMV_RECENT_KEY).filter(x => x && x.st !== name)].slice(0, 8));
+}
+// 역 이름 옆 노선 동그라미(첫 노선)
+function lmvBadge(name){
+  const p = lineViewStation(name), l = p && p.lines[0]; if (!l) return '';
+  const n = (/^(\d)호선$/.exec(l) || [])[1], b = el('span', n ? 'd-lb num' : 'd-lb', n || LINE_SHORT[l] || l.replace(/선$/, ''));
+  b.style.background = lineColorOf(l); b.title = l; return b;
+}
+// 컴퓨터 노선도 왼쪽 패널 맨 위(네이버 지도 지하철 길찾기처럼): 지역 고르기, 출발·(경유)·도착 입력, [다시입력] [+ 경유지] [지하철 길찾기], 최근 검색, 저장한 역
+let lmvViaOpen = false;
 function renderLineViewHome(){
   const box = $('lmvHome'); if (!box || !lmvData) return;
+  const active = box.contains(document.activeElement) && document.activeElement.tagName === 'INPUT';
+  if (active) { syncLineViewInputs(); return; } // 입력하는 중에는 다시 그리지 않는다(글자가 날아가지 않게)
   box.replaceChildren();
-  // 역 이름으로 찾기(노선도의 역 이름 목록에서 고른다)
   const names = [...new Set(lmvData.stations.map(s => s[0]))].sort((a, b) => a.localeCompare(b, 'ko'));
-  const form = el('form','lmv-find'), inp = el('input'), dl = el('datalist'); dl.id = 'lmvNames';
-  inp.type = 'search'; inp.placeholder = '역 이름으로 찾기 (예: 고속터미널)'; inp.setAttribute('list', 'lmvNames'); inp.setAttribute('aria-label', '노선도에서 역 찾기');
-  for (const n of names) { const o = el('option'); o.value = n; dl.appendChild(o); }
-  const msg = el('p','muted'); msg.hidden = true;
-  form.addEventListener('submit', e => {
-    e.preventDefault(); const q = lmvNm(inp.value); if (!q) return;
-    const hit = names.find(n => lmvNm(n) === q) || names.find(n => lmvNm(n).startsWith(q)) || names.find(n => n.includes(q));
-    msg.hidden = !!hit; msg.textContent = hit ? '' : `'${q}' 역을 노선도에서 찾지 못했어요.`;
-    if (hit) { focusLineViewStation(hit); inp.value = ''; }
-  });
-  inp.addEventListener('change', () => { if (names.includes(inp.value)) form.requestSubmit(); }); // 목록에서 고르면 바로
-  form.append(inp, dl); box.append(el('b', null, '어디로 가세요?'), form, msg);
-  const sec = (title, items) => { if (!items.length) return; box.appendChild(el('h4', null, title)); const ul = el('div','lmv-chiplist'); items.forEach(x => ul.appendChild(x)); box.appendChild(ul); };
-  const chip = (text, fn, sub) => { const b = el('button','lmv-qbtn'); b.type = 'button'; b.append(el('span', null, text)); if (sub) b.appendChild(el('small', null, sub)); b.addEventListener('click', fn); return b; };
+  const find = v => { const q = lmvNm(v); return q ? names.find(n => lmvNm(n) === q) || names.find(n => lmvNm(n).startsWith(q)) || null : null; };
   const nm = n => /역$/.test(n) ? n : n + '역';
-  // 최근 찾은 경로: 누르면 그대로 다시 찾는다
-  sec('최근 찾은 경로', readList(LMV_RECENT_KEY).filter(r => r && names.includes(r.from) && names.includes(r.to)).slice(0, 5).map(r =>
-    chip(`${nm(r.from)} → ${nm(r.to)}`, () => { lmvRoute = { from: r.from, via: r.via && names.includes(r.via) ? r.via : null, to: r.to }; renderLineViewRoute(); drawLineView(false); findLineViewTrip(); }, r.via ? `${nm(r.via)} 경유` : '')));
-  // 자주 가는 역(대중교통 창에서 별표한 역)
-  const favs = readFavTransit().filter(x => /^stn:/.test(x.id)).map(x => x.name.replace(/역$/, '')).map(n => names.find(m => lmvNm(m) === lmvNm(n))).filter(Boolean);
-  sec('자주 가는 역', favs.map(n => chip(nm(n), () => focusLineViewStation(n))));
-  const tip = el('p','lmv-tip'); tip.textContent = '노선도에서 역을 눌러 [출발]·[도착]을 고르면 지하철 경로를 찾아 그려 드려요. 들를 역이 있으면 [경유]로 고르세요. 위의 엘리베이터·화장실을 켜면 역마다 표시돼요.';
-  box.appendChild(tip);
+  // 지역: 지금은 수도권만
+  const regions = el('div','lmv-regions');
+  for (const [r, on] of [['수도권', true], ['부산'], ['대구'], ['광주'], ['대전']]) {
+    const b = el('button', null, r); b.type = 'button'; b.setAttribute('aria-pressed', String(!!on));
+    if (!on) b.addEventListener('click', () => toast(`${r} 노선도는 준비 중이에요.`));
+    regions.appendChild(b);
+  }
+  // 입력칸: 고르면 노선도에 바로 표시(출발 파랑·경유 주황·도착 빨강 고리)
+  const dl = el('datalist'); dl.id = 'lmvNames'; for (const n of names) { const o = el('option'); o.value = n; dl.appendChild(o); }
+  const inputs = el('div','lmv-inputs');
+  const field = (k, ph) => {
+    const i = el('input'); i.type = 'search'; i.placeholder = ph; i.dataset.k = k; i.setAttribute('list', 'lmvNames'); i.setAttribute('aria-label', ph);
+    i.value = lmvRoute[k] ? nm(lmvRoute[k]) : '';
+    i.addEventListener('change', () => {
+      const hit = find(i.value);
+      if (!i.value.trim()) lmvRoute[k] = null; else if (hit) { for (const o of ['from', 'via', 'to']) if (o !== k && lmvRoute[o] === hit) lmvRoute[o] = null; lmvRoute[k] = hit; }
+      else { toast(`'${i.value.trim()}' 역을 노선도에서 찾지 못했어요.`); return; }
+      lmvTrip = null; renderLineViewTrip(); drawLineView(false); renderLineViewRoute();
+      if (hit) { focusLineViewStation(hit, true); saveLineViewRecentStation(hit); }
+    });
+    i.addEventListener('keydown', e => { if (e.key === 'Enter') { i.dispatchEvent(new Event('change')); if (lmvRoute.from && lmvRoute.to) findLineViewTrip(); } });
+    inputs.appendChild(i);
+  };
+  field('from', '출발역 입력');
+  if (lmvViaOpen || lmvRoute.via) field('via', '경유역 입력');
+  field('to', '도착역 입력');
+  const acts = el('div','lmv-acts');
+  const btn = (t, cls, fn) => { const b = el('button', cls, t); b.type = 'button'; b.addEventListener('click', fn); return b; };
+  acts.append(
+    btn('↻ 다시입력', 'lmv-ghost', () => { lmvRoute = { from: null, via: null, to: null }; lmvViaOpen = false; lmvTrip = null; lmvTripH = 0; lmvCardHide(); renderLineViewTrip(); drawLineView(false); renderLineViewRoute(); }),
+    btn(lmvViaOpen || lmvRoute.via ? '− 경유지' : '+ 경유지', 'lmv-ghost', () => { lmvViaOpen = !(lmvViaOpen || lmvRoute.via); if (!lmvViaOpen && lmvRoute.via) { lmvRoute.via = null; lmvTrip = null; renderLineViewTrip(); drawLineView(false); } renderLineViewHome(); }),
+    btn('지하철 길찾기 ›', 'lmv-go', () => {
+      for (const i of inputs.querySelectorAll('input')) { const hit = find(i.value); lmvRoute[i.dataset.k] = i.value.trim() ? hit : null; }
+      if (!lmvRoute.from || !lmvRoute.to) { toast('출발역과 도착역을 넣어 주세요.'); return; }
+      lmvCardHide(); renderLineViewRoute(); drawLineView(false); findLineViewTrip();
+    }));
+  box.append(regions, inputs, dl, acts);
+  // 최근 검색(경로와 역), 저장한 역(대중교통 창 별표)
+  const secs = el('div','lmv-secs'); box.appendChild(secs); // 경로·역 카드가 나오면 접는다(결과가 입력칸 바로 아래 오게)
+  const sec = (title, items, empty) => { secs.appendChild(el('h4', null, title)); const ul = el('div','lmv-recent'); items.forEach(x => ul.appendChild(x)); if (!items.length) ul.appendChild(el('p','muted', empty)); secs.appendChild(ul); };
+  const row = (parts, fn) => { const b = el('button','lmv-rrow'); b.type = 'button'; parts.forEach(x => b.append(x)); b.addEventListener('click', fn); return b; };
+  const stn = n => { const s = el('span','lmv-st'); const bd = lmvBadge(n); if (bd) s.appendChild(bd); s.append(nm(n)); return s; };
+  const rec = readList(LMV_RECENT_KEY).filter(r => r && (r.st ? names.includes(r.st) : names.includes(r.from) && names.includes(r.to))).slice(0, 6);
+  sec('최근 검색', rec.map(r => r.st
+    ? row([stn(r.st)], () => focusLineViewStation(r.st))
+    : row([stn(r.from), el('span','lmv-arrow','→'), ...(r.via ? [stn(r.via), el('span','lmv-arrow','→')] : []), stn(r.to)], () => { lmvRoute = { from: r.from, via: r.via && names.includes(r.via) ? r.via : null, to: r.to }; lmvViaOpen = !!lmvRoute.via; renderLineViewRoute(); drawLineView(false); findLineViewTrip(); })), '아직 찾은 기록이 없어요.');
+  const favs = readFavTransit().filter(x => /^stn:/.test(x.id)).map(x => find(x.name)).filter(Boolean);
+  sec('저장한 역', favs.map(n => row([stn(n)], () => focusLineViewStation(n))), '대중교통 창에서 역에 별표를 하면 여기 모여요.');
+}
+// 입력하는 중에 다른 곳(노선도 클릭 등)에서 역이 바뀌면 값만 맞춘다
+function syncLineViewInputs(){
+  for (const i of $('lmvHome').querySelectorAll('.lmv-inputs input')) if (i !== document.activeElement) { const v = lmvRoute[i.dataset.k]; i.value = v ? (/역$/.test(v) ? v : v + '역') : ''; }
 }
 function renderLineViewRoute(){
-  const bar = $('lmvRoute'), r = lmvRoute;
-  bar.hidden = !r.from && !r.to; if (bar.hidden) { bar.replaceChildren(); renderLineViewHome(); return; } // 다 지우면 첫 화면(최근 경로 새로)
+  const bar = $('lmvRoute'), r = lmvRoute; renderLineViewHome(); // 컴퓨터 왼쪽 패널 입력칸도 맞춘다
+  bar.hidden = !r.from && !r.to; if (bar.hidden) { bar.replaceChildren(); return; }
   const nm = n => n ? (/역$/.test(n) ? n : n + '역') : '';
   const t = el('span','grow');
   // 고른 역마다 이름 옆 ×: 그 역만 지운다(출발·경유·도착 따로). 출발·도착이 다 남아 있으면 다시 찾는다
