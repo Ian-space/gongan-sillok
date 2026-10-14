@@ -641,7 +641,11 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
 .detail[hidden]{display:none}
 .d-head{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
 .d-name{font-family:var(--sans);font-weight:700;font-size:24px;line-height:1.2;margin:0}
-.d-name .d-line{font-size:.8em;font-weight:800;white-space:nowrap}
+.d-name .d-lines{display:inline-flex;gap:4px;vertical-align:4px;white-space:nowrap}
+.d-lb{display:inline-flex;align-items:center;justify-content:center;height:20px;padding:0 7px;border-radius:999px;color:#FFFFFF;font-size:12px;font-weight:800;letter-spacing:-.02em}
+.d-lb.num{width:20px;padding:0}
+.d-name.stack .d-lines{display:flex;flex-wrap:wrap;margin-top:6px;vertical-align:0}
+.d-name.tight{font-size:20px}
 .d-meta{font-size:13px;color:var(--muted);margin:4px 0 0}
 .d-close{border:0;background:transparent;font-size:22px;line-height:1;cursor:pointer;color:var(--muted);padding:2px 4px}
 .d-head-acts{display:flex;align-items:center;gap:6px;flex:none}
@@ -824,6 +828,9 @@ body.linemap #map .pin:not(.sel),body.linemap #map .near-dot,body.linemap #map .
 .lmv-card[hidden]{display:none}
 .lmv-trip{position:absolute;left:0;right:0;bottom:0;max-height:46%;overflow-y:auto;padding:10px 12px calc(12px + env(safe-area-inset-bottom,0px));border-radius:16px 16px 0 0;background:var(--panel);box-shadow:0 -6px 24px rgba(15,20,40,.18)}
 .lmv-trip[hidden]{display:none}
+.lmv-trip.full{max-height:80%}
+.lmv-steps{margin:-2px 0 10px;padding:10px 12px;border:1px solid var(--line);border-radius:12px} /* 노선도 안에서 펼친 경로 단계 */
+.lmv-route .via-x{font-size:14px;padding:0 4px}
 .lmv-trip .opt{display:block;width:100%;margin:0 0 8px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--panel);color:var(--ink);font:inherit;text-align:left;cursor:pointer}
 .lmv-trip .opt[aria-pressed="true"]{border:2px solid var(--blue)}
 .lmv-trip .opt b{font-size:15px}
@@ -2131,9 +2138,15 @@ function renderDetail(){
   d.appendChild(grab);
   const head = el('div','d-head'); const t = el('div');
   const nameEl = el('h2','d-name notranslate', p.name);
-  // 지하철역: 이름 옆에 노선을 노선 색 글자로(네이버 지도처럼 '암사역 8호선', 환승역은 '천호역 5호선 8호선')
-  if (p.subway) for (const l of (p.lines || []).map(x => String(x).replace(/^(수도권|서울)\s*/, '')).filter(Boolean)) {
-    const s = el('span','d-line', l); s.style.color = lineColorOf(l); nameEl.append(' ', s);
+  // 지하철역: 이름 옆에 노선 배지(네이버 지도처럼 숫자 노선은 색 동그라미, 그 밖은 짧은 이름 알약). 노선이 여럿이어도 한 줄에 들어가게 작게,
+  // 배지 묶음은 통째로만 줄을 바꾼다(이름 중간에서 배지가 쪼개지지 않게)
+  if (p.subway && p.lines && p.lines.length) {
+    const wrap = el('span','d-lines');
+    for (const l of p.lines.map(x => String(x).replace(/^(수도권|서울)\s*/, '')).filter(Boolean)) {
+      const n = (/^(\d)호선$/.exec(l) || [])[1], b = el('span', n ? 'd-lb num' : 'd-lb', n || LINE_SHORT[l] || l.replace(/선$/, ''));
+      b.style.background = lineColorOf(l); b.title = l; b.setAttribute('aria-label', l); wrap.appendChild(b);
+    }
+    nameEl.append(' ', wrap);
   }
   t.appendChild(nameEl);
   // 종류(카페 등)는 번역돼도 되고, 주소는 번역하지 않게(브라우저 번역이 동네 이름을 뜻으로 바꾸지 않게)
@@ -2474,6 +2487,7 @@ function renderDetail(){
   }
 
   d.hidden = false;
+  const tn = d.querySelector('.d-name'); if (tn && tn.querySelector('.d-lines')) fitTitle(tn); // 역 이름+노선 배지가 한 줄에 안 들어가면 글자를 줄인다(패널이 보인 뒤에 잰다)
 }
 /* ---------- 장소 공유 링크 ---------- */
 // 링크: ?n=이름&y=위도&x=경도 [&p=공용 장소 번호(공개 기록이 있을 때)] [&k=카카오 장소 번호]
@@ -4035,6 +4049,16 @@ function stationArrivals(p, max = 8){
   setTimeout(tick, 0); // 상세에 붙은 뒤에 그린다
   return ul;
 }
+// 역 이름 옆 노선 배지가 한 줄에 안 들어가면(노선 많은 환승역) 배지를 이름 아래 한 줄로 따로 둔다. 숨겨진 패널(높이 0)이면 그대로
+function fitTitle(h){
+  const lh = parseFloat(getComputedStyle(h).lineHeight) || 30, ht = h.getBoundingClientRect().height;
+  if (!ht || ht <= lh * 1.4) return;
+  h.classList.add('stack');
+  const b = h.querySelector('.d-lines'), nameH = b ? b.getBoundingClientRect().top - h.getBoundingClientRect().top : 0;
+  if (nameH > lh * 1.4) h.classList.add('tight'); // 이름만으로도 두 줄이면(동대문역사문화공원역) 글자를 조금 줄인다
+}
+// 역 이름 옆 노선 배지의 짧은 이름(숫자 노선은 동그라미에 숫자만)
+const LINE_SHORT = { '수인분당선': '수인분당', '경의중앙선': '경의중앙', '신분당선': '신분당', '공항철도': '공항', '우이신설선': '우이신설', '김포골드라인': '김포', '의정부경전철': '의정부', '용인에버라인': '에버라인', '인천1호선': '인천1', '인천2호선': '인천2' };
 // 지하철역 화면의 실시간 도착판(네이버 지도처럼): 환승역이면 노선 고르기 → 노선 색 막대(앞 역 | 이 역 | 다음 역) → 방면 두 칸에 두 대씩.
 // 앞뒤 역은 도착 정보의 '○○방면'(그쪽 다음 역)에서 얻는다. 상행·내선은 왼쪽, 하행·외선은 오른쪽. 열려 있는 동안 30초마다 새로
 const lineColorOf = label => (Object.values(LINE_INFO).find(v => v[0] === label) || [])[1] || '#5B6475';
@@ -4703,7 +4727,9 @@ function stationSearch(query, list){
   const base = v => String(v || '').replace(/\s.*$/, '').replace(/역$/, '');
   const q = cleanText(query, 40).replace(/\s*(\d+호선|[가-힣A-Z-]+선)$/, '').replace(/\s+/g, '');
   if (!q || !(/역$/.test(q) || (list[0] && isStn(list[0])))) return null;
-  const rows = list.filter(r => isStn(r) && base(r.name) === base(q));
+  // 같은 이름의 다른 지역 역(부산 종합운동장 등)은 빼고, 첫 결과(지도 근처)에서 1.5km 안의 노선만 모은다
+  let rows = list.filter(r => isStn(r) && base(r.name) === base(q));
+  if (rows.length) rows = rows.filter(r => !(r.lat && rows[0].lat) || distM(rows[0], r) < 1500);
   if (!rows.length) return null;
   const name = rows[0].name.replace(/\s.*$/, '');
   const lines = [...new Set(rows.map(r => r.name.slice(name.length).trim()).filter(Boolean))].sort((x, y) => (parseInt(x, 10) || 99) - (parseInt(y, 10) || 99));
@@ -7069,7 +7095,7 @@ function renderLineBar(){
 }
 /* 엘리베이터 노선도(도식형): LOOM으로 만든 반듯한 노선도(linemap.json, .github/workflows/linemap.yml)에 역마다 엘리베이터 상태 색.
    끌어서 옮기고, 두 손가락·휠로 확대. 역을 누르면 아래 카드(엘리베이터 출구, [역 정보 보기]) */
-let lmvData = null, lmvView = { s: 1, x: 0, y: 0 }, lmvLine = null, lmvRoute = { from: null, to: null };
+let lmvData = null, lmvView = { s: 1, x: 0, y: 0 }, lmvLine = null, lmvRoute = { from: null, via: null, to: null };
 // 엘리베이터 정보 켜기(이 기기에 기억). 끄면 보통 노선도처럼 흰 역
 let lmvElev = (() => { try { return localStorage.getItem('gongan-sillok:lmv-elev') === '1'; } catch { return false; } })();
 // 화장실 표시 켜기(이 기기에 기억)와 모든 역 화장실 요약(중계 서버 /toiletsum, 예약 작업이 채우는 중)
@@ -7080,11 +7106,18 @@ const lmvStatus = name => {
   return { cls: e ? (e[0] || has ? 'ok' : 'no') : has ? 'ok' : 'none', exits: e ? e[0] : '', warn: !!(e && e[2] > 0), broken: e ? e[2] : 0 };
 };
 const LMV_FILL = { ok: '#2E9E6A', no: '#D6453D', none: '#FFFFFF' };
+// 역 간격 넓히기: 노선도 좌표만 LMV_SPREAD배로 키운다(선 굵기·역 동그라미·글자 크기는 그대로라 역 사이가 벌어져 이름이 덜 겹친다)
+const LMV_SPREAD = 2;
+function lmvSpread(m){
+  if (m._k) return m;
+  const k = LMV_SPREAD, r = v => +(v * k).toFixed(1);
+  return { ...m, _k: k, edges: m.edges.map(([cs, ls]) => [cs.map(r), ls]), stations: m.stations.map(([n, x, y, deg]) => [n, r(x), r(y), deg]), size: m.size.map(v => Math.ceil(v * k)) };
+}
 async function openLineView(){
   $('lmView').hidden = false; $('lmvCard').hidden = true; renderLineViewElev(); renderLineViewToilet(); renderLineViewRoute();
   try {
     const [m] = await Promise.all([lmvData ? lmvData : fetch('linemap.json?v=1').then(r => { if (!r.ok) throw new Error('linemap'); return r.json(); }), loadLineData()]);
-    lmvData = m;
+    lmvData = lmvSpread(m);
   } catch { $('lmvStage').replaceChildren(el('p','muted lmv-wait','노선도를 불러오지 못했어요. 잠시 뒤 다시 시도해 주세요.')); return; }
   drawLineView(true);
 }
@@ -7116,32 +7149,60 @@ function drawLineView(reset){
   const onSel = new Set(); if (sel != null) for (const [cs, ls] of d.edges) if (ls.includes(sel)) for (let j = 0; j < cs.length; j += 2) onSel.add(`${cs[j]},${cs[j + 1]}`);
   for (const [name, x, y, deg] of d.stations) {
     const dim = (sel != null && !onSel.has(`${x},${y}`)) || (trip.length > 0 && !onTrip.has(`${x},${y}`));
-    const st = lmvStatus(name), big = deg > 2, end = name === lmvRoute.from ? '#1F5EFF' : name === lmvRoute.to ? '#D6453D' : '';
-    if (end) g.appendChild(mk('circle', { cx: x, cy: y, r: 11, fill: 'none', stroke: end, 'stroke-width': 4 })); // 고른 출발(파랑)·도착(빨강)
+    const st = lmvStatus(name), big = deg > 2, end = name === lmvRoute.from ? '#1F5EFF' : name === lmvRoute.to ? '#D6453D' : name === lmvRoute.via ? '#F08C00' : '';
+    if (end) g.appendChild(mk('circle', { cx: x, cy: y, r: 11, fill: 'none', stroke: end, 'stroke-width': 4 })); // 고른 출발(파랑)·경유(주황)·도착(빨강)
     const c = lmvElev
       ? mk('circle', { cx: x, cy: y, r: big ? 6 : 4.5, fill: LMV_FILL[st.cls], stroke: st.warn ? '#F2B705' : st.cls === 'none' ? '#9AA1AD' : '#1B1F2A', 'stroke-width': st.warn ? 3 : 1.6, class: 'st-dot', opacity: dim ? 0.2 : 1 })
       : mk('circle', { cx: x, cy: y, r: big ? 6 : 4, fill: '#FFFFFF', stroke: '#1B1F2A', 'stroke-width': big ? 2.4 : 1.4, class: 'st-dot', opacity: dim ? 0.2 : 1 });
     c.addEventListener('click', e => { e.stopPropagation(); showLineViewCard(name); });
     g.appendChild(c);
-    if (!dim) { const t = mk('text', { x: x + 7, y: y - 6, 'font-size': big ? 10 : 8, 'font-weight': big ? 700 : 500, class: big ? '' : 'minor' }); t.textContent = name; g.appendChild(t); }
+    if (!dim) { const t = mk('text', { x: x + 7, y: y - 6, 'font-size': big ? 10 : 9, 'font-weight': big ? 700 : 500, class: big ? '' : 'minor', 'data-x': x, 'data-y': y, 'data-big': big ? '1' : '0' }); t.textContent = name; g.appendChild(t); }
     // 화장실 표시(켰을 때): 개찰구 안에 있으면 채운 네모, 밖에만 있으면 빈 네모
     const tl = lmvToilet && lmvTl && lmvTl[lmvNm(name)];
     if (tl && tl[0] > 0 && !dim) g.appendChild(mk('rect', { x: x - 11, y: y + 3, width: 7, height: 7, rx: 1.5, fill: tl[1] ? '#1F5EFF' : '#FFFFFF', stroke: '#1F5EFF', 'stroke-width': 1.6 }));
   }
-  svg.appendChild(g); stage.replaceChildren(svg);
+  svg.appendChild(g); stage.replaceChildren(svg); placeLineViewLabels(stage);
   if (reset) {
     // 처음: 서울 시내(시청 근처)가 화면 가운데에 오게, 화면 너비에 노선도 약 1/7이 보이도록(역 이름이 읽히게)
     const city = d.stations.find(s => s[0] === '시청') || [0, d.size[0] / 2, d.size[1] / 2];
-    const W = stage.clientWidth || 360, H = stage.clientHeight || 600, s = W / (d.size[0] / 7);
+    const W = stage.clientWidth || 360, H = stage.clientHeight || 600, s = 1.15; // 역 이름이 읽히는 크기(큰 역 약 11px)
     lmvView = { s, x: W / 2 - city[1] * s, y: H / 2 - city[2] * s };
   }
   applyLineView();
   renderLineViewChips();
 }
+// 역 이름 자리 잡기: 큰(갈아타는) 역부터 오른쪽 위 → 오른쪽 아래 → 왼쪽 위 → 왼쪽 아래 중 다른 이름과 안 겹치는 자리에 둔다.
+// 글자도 노선도와 같이 커지고 작아져서 겹침은 확대 정도와 상관없다(그릴 때 한 번만 계산)
+let lmvLabelSpots = null; // 모든 역 이름이 다 있을 때 한 번 잡은 자리(역 이름 → [dx, dy, 정렬]). 노선 골라 일부만 그려도 그대로 쓴다(겹치지 않는 자리의 일부라서)
+function placeLineViewLabels(stage){
+  const ts = [...stage.querySelectorAll('svg text[data-x]')]; if (!ts.length) return;
+  const put = (t, [dx, dy, anchor]) => { t.setAttribute('x', +t.dataset.x + dx); t.setAttribute('y', +t.dataset.y + dy); t.setAttribute('text-anchor', anchor); };
+  const key = t => `${t.textContent}|${t.dataset.x}|${t.dataset.y}`;
+  if (lmvLabelSpots && ts.every(t => lmvLabelSpots.has(key(t)))) { for (const t of ts) put(t, lmvLabelSpots.get(key(t))); return; }
+  const far = [...stage.classList].filter(c => c === 'far' || c === 'far2'); stage.classList.remove(...far); // 숨긴 글자는 크기를 잴 수 없어서 잠시 보이게
+  const spots = [[7, -6, 'start'], [7, 12, 'start'], [-7, -6, 'end'], [-7, 12, 'end']], grid = new Map(), C = 60;
+  // 겹침 검사는 가까운 칸(60단위 격자)끼리만
+  const cells = b => { const out = []; for (let i = Math.floor(b.x / C); i <= Math.floor((b.x + b.width) / C); i++) for (let j = Math.floor(b.y / C); j <= Math.floor((b.y + b.height) / C); j++) out.push(i + ',' + j); return out; };
+  const hit = b => cells(b).some(c => (grid.get(c) || []).some(p => b.x < p.x + p.width && p.x < b.x + b.width && b.y < p.y + p.height && p.y < b.y + b.height));
+  const spotsOut = new Map();
+  ts.sort((a, b) => (b.dataset.big === '1') - (a.dataset.big === '1'));
+  for (const t of ts) {
+    let pick = null;
+    for (const s of spots) {
+      put(t, s); const b = t.getBBox(), bb = { x: b.x, y: b.y, width: b.width, height: b.height };
+      if (!pick) pick = [s, bb];
+      if (!hit(bb)) { pick = [s, bb]; break; }
+    }
+    put(t, pick[0]); spotsOut.set(key(t), pick[0]);
+    for (const c of cells(pick[1])) (grid.get(c) || grid.set(c, []).get(c)).push(pick[1]);
+  }
+  stage.classList.add(...far);
+  if (ts.length === lmvData.stations.length) lmvLabelSpots = spotsOut; // 모든 역이 다 그려졌을 때만 기억
+}
 function applyLineView(){
   const g = $('lmvStage').querySelector('svg > g'); if (!g) return;
   g.setAttribute('transform', `translate(${lmvView.x.toFixed(1)} ${lmvView.y.toFixed(1)}) scale(${lmvView.s.toFixed(3)})`);
-  $('lmvStage').classList.toggle('far', lmvView.s < 1.3); $('lmvStage').classList.toggle('far2', lmvView.s < 0.6); // 멀리 보면 작은 역 이름을 숨긴다
+  $('lmvStage').classList.toggle('far', lmvView.s < 0.85); $('lmvStage').classList.toggle('far2', lmvView.s < 0.4); // 멀리 보면 작은 역 이름을 숨긴다
 }
 function zoomLineView(f, cx, cy){
   const s = Math.min(8, Math.max(0.25, lmvView.s * f)); f = s / lmvView.s;
@@ -7152,7 +7213,7 @@ function renderLineViewChips(){
   const chip = (key, label, color) => {
     const b = el('button','qchip lm-chip'); b.type = 'button'; b.setAttribute('aria-pressed', String(lmvLine === key));
     if (color) { const i = el('i'); i.style.setProperty('--nc', color); b.appendChild(i); }
-    b.append(label); b.addEventListener('click', () => { lmvLine = key; drawLineView(false); });
+    b.append(label); b.addEventListener('click', () => { lmvLine = lmvLine === key ? null : key; drawLineView(false); }); // 고른 노선을 다시 누르면 취소(전체)
     row.appendChild(b);
   };
   chip(null, '전체', '');
@@ -7173,9 +7234,14 @@ function showLineViewCard(name){
   const evLine = el('p', st.cls === 'no' ? 'warn' : '', ev + (st.broken ? ` · 점검·중지 ${st.broken}대` : ''));
   const btn = (t, cls, fn) => { const b = el('button', cls, t); b.type = 'button'; b.addEventListener('click', fn); return b; };
   // 역끼리 길찾기: [출발]·[도착]을 고르면 둘 다 정해졌을 때 경로를 찾는다
-  const pick = which => () => { lmvRoute[which] = name; if (lmvRoute.from === lmvRoute.to) lmvRoute[which === 'from' ? 'to' : 'from'] = null; card.hidden = true; lmvTrip = null; renderLineViewTrip(); drawLineView(false); renderLineViewRoute(); if (lmvRoute.from && lmvRoute.to) findLineViewTrip(); }; // 둘 다 고르면 바로 찾는다
+  // 경유: 출발·도착 사이에 들르는 역(하나). 같은 역을 다른 역할로 고르면 앞의 역할은 지운다
+  const pick = which => () => {
+    for (const k of ['from', 'via', 'to']) if (k !== which && lmvRoute[k] === name) lmvRoute[k] = null;
+    lmvRoute[which] = name; card.hidden = true; lmvTrip = null; renderLineViewTrip(); drawLineView(false); renderLineViewRoute();
+    if (lmvRoute.from && lmvRoute.to) findLineViewTrip(); // 출발·도착이 다 정해지면 바로 찾는다
+  };
   const acts = el('div','acts');
-  acts.append(btn('출발', 'btn add', pick('from')), btn('도착', 'btn add rec', pick('to')),
+  acts.append(btn('출발', 'btn add', pick('from')), btn('경유', 'btn', pick('via')), btn('도착', 'btn add rec', pick('to')),
     btn('역 정보', 'btn', () => { if (!p) return; closeLineView(); openShop(p); }), btn('닫기', 'btn', () => { card.hidden = true; }));
   const tlLine = el('p', null); tlLine.hidden = true;
   toiletFetch(lmvNm(name)).then(list => { const ls = toiletLines(list, 1); if (!ls.length || !tlLine.isConnected) return; tlLine.textContent = `화장실 ${ls[0]}`; tlLine.hidden = false; });
@@ -7187,9 +7253,15 @@ function renderLineViewRoute(){
   bar.hidden = !r.from && !r.to; if (bar.hidden) { bar.replaceChildren(); return; }
   const nm = n => n ? (/역$/.test(n) ? n : n + '역') : '';
   const t = el('span','grow');
-  t.append('출발 ', el('b','notranslate', r.from ? nm(r.from) : '역을 고르세요'), ' → 도착 ', el('b','notranslate', r.to ? nm(r.to) : '역을 고르세요'));
+  t.append('출발 ', el('b','notranslate', r.from ? nm(r.from) : '역을 고르세요'));
+  if (r.via) {
+    const vx = el('button','via-x','×'); vx.type = 'button'; vx.setAttribute('aria-label', '경유 지우기');
+    vx.addEventListener('click', e => { e.stopPropagation(); lmvRoute.via = null; lmvTrip = null; renderLineViewRoute(); renderLineViewTrip(); drawLineView(false); if (lmvRoute.from && lmvRoute.to) findLineViewTrip(); });
+    t.append(' → 경유 ', el('b','notranslate', nm(r.via)), vx);
+  }
+  t.append(' → 도착 ', el('b','notranslate', r.to ? nm(r.to) : '역을 고르세요'));
   const x = el('button', null, '×'); x.type = 'button'; x.setAttribute('aria-label', '출발·도착 지우기');
-  x.addEventListener('click', () => { lmvRoute = { from: null, to: null }; lmvTrip = null; renderLineViewRoute(); renderLineViewTrip(); drawLineView(false); });
+  x.addEventListener('click', () => { lmvRoute = { from: null, via: null, to: null }; lmvTrip = null; renderLineViewRoute(); renderLineViewTrip(); drawLineView(false); });
   bar.replaceChildren(t, x);
   if (r.from && r.to) {
     const from = lineViewStation(r.from), to = lineViewStation(r.to); if (!from || !to) return;
@@ -7204,7 +7276,24 @@ const lmvNm = v => String(v || '').replace(/\(.*\)$/, '').replace(/역$/, '').tr
 async function findLineViewTrip(){
   const from = lineViewStation(lmvRoute.from), to = lineViewStation(lmvRoute.to); if (!from || !to) return;
   lmvTrip = { status: 'loading', routes: [], chosen: 0 }; renderLineViewTrip();
-  const r = await odsayRaw({ SX: String(from.lng), SY: String(from.lat), EX: String(to.lng), EY: String(to.lat), SearchPathType: '1' }).catch(() => ({ status: 'error' }));
+  const ask = (a, b) => odsayRaw({ SX: String(a.lng), SY: String(a.lat), EX: String(b.lng), EY: String(b.lat), SearchPathType: '1' }).catch(() => ({ status: 'error' }));
+  const via = lmvRoute.via && lineViewStation(lmvRoute.via);
+  let r;
+  if (via) { // 경유: 출발→경유, 경유→도착을 따로 찾아 이어 붙인다(빠른 순 4개)
+    const [a, b] = await Promise.all([ask(from, via), ask(via, to)]);
+    if (a.status !== 'ok' || b.status !== 'ok') r = { status: 'error', msg: (a.status !== 'ok' ? a : b).msg };
+    else {
+      const subs = x => x.segs.filter(s => s.mode === 'subway');
+      // 경유역에서는 밖으로 나가지 않고 안에서 갈아탄다: 앞 경로 끝 걷기·나갈 출구와 뒤 경로 첫 걷기·들어갈 출구를 뺀다(뺀 걷기 시간도)
+      const cut = (segs, end) => { const s = segs.slice(); let m = 0; while (s.length && s[end ? s.length - 1 : 0].mode === 'walk') m += (end ? s.pop() : s.shift()).minutes || 0;
+        const i = end ? s.length - 1 : 0; if (s[i]) s[i] = { ...s[i], [end ? 'outExit' : 'inExit']: '' }; return [s, m]; };
+      const join = (x, y) => { const [a, ma] = cut(x.segs, true), [b, mb] = cut(y.segs, false);
+        return { ...x, via: true, minutes: x.minutes + y.minutes - ma - mb, fare: 0, segs: [...a, ...b],
+          transfers: x.transfers + y.transfers + ((subs(x).slice(-1)[0] || {}).name === (subs(y)[0] || {}).name ? 0 : 1) }; }; // 경유역에서 같은 노선을 계속 타면 환승이 아니다
+      const all = []; for (const x of a.routes.slice(0, 3)) for (const y of b.routes.slice(0, 3)) all.push(join(x, y));
+      r = { status: 'ok', routes: all.sort((p, q) => p.minutes - q.minutes) };
+    }
+  } else r = await ask(from, to);
   if (!lmvTrip) return;
   lmvTrip = r.status === 'ok' ? { status: 'ok', routes: r.routes.slice(0, 4), chosen: 0 } : { status: 'error', msg: r.msg || '경로를 찾지 못했어요.', routes: [] };
   renderLineViewTrip(); drawLineView(false); fitLineViewTrip();
@@ -7219,7 +7308,8 @@ function renderLineViewTrip(){
   if (t.status === 'error') { box.appendChild(el('p','muted', t.msg)); return; }
   t.routes.forEach((r, i) => {
     const b = el('button','opt'); b.type = 'button'; b.setAttribute('aria-pressed', String(i === t.chosen));
-    b.append(el('b', null, `${r.minutes}분`), el('span','muted', ` · 환승 ${r.transfers}회 · ${r.fare.toLocaleString('ko-KR')}원`));
+    // 경유 경로는 두 번 찾은 걸 이어 붙여서 요금을 합치면 틀린다(실제로는 한 번 요금) → 요금은 빼고 '경유'라고만
+    b.append(el('b', null, `${r.minutes}분`), el('span','muted', ` · 환승 ${r.transfers}회 · ${r.via ? `${lmvNm(lmvRoute.via)} 경유` : `${r.fare.toLocaleString('ko-KR')}원`}`));
     const pills = el('div','pills');
     for (const s of r.segs) {
       if (s.mode === 'walk') { if (s.minutes > 0) pills.appendChild(el('span','walk', `도보 ${s.minutes}분`)); continue; }
@@ -7228,10 +7318,18 @@ function renderLineViewTrip(){
     b.appendChild(pills);
     b.addEventListener('click', () => { if (t.chosen === i) return; t.chosen = i; renderLineViewTrip(); drawLineView(false); fitLineViewTrip(); });
     box.appendChild(b);
+    // 자세히: 노선도를 닫지 않고 고른 경로 바로 아래에 단계(엘리베이터 이용 시·빠른환승·시간표)를 펼친다
+    if (i === t.chosen && t.detail) { const steps = el('div','lmv-steps'); steps.appendChild(routeSteps(r)); box.appendChild(steps); }
   });
-  // 자세히(엘리베이터 이용 시·빠른환승·시간표): 지도 위 길찾기 화면으로
-  const more = el('button','btn add','자세히 보기 (엘리베이터·환승 칸·시간표)'); more.type = 'button'; more.style.width = '100%';
-  more.addEventListener('click', () => {
+  box.classList.toggle('full', !!t.detail); // 펼치면 창을 더 높이
+  const more = el('button','btn add', t.detail ? '자세히 접기' : '자세히 보기 (엘리베이터·환승 칸·시간표)'); more.type = 'button'; more.style.width = '100%';
+  more.setAttribute('aria-expanded', String(!!t.detail));
+  more.addEventListener('click', () => { t.detail = !t.detail; renderLineViewTrip(); if (t.detail) box.querySelector('.lmv-steps')?.scrollIntoView({ block: 'nearest' }); });
+  box.appendChild(more);
+  if (t.routes[t.chosen] && t.routes[t.chosen].via) return; // 경유 경로는 지도 길찾기로 옮길 수 없다(지도 길찾기에는 경유가 없어서)
+  // 지도 위 길찾기 화면으로(출발·도착 장소로 열기)
+  const onMap = el('button','linkbtn','지도에서 보기'); onMap.type = 'button'; onMap.style.cssText = 'display:block;margin:8px auto 0;font-size:13px';
+  onMap.addEventListener('click', () => {
     const from = lineViewStation(lmvRoute.from), to = lineViewStation(lmvRoute.to); if (!from || !to) return;
     const chosen = t.chosen; closeLineView();
     state.routeSwap = null; state.routeSubwayFor = to.id; openShop(to); setRouteFrom(from);
@@ -7239,7 +7337,7 @@ function renderLineViewTrip(){
     const w = setInterval(() => { if (state.transit && state.transit.status === 'ok') { clearInterval(w); if (state.transit.routes && state.transit.routes[chosen]) { state.transit.chosen = chosen; renderDetail(); drawTransit(); } } }, 300);
     setTimeout(() => clearInterval(w), 15000);
   });
-  box.appendChild(more);
+  box.appendChild(onMap);
 }
 // 고른 경로가 아래 경로 창에 가리지 않고 다 보이게 노선도를 옮기고 확대한다
 function fitLineViewTrip(){
