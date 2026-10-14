@@ -36,7 +36,7 @@
 //   POST /photoplace { image: base64 JPEG 1장, x, y }        → 사진+위치로 그 자리의 가게 후보(간판 글자, AI가 고른 곳, 가까운 곳) (로그인 필요)
 
 const ALLOWED_ORIGINS = ['https://ian-space.github.io', 'http://localhost:8765'];
-const VERSION = '2026-10-14.20'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
+const VERSION = '2026-10-14.21'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
 // 로그인 확인용 Supabase 주소와 공개 키(사이트 코드에도 있는 공개 값)
 const SUPABASE_URL = 'https://qktrghajroxddrbpwtvn.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_j-kp8YKsQTczGcsQX74OxA_mfI7DoZw';
@@ -1012,18 +1012,19 @@ function kricToilets(env, ctx, [op, ln, stin]){
       loc: String(x.dtlLoc || '').slice(0, 80), sex: String(x.mlFmlDvNm || ''), n: +x.toltNum || 0, diaper: +x.diapExchNum || 0 }));
   });
 }
-// 예약 작업(10분마다): 노선도에 화장실 표시를 하려고 모든 역의 화장실 요약을 조금씩(한 번에 15역) 채운다. 7일 지나면 다시
+// 예약 작업(10분마다): 노선도에 화장실 표시를 하려고 모든 역의 화장실 요약을 조금씩(한 번에 10역) 채운다. 7일 지나면 다시
 async function fillToiletSum(env){
   if (!env.KRIC_KEY || !env.ROUTE_CACHE) return;
   const all = await kricStations(env, null); if (!all) return;
   const kv = env.ROUTE_CACHE, sum = (await kv.get('kric2:tlsum', 'json').catch(() => null)) || {}, now = Date.now();
-  const names = Object.keys(all).filter(n => !sum[n] || now - sum[n][3] > 7 * 86400000).slice(0, 15);
+  // 무료 요금제는 한 번 실행에 외부 호출 50번까지라, 한 번에 10역(역마다 노선 2개까지)만
+  const names = Object.keys(all).filter(n => !sum[n] || now - sum[n][3] > 7 * 86400000).slice(0, 10);
   if (!names.length) return;
   let changed = false;
   for (const n of names) {
     const lists = []; let ok = true;
     // KV 쓰기 한도(하루 1,000번)를 아끼려고 역마다 따로 저장하지 않고 바로 묻는다. 요약만 한 번 저장
-    for (const [op, ln, stin] of all[n].slice(0, 3)) { const b = await kricGet(env, 'convenientInfo/stationToilet', { railOprIsttCd: op, lnCd: ln, stinCd: stin }); if (b == null) { ok = false; break; } lists.push(...b.map(x => ({ gate: String(x.gateInotDvNm || ''), diaper: +x.diapExchNum || 0 }))); }
+    for (const [op, ln, stin] of all[n].slice(0, 2)) { const b = await kricGet(env, 'convenientInfo/stationToilet', { railOprIsttCd: op, lnCd: ln, stinCd: stin }); if (b == null) { ok = false; break; } lists.push(...b.map(x => ({ gate: String(x.gateInotDvNm || ''), diaper: +x.diapExchNum || 0 }))); }
     if (!ok) continue; // KRIC가 멈췄으면 다음에
     sum[n] = [lists.length, lists.some(x => x.gate === '내') ? 1 : 0, lists.some(x => x.diaper > 0) ? 1 : 0, now]; changed = true;
   }
