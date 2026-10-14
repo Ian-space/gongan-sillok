@@ -865,6 +865,23 @@ body.linemap #map .pin:not(.sel),body.linemap #map .near-dot,body.linemap #map .
 .lmv-card[hidden]{display:none}
 .lmv-trip{position:absolute;left:0;right:0;bottom:0;max-height:46%;overflow-y:auto;touch-action:pan-y;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;padding:10px 12px calc(12px + env(safe-area-inset-bottom,0px));border-radius:16px 16px 0 0;background:var(--panel);box-shadow:0 -6px 24px rgba(15,20,40,.18)}
 .lmv-trip[hidden]{display:none}
+/* 노선도 본문: 휴대폰은 위아래(출발·도착 줄 → 노선도, 카드·경로는 아래에 겹쳐), 컴퓨터는 왼쪽 패널 + 오른쪽 노선도 */
+.lmv-body{position:relative;flex:1;min-height:0;display:flex;flex-direction:column}
+.lmv-side{display:contents}
+.lmv-hint{display:none}
+@media (min-width:900px){
+  .lmv-body{flex-direction:row}
+  .lmv-side{display:flex;flex-direction:column;gap:10px;flex:none;width:380px;padding:12px 14px;border-right:1px solid var(--line);overflow-y:auto;background:var(--panel)}
+  .lmv-hint{display:block;padding:14px;border-radius:12px;background:var(--paper);font-size:13px;color:var(--muted)}
+  .lmv-hint b{display:block;margin-bottom:4px;font-size:15px;color:var(--ink)}
+  .lmv-hint p{margin:0;line-height:1.6}
+  .lmv-side:has(> .lmv-card:not([hidden])) .lmv-hint,.lmv-side:has(> .lmv-trip:not([hidden])) .lmv-hint,.lmv-side:has(> .lmv-route:not([hidden])) .lmv-hint{display:none}
+  .lmv-side .lmv-route{margin:0}
+  .lmv-side .lmv-card,.lmv-side .lmv-trip{position:static;max-height:none;overflow:visible;border:1px solid var(--line);border-radius:12px;box-shadow:none;padding:12px 14px}
+  .lmv-side .lmv-trip.sized{height:auto!important}
+  .lmv-side .lmv-trip.full{max-height:none}
+  .lmv-side .lmv-grip{display:none}
+}
 .lmv-trip.full{max-height:80%}
 .lmv-trip.sized{max-height:none} /* 손잡이로 높이를 직접 바꾼 뒤 */
 .lmv-grip{position:sticky;top:-10px;z-index:1;display:flex;justify-content:center;align-items:center;height:22px;margin:-10px -12px 4px;background:var(--panel);touch-action:none;cursor:ns-resize}
@@ -1321,10 +1338,17 @@ html{touch-action:manipulation}
   <div class="lm-chips lmv-chips" id="lmvChips"></div>
   <div class="lm-legend lmv-legend" id="lmvLegend" hidden><span class="lm-key ok">엘리베이터 있음</span><span class="lm-key no">지상 엘리베이터 없음</span><span class="lm-key warn">점검 중</span><span class="lm-key none">정보 없음</span><button type="button" class="linkbtn" id="lmvMap">지도에서 보기</button></div>
   <div class="lm-legend lmv-legend" id="lmvTlLegend" hidden><span class="lm-key tl-in">개찰구 안 화장실</span><span class="lm-key tl-out">개찰구 밖만</span><span class="muted">모으는 중인 역은 아직 안 보여요</span></div>
-  <div class="lmv-route" id="lmvRoute" hidden></div>
-  <div class="lmv-stage" id="lmvStage"><p class="muted lmv-wait">노선도를 불러오는 중…</p></div>
-  <div class="lmv-card" id="lmvCard" hidden></div>
-  <div class="lmv-trip" id="lmvTrip" hidden></div>
+  <!-- 휴대폰: 출발·도착 줄은 노선도 위, 역 카드·경로 창은 노선도 아래에 겹쳐 뜬다(.lmv-side는 상자 없이 풀림).
+       컴퓨터: 왼쪽 패널(.lmv-side)에 출발·도착 줄, 역 카드, 경로를 차례로 두고 노선도는 오른쪽 -->
+  <div class="lmv-body">
+    <aside class="lmv-side" aria-label="역과 경로">
+      <div class="lmv-hint"><b>역을 눌러 보세요</b><p>역 정보(엘리베이터·화장실)가 이 자리에 나와요. [출발]·[도착]을 고르면 지하철 경로를 찾아 노선도 위에 그려 드려요. 들를 역이 있으면 [경유]로 고르세요.</p></div>
+      <div class="lmv-route" id="lmvRoute" hidden></div>
+      <div class="lmv-card" id="lmvCard" hidden></div>
+      <div class="lmv-trip" id="lmvTrip" hidden></div>
+    </aside>
+    <div class="lmv-stage" id="lmvStage"><p class="muted lmv-wait">노선도를 불러오는 중…</p></div>
+  </div>
 </section>
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 <dialog class="add-dlg" id="originDlg" aria-labelledby="originTitle">
@@ -7379,7 +7403,7 @@ function showLineViewCard(name){
   lmvSel = name; markLineViewSel();
   // 고른 역이 아래 카드에 가려지면 노선도를 위로 조금 올린다
   const ring = $('lmvStage').querySelector('.sel-ring:not(.pulse)'), cr = card.getBoundingClientRect();
-  if (ring) { const rr = ring.getBoundingClientRect(), over = rr.bottom + 24 - cr.top; if (over > 0) { lmvView.y -= over; applyLineView(); } }
+  if (ring) { const rr = ring.getBoundingClientRect(), over = rr.bottom + 24 - cr.top; if (over > 0 && cr.left < rr.right && cr.right > rr.left) { lmvView.y -= over; applyLineView(); } }
 }
 // 출발·도착 줄. 둘 다 고르면 지도에서 그 경로를 찾는다(도착역을 열고 출발역에서 출발)
 function renderLineViewRoute(){
@@ -7494,7 +7518,7 @@ function renderLineViewTrip(){
 function fitLineViewTrip(){
   const trip = lineViewTripPaths(); if (!trip.length) return;
   const pts = trip.flatMap(t => t.pts), xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
-  const stage = $('lmvStage'), W = stage.clientWidth, H = stage.clientHeight - ($('lmvTrip').offsetHeight || 0);
+  const stage = $('lmvStage'), W = stage.clientWidth, H = stage.clientHeight - (isPhone() ? $('lmvTrip').offsetHeight || 0 : 0); // 컴퓨터는 경로가 왼쪽 패널이라 노선도를 가리지 않는다
   const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys), pad = 50;
   const s = Math.min(4, Math.max(0.5, Math.min((W - pad * 2) / Math.max(1, x1 - x0), (H - pad * 2) / Math.max(1, y1 - y0))));
   lmvView = { s, x: W / 2 - (x0 + x1) / 2 * s, y: H / 2 - (y0 + y1) / 2 * s }; applyLineView();
