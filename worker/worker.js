@@ -36,7 +36,7 @@
 //   POST /photoplace { image: base64 JPEG 1장, x, y }        → 사진+위치로 그 자리의 가게 후보(간판 글자, AI가 고른 곳, 가까운 곳) (로그인 필요)
 
 const ALLOWED_ORIGINS = ['https://ian-space.github.io', 'http://localhost:8765'];
-const VERSION = '2026-10-14.23'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
+const VERSION = '2026-10-14.24'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
 // 로그인 확인용 Supabase 주소와 공개 키(사이트 코드에도 있는 공개 값)
 const SUPABASE_URL = 'https://qktrghajroxddrbpwtvn.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_j-kp8YKsQTczGcsQX74OxA_mfI7DoZw';
@@ -290,10 +290,10 @@ async function handle(kind, input, { request, env, ctx, send, reply }) {
     const st = stName(input.station);
     if (!st || st.length > 20) return reply(400, { error: 'bad station' });
     const gk = dataKey(); if (!gk) return reply(503, { error: 'fstexit off' });
-    // 하루마다 새로. 빈 목록·오류(일일 한도 등)는 실패로 보고 KV의 전 것을 쓴다(빈 목록이 하루 동안 저장돼 빠른하차가 사라졌던 일)
+    // 잘 안 바뀌는 자료라 30일마다 새로. 빈 목록·오류(일일 한도 등)는 실패로 보고 KV의 전 것을 쓴다(빈 목록이 하루 동안 저장돼 빠른하차가 사라졌던 일)
     let why = '';
     await allow();
-    const all = await kvFresh(env, ctx, 'fst2:all', 86400000, async () => {
+    const all = await kvFresh(env, ctx, 'fst2:all', 30 * 86400000, async () => {
       const rows = [];
       for (let page = 1; page <= 4; page++) {
         const r = await fetch(`https://apis.data.go.kr/B553766/inout/getFstExit?serviceKey=${encodeURIComponent(gk)}&pageNo=${page}&numOfRows=1000&dataType=JSON`, { signal: AbortSignal.timeout(8000) });
@@ -378,7 +378,7 @@ async function handle(kind, input, { request, env, ctx, send, reply }) {
     const s = v => String(v ?? '').trim();
     let why = '';
     await allow();
-    const all = await kvFresh(env, ctx, 'ftr2:all', 86400000, async () => {
+    const all = await kvFresh(env, ctx, 'ftr2:all', 30 * 86400000, async () => {
       const rows = [];
       for (let page = 1; page <= 10; page++) {
         const r = await fetch(`https://api.odcloud.kr/api/15151816/v1/uddi:e9c2bb71-05e8-4767-8397-9df787ee70f6?page=${page}&perPage=1000&returnType=JSON&serviceKey=${encodeURIComponent(gk)}`, { signal: AbortSignal.timeout(8000) });

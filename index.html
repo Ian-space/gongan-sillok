@@ -581,6 +581,27 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
 .d-tsteps .t-elevline.warn{color:var(--seal-ink)}
 .d-tsteps .t-chip.flat{cursor:default;background:var(--paper);border-color:transparent}
 /* 정류장 실시간 도착 목록, 저상버스 표시 */
+/* 지하철역 실시간 도착판: 노선 고르기, 노선 색 막대(앞 역 | 이 역 | 다음 역), 방면 두 칸 */
+.sb{margin:4px 0 10px;display:grid;gap:8px}
+.sb-tabs{display:flex;gap:6px;flex-wrap:wrap}
+.sb-tab{font:inherit;font-size:13px;font-weight:700;padding:5px 12px;border-radius:999px;border:1.5px solid var(--c);background:var(--panel);color:var(--ink);cursor:pointer}
+.sb-tab[aria-pressed="true"]{background:var(--c);color:#fff}
+.sb-bar{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;background:var(--c);border-radius:999px;padding:3px;color:#fff;font-size:14px;font-weight:600;min-height:38px}
+.sb-end{padding:0 10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sb-end.r{text-align:right}
+.sb-here{background:var(--panel);color:var(--ink);border:2px solid var(--c);border-radius:999px;padding:5px 18px;font-size:16px;font-weight:800;white-space:nowrap}
+.sb-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.sb-grid > p{grid-column:1/-1;margin:2px 0;font-size:13px}
+.sb-col{border:1px solid var(--line);border-radius:10px;padding:10px 12px;min-width:0}
+.sb-dir{display:block;font-size:14px;padding-bottom:6px;margin-bottom:6px;border-bottom:1px solid var(--line)}
+.sb-row{display:flex;justify-content:space-between;gap:6px;font-size:14px;padding:2px 0}
+.sb-row span{color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sb-row b{white-space:nowrap;color:#D93025}
+.sb-row b.now{color:#D93025}
+.sb-col p{margin:0;font-size:13px}
+.sb-foot{display:flex;justify-content:flex-end;align-items:center;gap:6px;font-size:12px}
+.sb-re{width:28px;height:28px;border-radius:50%;border:1px solid var(--line);background:var(--panel);color:var(--ink);display:grid;place-items:center;cursor:pointer;padding:0}
+.sb-re svg{width:15px;height:15px}
 .stop-arr{list-style:none;margin:4px 0 8px;padding:0;display:grid;gap:6px;font-size:14px}
 .stop-arr li{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px}
 .stop-arr .muted{color:var(--muted);font-size:12px}
@@ -2264,6 +2285,9 @@ function renderDetail(){
   } else if (p.subway) { // 지하철역(지도에서 누른 역, 카카오): 노선, 엘리베이터(서울교통공사), 실시간 도착(서울 열린데이터광장)
     const box = el('div','ext-info');
     if (p.lines && p.lines.length) box.appendChild(el('p','ext-phone', p.lines.join(' · ')));
+    // 역에서 가장 궁금한 건 언제 오는지라 실시간 도착을 맨 위에
+    box.appendChild(el('h3','sec-title','실시간 도착'));
+    box.appendChild(stationBoard(p));
     box.appendChild(el('h3','sec-title','엘리베이터'));
     const ev = el('p','ext-phone','확인 중…'); box.appendChild(ev);
     elevFetch(p.name.replace(/역$/, '')).then(d => {
@@ -2281,8 +2305,6 @@ function renderDetail(){
       if (!ls.length) { tl.textContent = '이 역은 화장실 정보가 없어요.'; return; }
       for (const t of ls) tl.appendChild(el('div', null, t));
     });
-    box.appendChild(el('h3','sec-title','실시간 도착'));
-    box.appendChild(stationArrivals(p));
     box.appendChild(el('p','add-src', '역: 카카오 · 엘리베이터: 서울교통공사 교통약자이용정보 · 화장실: 철도산업정보센터 · 도착: 서울 열린데이터광장 실시간 지하철'));
     d.appendChild(box);
   } else if (p.bus) { // 버스정류장(우리 DB): 정류장 번호와 이 정류장에 오는 버스 실시간 도착
@@ -3963,6 +3985,78 @@ function stationArrivals(p, max = 8){
   const tick = () => liveFetch(body).then(list => { if (draw(list)) setTimeout(() => { if (ul.isConnected) { liveCache.delete(JSON.stringify(body)); tick(); } }, 30000); });
   setTimeout(tick, 0); // 상세에 붙은 뒤에 그린다
   return ul;
+}
+// 지하철역 화면의 실시간 도착판(네이버 지도처럼): 환승역이면 노선 고르기 → 노선 색 막대(앞 역 | 이 역 | 다음 역) → 방면 두 칸에 두 대씩.
+// 앞뒤 역은 도착 정보의 '○○방면'(그쪽 다음 역)에서 얻는다. 상행·내선은 왼쪽, 하행·외선은 오른쪽. 열려 있는 동안 30초마다 새로
+const lineColorOf = label => (Object.values(LINE_INFO).find(v => v[0] === label) || [])[1] || '#5B6475';
+const sbName = v => String(v || '').replace(/\(.*\)$/, '').replace(/역$/, '').trim();
+// 곧 오는 순서: 이 역 도착·진입 → 전역 → 남은 초 → n번째 전역
+const arrRank = (x, here) => { const m = String(x.msg || ''), n = /\[(\d+)\]번째/.exec(m); return x.sec > 0 ? x.sec : new RegExp(`${here}.*(도착|진입)`).test(m) ? 0 : /전역/.test(m) && !n ? 90 : n ? +n[1] * 150 : 9999; };
+function arrShort(x, here){
+  const m = String(x.msg || '');
+  if (x.sec > 0) return `${Math.max(1, Math.round(x.sec / 60))}분`;
+  if (new RegExp(`${here}.*(도착|진입)`).test(m) || /^당역/.test(m)) return '곧 도착';
+  const n = /\[(\d+)\]번째 전역/.exec(m); if (n) return `${n[1]}역 전`;
+  if (/전역 (도착|진입|출발)/.test(m)) return '전역 ' + /전역 (도착|진입|출발)/.exec(m)[1];
+  const t = /(\d+)분/.exec(m); return t ? `${t[1]}분` : m.replace(/\s*\(.*\)$/, '');
+}
+function stationBoard(p){
+  const box = el('div','sb'), here = sbName(p.name);
+  const tabs = el('div','sb-tabs'), bar = el('div','sb-bar'), grid = el('div','sb-grid'), foot = el('div','sb-foot');
+  const time = el('span','muted'), again = el('button','sb-re'); again.type = 'button'; again.setAttribute('aria-label', '새로 고침');
+  again.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.3-5.6M20 4v5h-5"/></svg>';
+  foot.append(time, again);
+  box.append(tabs, bar, grid, foot);
+  grid.appendChild(el('p','muted','실시간 도착 확인 중…'));
+  const body = { type: 'subway', station: here };
+  let list = [], pick = '', timer = 0;
+  const order = id => { const i = (p.lines || []).indexOf(subwayIdName(id)); return i < 0 ? 99 : i; };
+  const draw = () => {
+    const ids = [...new Set((list || []).map(x => x.line))].filter(subwayIdName).sort((a, b) => order(a) - order(b) || a - b);
+    if (!ids.includes(pick)) pick = ids[0] || '';
+    tabs.replaceChildren(); tabs.hidden = ids.length < 2;
+    for (const id of ids) {
+      const b = el('button','sb-tab', subwayIdName(id)); b.type = 'button'; b.style.setProperty('--c', lineColorOf(subwayIdName(id)));
+      b.setAttribute('aria-pressed', String(id === pick));
+      b.addEventListener('click', e => { e.stopPropagation(); pick = id; draw(); });
+      tabs.appendChild(b);
+    }
+    grid.replaceChildren(); bar.replaceChildren(); bar.hidden = !pick;
+    if (!pick) { grid.appendChild(el('p','muted', list === null ? '실시간 도착 정보를 불러오지 못했어요' : '지금 들어오는 열차 정보가 없어요. 서울시 실시간 자료가 있는 수도권 역만 나와요.')); return; }
+    const label = subwayIdName(pick), c = lineColorOf(label);
+    const mine = (list || []).filter(x => x.line === pick).sort((a, b) => arrRank(a, here) - arrRank(b, here));
+    const side = x => /하행|외선/.test(x.updn) ? 1 : 0;
+    const toward = x => sbName((/-\s*(.+?)방면/.exec(x.dir) || [])[1]);
+    const dest = x => sbName((/^(.+?)행/.exec(x.dir) || [])[1]);
+    const cols = [0, 1].map(k => mine.filter(x => side(x) === k));
+    const near = cols.map(xs => (xs.find(toward) && toward(xs.find(toward))) || '');
+    bar.style.setProperty('--c', c);
+    bar.append(el('span','sb-end l', near[0] ? `‹ ${near[0]}` : ''), el('span','sb-here', here), el('span','sb-end r', near[1] ? `${near[1]} ›` : ''));
+    cols.forEach((xs, k) => {
+      const card = el('div','sb-col');
+      card.appendChild(el('b','sb-dir', near[k] ? `${near[k]} 방면` : k ? '하행' : '상행'));
+      if (!xs.length) card.appendChild(el('p','muted','들어오는 열차 없음'));
+      for (const x of xs.slice(0, 2)) {
+        const row = el('div','sb-row'), t = arrShort(x, here);
+        row.append(el('span', null, (dest(x) || '') + (/급행/.test(x.express) ? ' (급행)' : '')), el('b', /곧|전역/.test(t) ? 'now' : null, t));
+        card.appendChild(row);
+      }
+      grid.appendChild(card);
+    });
+  };
+  const tick = () => {
+    clearTimeout(timer);
+    liveCache.delete(JSON.stringify(body));
+    liveFetch(body).then(l => {
+      if (!box.isConnected) return;
+      list = l; draw();
+      time.textContent = new Date().toLocaleTimeString('ko-KR', { hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Seoul' }) + ' 기준';
+      timer = setTimeout(() => { if (box.isConnected) tick(); }, 30000);
+    });
+  };
+  again.addEventListener('click', e => { e.stopPropagation(); tick(); });
+  setTimeout(tick, 0); // 상세에 붙은 뒤에 그린다
+  return box;
 }
 // 정류장 하나에 오는 모든 버스의 실시간 도착(곧 오는 순). 상세가 열려 있는 동안 30초마다 새로
 function stopArrivals(p, max = 15){
