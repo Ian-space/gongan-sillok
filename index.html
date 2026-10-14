@@ -349,6 +349,13 @@ button.stat[aria-pressed="true"] span{color:#FFFFFF}
 .item-name{font-family:var(--sans);font-weight:700;font-size:17px}
 .item-sub{font-size:13px;color:var(--muted)}
 .empty{padding:18px 22px;color:var(--muted);font-size:14px}
+/* 확인이 많이 된 곳(목록 대신 먼저 보여 주는 3곳씩)과 접어 둔 전체 목록 */
+.spot-list{display:grid;gap:2px;margin:0 -10px 12px}
+.spot-item .item-name{font-size:15px}
+.all-list>summary{cursor:pointer;list-style:none;display:flex;justify-content:space-between;align-items:center}
+.all-list>summary::-webkit-details-marker{display:none}
+.all-list>summary::after{content:"펼치기";font-size:12px;font-weight:600;color:var(--blue)}
+.all-list[open]>summary::after{content:"접기"}
 
 .notes{padding:6px 22px 24px;font-size:13px;color:var(--muted)}
 .notes details{border-top:1px solid var(--line);padding:10px 0}
@@ -1177,9 +1184,12 @@ html{touch-action:manipulation}
     <div class="scroll">
       <section class="sec intent" id="intent" hidden aria-label="적은 목적에서 찾은 조건"></section>
       <section class="sec" id="extList" hidden aria-label="검색 결과: 기록 안 된 장소"></section>
-      <section class="sec" id="summary" aria-label="한눈에 보기"></section>
+      <!-- 순서: 목적으로 보기 → 확인이 많이 된 곳(일치율·기록 수) → 한눈에 보기 → 전체 목록(접어 둠) -->
       <section class="sec" id="picks" aria-label="목적으로 보기"></section>
-      <h3 class="sec-title sec-pad">목록</h3>
+      <section class="sec" id="spot" aria-label="확인이 많이 된 곳"></section>
+      <section class="sec" id="summary" aria-label="한눈에 보기"></section>
+      <details class="all-list" id="allList">
+      <summary class="sec-title sec-pad" id="allListSum">전체 목록</summary>
       <div class="count-row">
         <span class="count" id="count"></span>
         <span class="count-tools">
@@ -1189,6 +1199,7 @@ html{touch-action:manipulation}
         </span>
       </div>
       <ul class="list" id="list"></ul>
+      </details>
       <div class="notes">
         <details>
           <summary>엑셀 양식 안내</summary>
@@ -2125,6 +2136,39 @@ function buildFilters(){
     }
     g.appendChild(chips); wrap.appendChild(g);
   }
+}
+// 목록 대신: 지금 지도에 보이는 곳 중 믿을 만한 곳을 먼저(평점이 아니라 사실이 얼마나 확인됐는지).
+// 조건(목적·필터)을 골랐으면 '조건에 맞는 곳'(조건 충족도 순), 아니면 '지금도 맞다고 확인된 곳'(지금도 맞나요 응답 3개 이상, 일치율 순)과
+// '기록이 많은 곳'(공개 기록 수 순). 각 3곳까지, 나머지는 아래 '전체 목록'을 펼쳐서
+function renderSpot(vis){
+  const box = $('spot'); box.replaceChildren();
+  const row = (p, why) => {
+    const b = el('button','item spot-item'); b.type = 'button'; b.dataset.id = p.id;
+    const nm = el('div','item-name'); const dot = el('i'); dot.style.setProperty('--c', category(p).color);
+    nm.append(dot, el('span','notranslate', p.name)); b.appendChild(nm);
+    b.appendChild(el('div','item-sub', [why, p.type, state.me && fmtDist(distM(state.me, p))].filter(Boolean).join(' · ')));
+    b.addEventListener('click', () => select(p.id, true));
+    return b;
+  };
+  const group = (title, items) => {
+    if (!items.length) return;
+    box.appendChild(el('h3','sec-title', title));
+    const ul = el('div','spot-list'); for (const [p, why] of items) ul.appendChild(row(p, why)); box.appendChild(ul);
+  };
+  const real = vis.filter(p => !p.sample);
+  if (vis.length && fitOf(vis[0]) != null) { // 조건을 골랐을 때
+    group('조건에 맞는 곳', vis.map(p => [p, fitOf(p)]).filter(([, f]) => f > 0).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([p, f]) => [p, `조건 충족도 ${Math.round(f * 100)}%`]));
+  } else {
+    const chk = p => { const c = p.pid && state.checks.get(p.pid); return c ? [c.same, c.same + c.changed] : [0, 0]; };
+    group('지금도 맞다고 확인된 곳', real.map(p => [p, ...chk(p)]).filter(([, , n]) => n >= 3).sort((a, b) => b[1] / b[2] - a[1] / a[2] || b[2] - a[2]).slice(0, 3)
+      .map(([p, s, n]) => [p, `일치 ${Math.round(s / n * 100)}% · 응답 ${n}`]));
+    const recs = p => (p.pubCount || 0) + (p.mine ? 1 : 0);
+    const shown = new Set([...box.querySelectorAll('.spot-item')].map(b => b.dataset.id)); // 위에 이미 나온 곳은 빼고
+    group('기록이 많은 곳', real.filter(p => recs(p) >= 2 && !shown.has(p.id)).sort((a, b) => recs(b) - recs(a) || (Date.parse(lastConfirmed(b)) || 0) - (Date.parse(lastConfirmed(a)) || 0)).slice(0, 3)
+      .map(p => [p, `기록 ${recs(p)}개${lastConfirmed(p) ? ` · 최종 확인 ${lastConfirmed(p).slice(2).replace(/-/g, '.')}` : ''}`]));
+  }
+  box.hidden = !box.children.length;
+  $('allListSum').textContent = `전체 목록 ${vis.length}곳`;
 }
 function renderList(vis){
   const list = $('list'); list.replaceChildren();
@@ -6788,11 +6832,11 @@ function renderAll(){
   $('zloc').setAttribute('aria-pressed', String(!!state.me));
   // 지울 것(필터·태그·검색어·지도에 표시)이 있을 때만 '필터 지우기'를 보인다
   $('btnClear').hidden = !(Object.values(state.filters).some(s => s.size) || Object.values(state.tags).some(s => s.size) || state.q || state.badges.length);
-  renderSummary(); renderPicks(vis); renderList(vis); renderExtList(); renderIntent(); renderMap(vis); renderExtMarkers(); renderLegend(); renderQuick(); renderDetail();
+  renderSummary(); renderPicks(vis); renderSpot(vis); renderList(vis); renderExtList(); renderIntent(); renderMap(vis); renderExtMarkers(); renderLegend(); renderQuick(); renderDetail();
   renderQuickChips(); renderPeek(vis); syncFilterChips(); renderRouteBar(); renderCollectBar(); if ($('filterDlg').open) renderFilterExtras();
   renderTabs();
   $('qClear').hidden = !$('q').value; // 검색어가 있을 때만 × 버튼
-  $('summary').hidden = $('picks').hidden = !!state.ext.query; // 검색 중에는 검색 결과가 맨 위에 오도록 요약·추천을 접는다
+  $('summary').hidden = $('picks').hidden = !!state.ext.query; if (state.ext.query) $('spot').hidden = true; // 검색 중에는 검색 결과가 맨 위에 오도록 요약·추천을 접는다
 }
 
 /* ---------- 빠른 조건 한 줄, 필터 화면, 패널 요약 ---------- */
