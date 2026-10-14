@@ -36,7 +36,7 @@
 //   POST /photoplace { image: base64 JPEG 1장, x, y }        → 사진+위치로 그 자리의 가게 후보(간판 글자, AI가 고른 곳, 가까운 곳) (로그인 필요)
 
 const ALLOWED_ORIGINS = ['https://ian-space.github.io', 'http://localhost:8765'];
-const VERSION = '2026-10-14.22'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
+const VERSION = '2026-10-14.23'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
 // 로그인 확인용 Supabase 주소와 공개 키(사이트 코드에도 있는 공개 값)
 const SUPABASE_URL = 'https://qktrghajroxddrbpwtvn.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_j-kp8YKsQTczGcsQX74OxA_mfI7DoZw';
@@ -620,7 +620,16 @@ async function handle(kind, input, { request, env, ctx, send, reply }) {
       const st = String(input.station || '').replace(/역$/, '').replace(/\(.*\)$/, '').trim();
       if (!st || st.length > 20 || !env.SEOUL_SUBWAY_KEY) return reply(400, { error: 'bad station' });
       return cached(`arr:sw:${st}`, 20, async () => {
-        const j = await get(`http://swopenapi.seoul.go.kr/api/subway/${encodeURIComponent(env.SEOUL_SUBWAY_KEY)}/json/realtimeStationArrival/0/20/${encodeURIComponent(st)}`);
+        const sw = (n, a = 0, b = 20) => get(`http://swopenapi.seoul.go.kr/api/subway/${encodeURIComponent(env.SEOUL_SUBWAY_KEY)}/json/realtimeStationArrival/${a}/${b}/${encodeURIComponent(n)}`);
+        // 이 자료는 '천호(풍납토성)'·'몽촌토성(평화의문)'처럼 괄호까지가 역 이름이라 괄호 없이 물으면 비어 온다.
+        // 그러면 모든 역(ALL)을 한 번 받아 괄호 붙은 이름을 찾고, 그 이름을 하루 동안 기억해 다음부터 바로 묻는다
+        const full = memGet(`swname:${st}`);
+        let j = await sw(full || st);
+        if (!full && !(j && j.realtimeArrivalList)) {
+          const a = await sw('ALL', 0, 1000).catch(() => null);
+          const hit = arr(a && a.realtimeArrivalList).find(x => String(x.statnNm || '').replace(/\(.*\)$/, '').trim() === st);
+          if (hit && hit.statnNm !== st) { memPut(`swname:${st}`, String(hit.statnNm), 86400); j = await sw(String(hit.statnNm)); }
+        }
         // subwayId: 1001~1009 = 1~9호선 등. updnLine: 상행·하행·내선·외선. arvlMsg2: '전역 도착', '3분 후 (천호)'. barvlDt: 도착까지 초
         const em = (j && (j.errorMessage || j.RESULT)) || null; // 일일 한도 초과 등은 목록 없이 이 칸만 온다
         if (!(j && j.realtimeArrivalList) && em) console.log(JSON.stringify({ arrive_sw: String(em.code || em.CODE || ''), msg: String(em.message || em.MESSAGE || '').slice(0, 80) }));
