@@ -7228,7 +7228,7 @@ function closeLineView(){ $('lmView').hidden = true; }
 function drawLineView(reset){
   const d = lmvData, stage = $('lmvStage'); if (!d) return;
   const NS = 'http://www.w3.org/2000/svg', mk = (t, a) => { const n = document.createElementNS(NS, t); for (const k in a) n.setAttribute(k, a[k]); return n; };
-  const svg = mk('svg', { viewBox: `0 0 ${stage.clientWidth || 360} ${stage.clientHeight || 600}` }), g = mk('g', {});
+  const svg = mk('svg', { width: '100%', height: '100%' }), g = mk('g', {}); // 기준 크기(viewBox) 없이: 1단위 = 화면 1px이라 창 크기가 바뀌어도 누른 자리와 역 위치가 맞는다
   const sel = lmvLine == null ? null : d.lines.findIndex(l => l[0] === lmvLine);
   const trip = lineViewTripPaths(), onTrip = new Set(trip.flatMap(t => t.pts.map(([x, y]) => `${x},${y}`)));
   // 구간: 여러 노선이 지나면 LOOM이 정한 순서대로 나란히(굵기 5, 간격 5)
@@ -7257,7 +7257,6 @@ function drawLineView(reset){
     const c = lmvElev
       ? mk('circle', { cx: x, cy: y, r: big ? 6 : 4.5, fill: LMV_FILL[st.cls], stroke: st.warn ? '#F2B705' : st.cls === 'none' ? '#9AA1AD' : '#1B1F2A', 'stroke-width': st.warn ? 3 : 1.6, class: 'st-dot', opacity: dim ? 0.2 : 1 })
       : mk('circle', { cx: x, cy: y, r: big ? 6 : 4, fill: '#FFFFFF', stroke: '#1B1F2A', 'stroke-width': big ? 2.4 : 1.4, class: 'st-dot', opacity: dim ? 0.2 : 1 });
-    c.addEventListener('click', e => { e.stopPropagation(); showLineViewCard(name); });
     g.appendChild(c);
     if (!dim) { const t = mk('text', { x: x + 7, y: y - 6, 'font-size': big ? 10 : 9, 'font-weight': big ? 700 : 500, class: big ? '' : 'minor', 'data-x': x, 'data-y': y, 'data-big': big ? '1' : '0' }); t.textContent = name; g.appendChild(t); }
     // 화장실 표시(켰을 때): 개찰구 안에 있으면 채운 네모, 밖에만 있으면 빈 네모
@@ -7512,9 +7511,15 @@ function renderLineViewElev(){
 // 끌기·두 손가락 확대·휠
 (() => {
   const stage = $('lmvStage'), pts = new Map(); let last = null;
-  stage.addEventListener('pointerdown', e => { pts.set(e.pointerId, { x: e.clientX, y: e.clientY }); try { stage.setPointerCapture(e.pointerId); } catch {} last = null; });
+  // 누르고 4px 넘게 움직여야 끌기로 본다(그 전에 손을 떼면 역 고르기). 컴퓨터 마우스는 누르자마자 잡으면(capture) 역 클릭이 노선도 바탕으로 가서 역이 안 골라졌다
+  let down = null;
+  stage.addEventListener('pointerdown', e => { pts.set(e.pointerId, { x: e.clientX, y: e.clientY }); last = null; down = pts.size === 1 ? { id: e.pointerId, x: e.clientX, y: e.clientY, moved: false } : null; });
   stage.addEventListener('pointermove', e => {
     if (!pts.has(e.pointerId)) return;
+    if (down && down.id === e.pointerId && !down.moved) {
+      if (Math.hypot(e.clientX - down.x, e.clientY - down.y) < 4) return;
+      down.moved = true; try { stage.setPointerCapture(e.pointerId); } catch {}
+    }
     const prev = pts.get(e.pointerId); pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
     const r = stage.getBoundingClientRect();
     if (pts.size === 1) { lmvView.x += e.clientX - prev.x; lmvView.y += e.clientY - prev.y; applyLineView(); return; }
@@ -7522,7 +7527,18 @@ function renderLineViewElev(){
     if (last) zoomLineView(d / last, cx, cy);
     last = d;
   });
-  const up = e => { pts.delete(e.pointerId); last = null; };
+  // 움직이지 않고 뗐으면: 화면에서 가장 가까운 역(16px 안)을 고른다(작은 동그라미를 정확히 안 눌러도 되게)
+  const up = e => {
+    const tap = down && down.id === e.pointerId && !down.moved && pts.size === 1 && e.type === 'pointerup';
+    pts.delete(e.pointerId); last = null; if (!pts.size) down = null;
+    if (!tap || !lmvData) return;
+    // 화면 점 → 노선도 좌표(그림의 실제 변환 행렬로: 창 크기가 바뀌어 그림이 늘거나 줄어도 맞게)
+    const g = stage.querySelector('svg > g'), m = g && g.getScreenCTM(); if (!m) return;
+    const p = new DOMPoint(e.clientX, e.clientY).matrixTransform(m.inverse()), reach = 16 / m.a; // 화면에서 16px
+    let best = null, bd = reach;
+    for (const [name, x, y] of lmvData.stations) { const dd = Math.hypot(x - p.x, y - p.y); if (dd < bd) { bd = dd; best = name; } }
+    if (best) showLineViewCard(best); else $('lmvCard').hidden = true;
+  };
   stage.addEventListener('pointerup', up); stage.addEventListener('pointercancel', up);
   stage.addEventListener('wheel', e => { e.preventDefault(); const r = stage.getBoundingClientRect(); zoomLineView(e.deltaY < 0 ? 1.15 : 1 / 1.15, e.clientX - r.left, e.clientY - r.top); }, { passive: false });
   $('lmvClose').addEventListener('click', closeLineView);
