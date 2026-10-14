@@ -1062,6 +1062,15 @@ body.linemap #map .pin:not(.sel),body.linemap #map .near-dot,body.linemap #map .
   body.tabs.sheet-h-min .side>*:not(.sheet-handle){visibility:hidden}
   body.tabs.sheet-h-min .sheet-handle{pointer-events:auto;width:72px;height:24px;margin:0 auto;border-radius:999px;background:var(--panel);border:1px solid var(--line);box-shadow:0 2px 10px rgba(15,20,40,.2)}
   body.tabs.sheet-h-min .sheet-handle span{background:var(--muted)}
+  /* 리퀴드 글래스: 반투명 바탕 + 뒤 지도 흐림, 위쪽 가는 빛줄(안쪽 하이라이트), 부드러운 그림자. 흐림을 못 쓰는 브라우저는 위의 단색 바탕 그대로 */
+  @supports ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
+    body.tabs .tabbar,body.tabs.sheet-h-min .sheet-handle{background:color-mix(in srgb,var(--panel) 70%,transparent);-webkit-backdrop-filter:blur(20px) saturate(180%);backdrop-filter:blur(20px) saturate(180%);
+      border:1px solid rgba(255,255,255,.55);box-shadow:0 10px 30px rgba(15,20,40,.22),0 2px 6px rgba(15,20,40,.10),inset 0 1px 0 rgba(255,255,255,.7),inset 0 -1px 0 rgba(15,20,40,.06)}
+    :root[data-theme="dark"] body.tabs .tabbar,:root[data-theme="dark"] body.tabs.sheet-h-min .sheet-handle{border-color:rgba(255,255,255,.14);box-shadow:0 10px 30px rgba(0,0,0,.45),0 2px 6px rgba(0,0,0,.25),inset 0 1px 0 rgba(255,255,255,.14)}
+  }
+  @media (prefers-color-scheme:dark){ @supports ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
+    :root:not([data-theme="light"]) body.tabs .tabbar,:root:not([data-theme="light"]) body.tabs.sheet-h-min .sheet-handle{border-color:rgba(255,255,255,.14);box-shadow:0 10px 30px rgba(0,0,0,.45),0 2px 6px rgba(0,0,0,.25),inset 0 1px 0 rgba(255,255,255,.14)}
+  }}
   .tabbar button{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 0;border:0;background:none;color:var(--muted);font:inherit;font-size:11px;font-weight:600;cursor:pointer}
   .tabbar svg{width:22px;height:22px}
   .tabbar button[aria-current="true"]{color:var(--blue)}
