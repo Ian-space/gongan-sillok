@@ -865,6 +865,17 @@ body.linemap #map .pin:not(.sel),body.linemap #map .near-dot,body.linemap #map .
 .lmv-card[hidden]{display:none}
 .lmv-trip{position:absolute;z-index:3;left:0;right:0;bottom:0;max-height:46%;overflow-y:auto;touch-action:pan-y;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;padding:10px 12px calc(12px + env(safe-area-inset-bottom,0px));border-radius:16px 16px 0 0;background:var(--panel);box-shadow:0 -6px 24px rgba(15,20,40,.18)}
 .lmv-trip[hidden]{display:none}
+/* 휴대폰 노선도 역 찾기 칸(컴퓨터는 왼쪽 패널 입력칸을 쓴다) */
+.lmv-psearch{margin:0 12px 6px}
+.lmv-psearch input{width:100%;height:40px;padding:0 14px;border:1px solid var(--line);border-radius:999px;background:var(--paper);color:var(--ink);font:inherit;font-size:16px}
+/* 노선도 출발 시각 */
+.lmv-when{display:grid;gap:4px;margin:0 0 8px}
+.lmv-wlabel{font-size:12px;font-weight:700;color:var(--muted)}
+.lmv-when .d-when{margin:0}
+@media (min-width:900px){
+  .lmv-psearch{display:none}
+  .lmv-side .lmv-trip .lmv-when{display:none} /* 컴퓨터는 위 입력칸 아래에 있다 */
+}
 /* 노선도 본문: 휴대폰은 위아래(출발·도착 줄 → 노선도, 카드·경로는 아래에 겹쳐), 컴퓨터는 왼쪽 패널 + 오른쪽 노선도 */
 .lmv-body{position:relative;flex:1;min-height:0;display:flex;flex-direction:column}
 .lmv-side{display:contents}
@@ -1365,6 +1376,7 @@ html{touch-action:manipulation}
     <button type="button" class="lmv-elev" id="lmvAll" aria-label="노선도 전체 보기" title="전체 보기"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>전체</button>
     <button type="button" class="lmv-x" id="lmvClose" aria-label="지하철 노선도 닫기">×</button>
   </div>
+  <form class="lmv-psearch" id="lmvPSearch" role="search"><input type="search" id="lmvPInput" list="lmvNames" placeholder="역 이름으로 찾기" aria-label="노선도에서 역 찾기"></form> <!-- 휴대폰만 -->
   <div class="lm-chips lmv-chips" id="lmvChips"></div>
   <div class="lm-legend lmv-legend" id="lmvLegend" hidden><span class="lm-key ok">엘리베이터 있음</span><span class="lm-key no">지상 엘리베이터 없음</span><span class="lm-key warn">점검 중</span><span class="lm-key none">정보 없음</span><button type="button" class="linkbtn" id="lmvMap">지도에서 보기</button></div>
   <div class="lm-legend lmv-legend" id="lmvTlLegend" hidden><span class="lm-key tl-in">개찰구 안 화장실</span><span class="lm-key tl-out">개찰구 밖만</span><span class="muted">모으는 중인 역은 아직 안 보여요</span></div>
@@ -3848,7 +3860,7 @@ function departFrom(ms){
 // 출발 시각 고르기: [‹ 오늘 ›] [‹ 08시 ›] [‹ 30분 ›] [지금 출발]. 날짜 글자를 누르면 달력, 분은 5분씩.
 // 화살표를 여러 번 누를 수 있으니 멈춘 뒤 한 번만 다시 찾는다
 let departTimer = 0;
-function departPicker(p){
+function departPicker(p, onChange){ // onChange: 정하면 경로를 다시 찾는 대신 이걸 부른다(노선도 길찾기)
   const box = el('div','d-when'), cur = () => state.departAt ? state.departAt.t : Math.floor(kstNowMs() / 60e3) * 60e3;
   // 가운데 글자 위에 휴대폰 기본 고르기 창(달력·목록)을 투명하게 덮는다. 누르면 바로 그 창이 열린다(따로 여는 방식은 휴대폰에서 막힌다)
   const seg = (label, onPrev, onNext, pick) => {
@@ -3866,7 +3878,7 @@ function departPicker(p){
     state.departAt = departFrom(Math.min(hi, Math.max(lo, ms)));
     paint();
     clearTimeout(departTimer);
-    departTimer = setTimeout(() => { if (state.sel !== p.id) return; state.transit = null; clearRoute(); findTransit(p); }, 700);
+    departTimer = setTimeout(() => { if (onChange) return onChange(); if (state.sel !== p.id) return; state.transit = null; clearRoute(); findTransit(p); }, 700);
   };
   const dayStart = () => Math.floor(cur() / DAY) * DAY, hm = () => cur() - dayStart();
   const iso = ms => new Date(ms).toISOString().slice(0, 10);
@@ -3887,7 +3899,7 @@ function departPicker(p){
   const min = seg('분', () => set(dayStart() + h0() + ((Math.ceil(m() / step) - 1 + 12) % 12) * step),
                         () => set(dayStart() + h0() + ((Math.floor(m() / step) + 1) % 12) * step), mSel);
   const now = el('button','d-wnow', '지금 출발'); now.type = 'button';
-  now.addEventListener('click', () => { if (!state.departAt) return; clearTimeout(departTimer); state.departAt = null; state.transit = null; clearRoute(); findTransit(p); });
+  now.addEventListener('click', () => { if (!state.departAt) return; clearTimeout(departTimer); state.departAt = null; if (onChange) { paint(); onChange(); return; } state.transit = null; clearRoute(); findTransit(p); });
   box.appendChild(now);
   function paint(){
     const t = new Date(cur());
@@ -7287,7 +7299,7 @@ async function openLineView(){
     const [m] = await Promise.all([lmvData ? lmvData : fetch('linemap.json?v=1').then(r => { if (!r.ok) throw new Error('linemap'); return r.json(); }), loadLineData()]);
     lmvData = lmvSpread(m);
   } catch { $('lmvStage').replaceChildren(el('p','muted lmv-wait','노선도를 불러오지 못했어요. 잠시 뒤 다시 시도해 주세요.')); return; }
-  drawLineView(true); renderLineViewHome();
+  drawLineView(true); renderLineViewHome(); bindLineViewPhoneSearch();
 }
 function closeLineView(){ $('lmView').hidden = true; }
 function drawLineView(reset){
@@ -7460,6 +7472,19 @@ function lmvBadge(name){
   const n = (/^(\d)호선$/.exec(l) || [])[1], b = el('span', n ? 'd-lb num' : 'd-lb', n || LINE_SHORT[l] || l.replace(/선$/, ''));
   b.style.background = lineColorOf(l); b.title = l; return b;
 }
+// 휴대폰 노선도 위 역 찾기 칸: 고르거나 입력 후 엔터 → 그 역으로 옮겨 역 카드(출발·도착 고르기)
+function bindLineViewPhoneSearch(){
+  const f = $('lmvPSearch'), i = $('lmvPInput'); if (f.dataset.on) return; f.dataset.on = '1';
+  const go = () => {
+    const q = lmvNm(i.value); if (!q || !lmvData) return;
+    const names = lmvData.stations.map(s => s[0]);
+    const hit = names.find(n => lmvNm(n) === q) || names.find(n => lmvNm(n).startsWith(q)) || names.find(n => n.includes(q));
+    if (!hit) { toast(`'${i.value.trim()}' 역을 노선도에서 찾지 못했어요.`); return; }
+    i.value = ''; i.blur(); focusLineViewStation(hit);
+  };
+  f.addEventListener('submit', e => { e.preventDefault(); go(); });
+  i.addEventListener('change', () => { if (lmvData && lmvData.stations.some(s => s[0] === i.value)) go(); }); // 목록에서 고르면 바로
+}
 // 컴퓨터 노선도 왼쪽 패널 맨 위(네이버 지도 지하철 길찾기처럼): 지역 고르기, 출발·(경유)·도착 입력, [다시입력] [+ 경유지] [지하철 길찾기], 최근 검색, 저장한 역
 let lmvViaOpen = false;
 function renderLineViewHome(){
@@ -7506,7 +7531,7 @@ function renderLineViewHome(){
       if (!lmvRoute.from || !lmvRoute.to) { toast('출발역과 도착역을 넣어 주세요.'); return; }
       lmvCardHide(); renderLineViewRoute(); drawLineView(false); findLineViewTrip();
     }));
-  box.append(regions, inputs, dl, acts);
+  box.append(regions, inputs, dl, lineViewWhen(), acts);
   // 최근 검색(경로와 역), 저장한 역(대중교통 창 별표)
   const secs = el('div','lmv-secs'); box.appendChild(secs); // 경로·역 카드가 나오면 접는다(결과가 입력칸 바로 아래 오게)
   const sec = (title, items, empty) => { secs.appendChild(el('h4', null, title)); const ul = el('div','lmv-recent'); items.forEach(x => ul.appendChild(x)); if (!items.length) ul.appendChild(el('p','muted', empty)); secs.appendChild(ul); };
@@ -7576,6 +7601,11 @@ async function findLineViewTrip(){
   if (r.status === 'ok') saveLineViewRecent();
   renderLineViewTrip(); drawLineView(false); fitLineViewTrip();
 }
+// 노선도 길찾기 출발 시각(지도 길찾기와 같은 값). 정하면 그 시각 기준으로 첫차·막차·다음 열차를 다시 보여 준다(실시간 도착은 '지금'일 때만)
+function lineViewWhen(){
+  const w = el('div','lmv-when'); w.append(el('span','lmv-wlabel','출발 시각'), departPicker(null, () => { if (lmvTrip) renderLineViewTrip(); renderLineViewHome(); }));
+  return w;
+}
 // 경로 창 높이 손잡이: 위아래로 끌면 창 높이가 바뀌고(노선도와 단계를 함께 보게), 누르면 반 ↔ 거의 전체. 안의 내용은 손가락으로 위아래 스크롤
 let lmvTripH = 0;
 function lineViewTripGrip(box){
@@ -7595,7 +7625,7 @@ function renderLineViewTrip(){
   box.hidden = !t; if (!t) { box.replaceChildren(); return; }
   const head = el('div','head'), x = el('button','linkbtn','닫기'); x.type = 'button';
   x.addEventListener('click', () => { lmvTrip = null; lmvTripH = 0; renderLineViewTrip(); drawLineView(false); });
-  head.append(el('b', null, '지하철 경로'), x); box.replaceChildren(lineViewTripGrip(box), head);
+  head.append(el('b', null, '지하철 경로'), x); box.replaceChildren(lineViewTripGrip(box), head, lineViewWhen());
   box.classList.toggle('sized', !!lmvTripH); box.style.height = lmvTripH ? lmvTripH + 'px' : '';
   if (t.status === 'loading') { box.appendChild(el('p','muted','경로를 찾는 중…')); return; }
   if (t.status === 'error') { box.appendChild(el('p','muted', t.msg)); return; }

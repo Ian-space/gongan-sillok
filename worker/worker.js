@@ -36,7 +36,7 @@
 //   POST /photoplace { image: base64 JPEG 1장, x, y }        → 사진+위치로 그 자리의 가게 후보(간판 글자, AI가 고른 곳, 가까운 곳) (로그인 필요)
 
 const ALLOWED_ORIGINS = ['https://ian-space.github.io', 'http://localhost:8765'];
-const VERSION = '2026-10-14.27'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
+const VERSION = '2026-10-15.1'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
 // 로그인 확인용 Supabase 주소와 공개 키(사이트 코드에도 있는 공개 값)
 const SUPABASE_URL = 'https://qktrghajroxddrbpwtvn.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_j-kp8YKsQTczGcsQX74OxA_mfI7DoZw';
@@ -441,7 +441,8 @@ async function handle(kind, input, { request, env, ctx, send, reply }) {
         const side = rows => Math.sign(rows.reduce((a, [, d]) => a + Math.sign(num(d) - num(cur)), 0));
         let pick = side(t1) === want && side(t2) !== want ? t1 : side(t2) === want && side(t1) !== want ? t2 : null;
         // 내리는 역까지 가는 열차만(중간 역에서 끝나는 열차는 막차가 아니다): 종착역이 내리는 역이거나 그 너머
-        let reach = r => !end || r[1] === end || Math.sign(num(r[1]) - num(end)) === want;
+        // 2호선은 순환선이라 행선지가 내리는 역 '앞'으로 적혀 있어도 계속 돈다(성수행·을지로입구행…): 거르지 않는다
+        let reach = r => !end || line === '2' || r[1] === end || Math.sign(num(r[1]) - num(end)) === want;
         if (!pick && resolve) { const got = await resolve().catch(e => { diag = { err: e instanceof Response ? 'reply ' + e.status : String((e && e.message) || e).slice(0, 120) }; return null; }); if (got) { pick = got.rows; reach = got.reach || (() => true); } }
         // 그래도 못 가리면 두 방향을 합친다(가장 이른 첫차·가장 늦은 막차, 대략)
         const both = !pick;
