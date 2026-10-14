@@ -36,7 +36,7 @@
 //   POST /photoplace { image: base64 JPEG 1장, x, y }        → 사진+위치로 그 자리의 가게 후보(간판 글자, AI가 고른 곳, 가까운 곳) (로그인 필요)
 
 const ALLOWED_ORIGINS = ['https://ian-space.github.io', 'http://localhost:8765'];
-const VERSION = '2026-10-14.21'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
+const VERSION = '2026-10-14.22'; // 응답 머리말 X-GS-Version. 자동 배포가 됐는지 확인할 때 본다
 // 로그인 확인용 Supabase 주소와 공개 키(사이트 코드에도 있는 공개 값)
 const SUPABASE_URL = 'https://qktrghajroxddrbpwtvn.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_j-kp8YKsQTczGcsQX74OxA_mfI7DoZw';
@@ -290,19 +290,23 @@ async function handle(kind, input, { request, env, ctx, send, reply }) {
     const st = stName(input.station);
     if (!st || st.length > 20) return reply(400, { error: 'bad station' });
     const gk = dataKey(); if (!gk) return reply(503, { error: 'fstexit off' });
-    const all = await edgeCached('fst1:all', 86400, async () => {
+    // 하루마다 새로. 빈 목록·오류(일일 한도 등)는 실패로 보고 KV의 전 것을 쓴다(빈 목록이 하루 동안 저장돼 빠른하차가 사라졌던 일)
+    let why = '';
+    await allow();
+    const all = await kvFresh(env, ctx, 'fst2:all', 86400000, async () => {
       const rows = [];
       for (let page = 1; page <= 4; page++) {
         const r = await fetch(`https://apis.data.go.kr/B553766/inout/getFstExit?serviceKey=${encodeURIComponent(gk)}&pageNo=${page}&numOfRows=1000&dataType=JSON`, { signal: AbortSignal.timeout(8000) });
-        const j = await r.json().catch(() => null);
-        const b = j && j.response && j.response.body; if (!b) return rows.length ? JSON.stringify(rows) : null;
+        const t = await r.text(); let j = null; try { j = JSON.parse(t); } catch { why = `${r.status} ${t.replace(/\s+/g, ' ').slice(0, 80)}`; }
+        const b = j && j.response && j.response.body;
+        if (!b) { why = why || JSON.stringify((j && (j.response && j.response.header)) || j || '').slice(0, 120); break; }
         const it = b.items && b.items.item; const list = !it ? [] : Array.isArray(it) ? it : [it];
         for (const x of list) rows.push([stName(x.stnNm), String(x.lineNm || ''), stName(x.drtnInfo), String(x.qckgffVhclDoorNo || ''), String(x.plfmCmgFac || '')]);
         if (rows.length >= +b.totalCount || list.length < 1000) break;
       }
-      return JSON.stringify(rows);
+      return rows.length >= 500 ? JSON.stringify(rows) : null;
     });
-    if (!all) return reply(502, { error: 'fstexit upstream' });
+    if (!all) return reply(502, { error: 'fstexit upstream', why });
     const list = JSON.parse(all).filter(x => x[0] === st).map(([, line, dir, door, fac]) => ({ line, dir, door, fac }));
     return reply(200, { list });
   }
@@ -372,18 +376,20 @@ async function handle(kind, input, { request, env, ctx, send, reply }) {
     if (!st || st.length > 20) return reply(400, { error: 'bad station' });
     const gk = dataKey(); if (!gk) return reply(503, { error: 'fsttrans off' });
     const s = v => String(v ?? '').trim();
-    const all = await edgeCached('ftr1:all', 86400, async () => {
+    let why = '';
+    await allow();
+    const all = await kvFresh(env, ctx, 'ftr2:all', 86400000, async () => {
       const rows = [];
       for (let page = 1; page <= 10; page++) {
         const r = await fetch(`https://api.odcloud.kr/api/15151816/v1/uddi:e9c2bb71-05e8-4767-8397-9df787ee70f6?page=${page}&perPage=1000&returnType=JSON&serviceKey=${encodeURIComponent(gk)}`, { signal: AbortSignal.timeout(8000) });
-        const j = await r.json().catch(() => null);
-        if (!j || !Array.isArray(j.data)) return rows.length ? JSON.stringify(rows) : null;
+        const t = await r.text(); let j = null; try { j = JSON.parse(t); } catch { /* 아래에서 */ }
+        if (!j || !Array.isArray(j.data)) { why = `${r.status} ${t.replace(/\s+/g, ' ').slice(0, 100)}`; return rows.length >= 500 ? JSON.stringify(rows) : null; }
         for (const x of j.data) rows.push([stName(x['역명']), s(x['철도운영기관명']), s(x['노선명']), stName(x['종착역명']), s(x['환승철도운영기관명']), s(x['환승선']), stName(x['환승이후역명']), stName(x['환승기점역명']), +x['차량순서'] || 0, +x['차량출입문번호'] || 0]);
         if (rows.length >= +j.totalCount || j.data.length < 1000) break;
       }
-      return JSON.stringify(rows);
+      return rows.length >= 500 ? JSON.stringify(rows) : null;
     });
-    if (!all) return reply(502, { error: 'fsttrans upstream' });
+    if (!all) return reply(502, { error: 'fsttrans upstream', why });
     const list = JSON.parse(all).filter(x => x[0] === st).map(([, op, line, end, xop, xline, xnext, xfrom, car, door]) => ({ op, line, end, xop, xline, xnext, xfrom, car, door }));
     return reply(200, { list });
   }
@@ -616,7 +622,9 @@ async function handle(kind, input, { request, env, ctx, send, reply }) {
       return cached(`arr:sw:${st}`, 20, async () => {
         const j = await get(`http://swopenapi.seoul.go.kr/api/subway/${encodeURIComponent(env.SEOUL_SUBWAY_KEY)}/json/realtimeStationArrival/0/20/${encodeURIComponent(st)}`);
         // subwayId: 1001~1009 = 1~9호선 등. updnLine: 상행·하행·내선·외선. arvlMsg2: '전역 도착', '3분 후 (천호)'. barvlDt: 도착까지 초
-        return JSON.stringify({ list: arr(j && j.realtimeArrivalList).slice(0, 20).map(x => ({ line: String(x.subwayId || ''), updn: String(x.updnLine || ''), dir: String(x.trainLineNm || ''),
+        const em = (j && (j.errorMessage || j.RESULT)) || null; // 일일 한도 초과 등은 목록 없이 이 칸만 온다
+        if (!(j && j.realtimeArrivalList) && em) console.log(JSON.stringify({ arrive_sw: String(em.code || em.CODE || ''), msg: String(em.message || em.MESSAGE || '').slice(0, 80) }));
+        return JSON.stringify({ ...(!(j && j.realtimeArrivalList) && em && { why: String(em.code || em.CODE || '') }), list: arr(j && j.realtimeArrivalList).slice(0, 20).map(x => ({ line: String(x.subwayId || ''), updn: String(x.updnLine || ''), dir: String(x.trainLineNm || ''),
           msg: String(x.arvlMsg2 || ''), sec: +x.barvlDt || 0, express: String(x.btrainSttus || '') })) });
       });
     }
