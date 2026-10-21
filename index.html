@@ -4397,10 +4397,16 @@ function stopArrivals(p, max = 15){
         const live = v[2] < 999;
         tl.append(el('b', live ? null : 'off', v[0]), v[1] != null && v[1] !== '' ? el('span', null, `${v[1]}정류장`) : '');
       }
+      // 경기 버스는 다니지 않는 노선도 시간 없이 오므로 시간 칸을 채운다: 첫차 전·막차 뒤면 '운행 종료'
+      const idle = tt.length ? null : el('b','off', '도착 정보 없음'); if (idle) tl.prepend(idle);
       if (x.low) tl.appendChild(el('span','t-low', '저상'));
       li.appendChild(tl);
       const fl = el('div','ba-fl'); fl.hidden = true; li.appendChild(fl);
-      firstLast(x).then(v => { if (!v || !fl.isConnected) return; fl.textContent = `첫차 ${v[0]} · 막차 ${v[1]}`; fl.hidden = false; note.hidden = false; });
+      firstLast(x).then(v => {
+        if (!v || !fl.isConnected) return; fl.textContent = `첫차 ${v[0]} · 막차 ${v[1]}`; fl.hidden = false; note.hidden = false;
+        const f = svcMin(v[0]), l = svcMin(v[1]), now = svcNow().min; // 막차는 기점 출발이라 한 시간 여유
+        if (idle && f != null && l != null && (now < f || now > l + 60)) idle.textContent = '운행 종료';
+      });
       ul.appendChild(li);
     }
     const note = el('li','ba-note','첫차·막차는 기점(차고지) 출발 시각이에요'); note.hidden = true; ul.appendChild(note);
