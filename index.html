@@ -620,6 +620,8 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
 .ba-no{font-size:18px;font-weight:800;white-space:nowrap}
 .ba-dir{color:var(--muted);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ba-end{font-size:14px;margin:2px 0 0 24px}
+.ba-fl{font-size:12px;color:var(--muted);margin:2px 0 0 24px}
+.bus-arr li.ba-note{font-size:12px;color:var(--muted);border:0;padding-top:4px}
 .ba-times{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 6px;margin:3px 0 0 24px;font-size:13px;color:var(--muted)}
 .ba-times b{color:#D93025;font-weight:700}
 .ba-times b.off{color:var(--muted);font-weight:500}
@@ -654,6 +656,8 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
 .d-lb.num{width:20px;padding:0}
 .d-name.stack .d-lines{display:flex;flex-wrap:wrap;margin-top:6px;vertical-align:0}
 .d-name.tight{font-size:20px}
+.d-name.d-here{cursor:pointer;border-radius:6px}
+.d-name.d-here:hover{text-decoration:underline;text-underline-offset:4px;text-decoration-thickness:1px}
 .d-meta{font-size:13px;color:var(--muted);margin:4px 0 0}
 .d-close{border:0;background:transparent;font-size:22px;line-height:1;cursor:pointer;color:var(--muted);padding:2px 4px}
 .d-head-acts{display:flex;align-items:center;gap:6px;flex:none}
@@ -2304,6 +2308,15 @@ function renderDetail(){
     }
     nameEl.append(' ', wrap);
   }
+  // 이름을 누르면 지도가 이 장소로 돌아와 확대된다(지도를 옮기거나 줄여서 핀을 놓쳤을 때)
+  const goHere = () => {
+    if (!map || !(p.lat && p.lng)) return;
+    map.setZoom(Math.max(map.getZoom(), 17)); map.setCenter(new naver.maps.LatLng(p.lat, p.lng));
+    if (isPhone()) map.panBy(new naver.maps.Point(0, Math.round(detailHeight() / 2)));
+  };
+  nameEl.classList.add('d-here'); nameEl.tabIndex = 0; nameEl.title = '지도에서 이 장소로 이동';
+  nameEl.addEventListener('click', goHere);
+  nameEl.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); goHere(); } });
   t.appendChild(nameEl);
   // 종류(카페 등)는 번역돼도 되고, 주소는 번역하지 않게(브라우저 번역이 동네 이름을 뜻으로 바꾸지 않게)
   if (p.type || p.addr) { const mt = el('p','d-meta', p.type || ''); if (p.addr) mt.append(p.type ? ', ' : '', el('span','notranslate', p.addr)); t.appendChild(mt); }
@@ -4263,17 +4276,16 @@ function stationBoard(p){
   const quiet = () => { const n = seoulNow().min; return n >= 60 && n < 330 ? '운행 종료' : '도착 정보 없음'; };
   // 빈 방향 칸: 역 시간표(/sched)로 막차가 지났거나 첫차 전이면 '운행 종료'와 다음 첫차 시각을 보인다
   const firstTrain = (label, next, lead, off) => {
-    const t = seoulNow(), late = t.min < 180, now = late ? t.min + 1440 : t.min;
+    const t = svcNow(), now = t.min;
     const n = /^(\d)호선$/.exec(label);
-    const ask = wd => schedFetch({ type: 'subway', station: here, line: n ? n[1] : 'etc', lineName: label, next, week: wd === 0 ? '3' : wd === 6 ? '2' : '1' });
-    const today = late ? (t.weekday + 6) % 7 : t.weekday; // 새벽 3시 전은 전날 시간표
+    const ask = week => schedFetch({ type: 'subway', station: here, line: n ? n[1] : 'etc', lineName: label, next, week: String(week) });
+    const today = svcWeek(t.day); // 새벽 3시 전은 전날 시간표, 공휴일은 휴일 시간표
     ask(today).then(d => {
       if (!d || d.none || !lead.isConnected) return;
       const f = svcMin(d.first), l = svcMin(d.last); if (f == null || l == null || (now >= f && now <= l)) return;
       // 다음 첫차: 첫차 전이면 오늘 것, 막차 뒤면 다음 운행일(자정 넘었으면 달력상 오늘) 것
-      const nextDay = now < f ? today : late ? t.weekday : (t.weekday + 1) % 7;
-      const wk = wd => wd === 0 ? 3 : wd === 6 ? 2 : 1;
-      return (wk(nextDay) === wk(today) ? Promise.resolve(d) : ask(nextDay)).then(e => {
+      const nextWeek = now < f ? today : svcWeek(t.late ? t.ymd : ymdShift(t.ymd, 1));
+      return (nextWeek === today ? Promise.resolve(d) : ask(nextWeek)).then(e => {
         if (!lead.isConnected) return;
         lead.textContent = '운행 종료'; off.textContent = e && !e.none && e.first ? `첫차 ${e.first}` : '운행 종료';
       });
@@ -4387,9 +4399,19 @@ function stopArrivals(p, max = 15){
       }
       if (x.low) tl.appendChild(el('span','t-low', '저상'));
       li.appendChild(tl);
+      const fl = el('div','ba-fl'); fl.hidden = true; li.appendChild(fl);
+      firstLast(x).then(v => { if (!v || !fl.isConnected) return; fl.textContent = `첫차 ${v[0]} · 막차 ${v[1]}`; fl.hidden = false; note.hidden = false; });
       ul.appendChild(li);
     }
+    const note = el('li','ba-note','첫차·막차는 기점(차고지) 출발 시각이에요'); note.hidden = true; ul.appendChild(note);
     return true;
+  };
+  // 노선별 첫차·막차(중계 서버 /sched): 서울은 정류소 하나로 모든 노선, 경기는 노선마다(그날 평일·토·휴일 시간표)
+  const seoulSched = p.city === 'seoul' ? schedFetch({ type: 'bus', city: 'seoul', ars: p.ars }) : null;
+  const firstLast = x => {
+    if (seoulSched) return seoulSched.then(d => { const y = d && (d.list || []).find(y => y.name === x.name); return y && y.first && y.last ? [y.first, y.last] : null; });
+    if (!/^\d{6,10}$/.test(x.rid || '')) return Promise.resolve(null);
+    return schedFetch({ type: 'bus', city: 'gg', route: x.rid }).then(d => ggFirstLast(d, svcWeek(svcNow().day)));
   };
   const tick = () => liveFetch(body).then(list => { if (draw(list) && ul.isConnected) setTimeout(() => { if (ul.isConnected) { liveCache.delete(JSON.stringify(body)); tick(); } }, 30000); });
   setTimeout(tick, 0); // 화면에 붙은 뒤에 그린다
@@ -4457,12 +4479,34 @@ function schedFetch(body){
   const p = proxyPost('/sched', body).then(r => r.ok ? r.json() : null).catch(() => null);
   schedCache.set(k, p); return p;
 }
+// 관공서 공휴일(대체·임시 공휴일 포함). 지하철·경기 버스는 이날 휴일 시간표를 쓴다. 해가 바뀌기 전에 다음 해 날짜를 더해야 한다
+const HOLIDAYS = new Set(('20260101 20260216 20260217 20260218 20260301 20260302 20260505 20260524 20260525 20260603 20260606 20260815 20260817 '
+  + '20260924 20260925 20260926 20261003 20261005 20261009 20261225 '
+  + '20270101 20270206 20270207 20270208 20270209 20270301 20270505 20270513 20270606 20270815 20270816 20270914 20270915 20270916 '
+  + '20271003 20271004 20271009 20271011 20271225 20271227').split(' '));
+const ymdShift = (ymd, days) => { const d = new Date(Date.UTC(+ymd.slice(0, 4), +ymd.slice(4, 6) - 1, +ymd.slice(6, 8)) + days * DAY); return `${d.getUTCFullYear()}${p2(d.getUTCMonth() + 1)}${p2(d.getUTCDate())}`; };
+// 그날 시간표: 1 평일 · 2 토요일 · 3 일요일·공휴일
+function svcWeek(ymd){
+  const wd = new Date(Date.UTC(+ymd.slice(0, 4), +ymd.slice(4, 6) - 1, +ymd.slice(6, 8))).getUTCDay();
+  return HOLIDAYS.has(ymd) || wd === 0 ? 3 : wd === 6 ? 2 : 1;
+}
+// 지금의 운행일(새벽 3시 전은 전날 밤의 연장)과 그 운행일 기준의 분
+function svcNow(){
+  const t = seoulNow(), late = t.min < 180, ymd = t.stamp.slice(0, 8);
+  return { day: late ? ymdShift(ymd, -1) : ymd, min: late ? t.min + 1440 : t.min, late, ymd };
+}
+// 경기 버스 노선 시간표({ wd, sat, sun: { first: [상행, 하행], last: [...] } })에서 그날의 첫차·막차. 상행·하행 중 어느 쪽인지 몰라서 넓게(이른 첫차, 늦은 막차)
+function ggFirstLast(d, week){
+  const w = d && (d[week === 1 ? 'wd' : week === 2 ? 'sat' : 'sun'] || d.wd); if (!w) return null;
+  const fs = w.first.filter(v => svcMin(v) != null), ls = w.last.filter(v => svcMin(v) != null); if (!fs.length || !ls.length) return null;
+  return [fs.sort((a, b) => svcMin(a) - svcMin(b))[0], ls.sort((a, b) => svcMin(b) - svcMin(a))[0]];
+}
 // 하루 운행 순서의 분(새벽 3시 전은 전날 밤의 연장: 00:46 → 24:46)
 const svcMin = hm => { const m = /^(\d\d):(\d\d)$/.exec(hm || ''); if (!m) return null; const h = +m[1]; return (h < 3 ? h + 24 : h) * 60 + +m[2]; };
-function schedNote(s, at){ // at: { min, weekday } 그 구간을 탈 무렵(한국 시각)
+function schedNote(s, at){ // at: { min, weekday, ymd } 그 구간을 탈 무렵(한국 시각)
   const box = el('span','t-elev'); box.hidden = true;
   const late = at.min < 180, wd = late ? (at.weekday + 6) % 7 : at.weekday; // 새벽은 전날 시간표
-  const week = wd === 0 ? 3 : wd === 6 ? 2 : 1;
+  const week = at.ymd ? svcWeek(late ? ymdShift(at.ymd, -1) : at.ymd) : wd === 0 ? 3 : wd === 6 ? 2 : 1; // 공휴일은 휴일 시간표
   const sub = s.mode === 'subway';
   const body = sub ? (s.next1 ? { type: 'subway', station: s.from, line: s.lineCode >= 1 && s.lineCode <= 9 ? String(s.lineCode) : 'etc', lineName: s.lineName || '', next: s.next1, to: s.to, week: String(week), list: true } : null)
     : s.city === 'seoul' && s.ars ? { type: 'bus', city: 'seoul', ars: s.ars }
@@ -4487,10 +4531,8 @@ function schedNote(s, at){ // at: { min, weekday } 그 구간을 탈 무렵(한�
       if (!x) return;
       first = x.first; last = x.last; slack = 60; tail = ' · 차고지 출발 기준';
     } else {
-      // 경기 버스: 상행·하행 중 어느 쪽인지 몰라서 넓게(이른 첫차, 늦은 막차)
-      const w = d[week === 1 ? 'wd' : week === 2 ? 'sat' : 'sun'] || d.wd; if (!w) return;
-      const fs = w.first.filter(v => svcMin(v) != null), ls = w.last.filter(v => svcMin(v) != null); if (!fs.length || !ls.length) return;
-      first = fs.sort((a, b) => svcMin(a) - svcMin(b))[0]; last = ls.sort((a, b) => svcMin(b) - svcMin(a))[0]; slack = 60; tail = ' · 차고지 출발 기준';
+      const fl = ggFirstLast(d, week); if (!fl) return;
+      [first, last] = fl; slack = 60; tail = ' · 차고지 출발 기준';
     }
     const f = svcMin(first), l = svcMin(last); if (f == null || l == null) return;
     const now = late ? at.min + 1440 : at.min;
@@ -4726,7 +4768,7 @@ function routeSteps(r){
     // 지하철에서 내려 걸어가야 하면 나갈 출구를 눈에 띄게
     // 첫차·막차: 이 구간을 탈 무렵 = 출발 시각 + 앞 구간들에 걸린 시간
     const base = routeNow(), off = r.segs.slice(0, i).reduce((a, x) => a + (x.minutes || 0), 0), t = base.min + off;
-    li.appendChild(schedNote(s, { min: t % 1440, weekday: (base.weekday + Math.floor(t / 1440)) % 7 }));
+    li.appendChild(schedNote(s, { min: t % 1440, weekday: (base.weekday + Math.floor(t / 1440)) % 7, ymd: ymdShift(base.stamp.slice(0, 8), Math.floor(t / 1440)) }));
     if (sub && s.outExit) li.append(el('br'), el('span','t-exit', `${String(s.to).replace(/역$/, '')}역 ${s.outExit}번 출구로 나가기`));
     // 지하철역 엘리베이터·빠른하차·동선: 칩 한 줄, 누르면 자세히
     if (sub) li.appendChild(accessChips(r, i));
