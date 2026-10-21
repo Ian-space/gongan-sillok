@@ -4255,10 +4255,30 @@ function stationBoard(p){
     if (!lineData) { if (!askedLines) { askedLines = true; loadLineData().then(() => { if (box.isConnected) draw(); }).catch(() => {}); } return ['', '']; }
     const k = Object.keys(LINE_INFO).find(x => LINE_INFO[x][0] === label), seq = (k && lineData.lines[k]) || [];
     const i = seq.findIndex(x => sbName(x[0]) === here);
-    return i < 0 ? ['', ''] : [sbName((seq[i - 1] || [])[0]), sbName((seq[i + 1] || [])[0])];
+    if (i < 0) return ['', ''];
+    const ring = k === '02호선', at = j => seq[ring ? (j + seq.length) % seq.length : j] || []; // 2호선 자료는 시청에서 시작해 충정로에서 끝난다(순환)
+    return [sbName(at(i - 1)[0]), sbName(at(i + 1)[0])];
   };
   // 운행이 없는 새벽(1시~5시 반)은 '운행 종료', 낮에 비어 있으면 '도착 정보 없음'
   const quiet = () => { const n = seoulNow().min; return n >= 60 && n < 330 ? '운행 종료' : '도착 정보 없음'; };
+  // 빈 방향 칸: 역 시간표(/sched)로 막차가 지났거나 첫차 전이면 '운행 종료'와 다음 첫차 시각을 보인다
+  const firstTrain = (label, next, lead, off) => {
+    const t = seoulNow(), late = t.min < 180, now = late ? t.min + 1440 : t.min;
+    const n = /^(\d)호선$/.exec(label);
+    const ask = wd => schedFetch({ type: 'subway', station: here, line: n ? n[1] : 'etc', lineName: label, next, week: wd === 0 ? '3' : wd === 6 ? '2' : '1' });
+    const today = late ? (t.weekday + 6) % 7 : t.weekday; // 새벽 3시 전은 전날 시간표
+    ask(today).then(d => {
+      if (!d || d.none || !lead.isConnected) return;
+      const f = svcMin(d.first), l = svcMin(d.last); if (f == null || l == null || (now >= f && now <= l)) return;
+      // 다음 첫차: 첫차 전이면 오늘 것, 막차 뒤면 다음 운행일(자정 넘었으면 달력상 오늘) 것
+      const nextDay = now < f ? today : late ? t.weekday : (t.weekday + 1) % 7;
+      const wk = wd => wd === 0 ? 3 : wd === 6 ? 2 : 1;
+      return (wk(nextDay) === wk(today) ? Promise.resolve(d) : ask(nextDay)).then(e => {
+        if (!lead.isConnected) return;
+        lead.textContent = '운행 종료'; off.textContent = e && !e.none && e.first ? `첫차 ${e.first}` : '운행 종료';
+      });
+    });
+  };
   const draw = () => {
     // 고를 노선: 이 역의 노선(역 카드) + 실시간 자료에 나온 노선. 실시간이 없어도 노선 단추·막대·방면 칸은 그대로 두고 시간 칸만 비운다
     const live = [...new Set((list || []).map(x => subwayIdName(x.line)).filter(Boolean))];
@@ -4279,14 +4299,18 @@ function stationBoard(p){
     const toward = x => sbName((/-\s*(.+?)방면/.exec(x.dir) || [])[1]);
     const dest = x => sbName((/^(.+?)행/.exec(x.dir) || [])[1]);
     const cols = [0, 1].map(k => mine.filter(x => side(x) === k));
-    const nb = mine.length ? ['', ''] : neighbors(pick);
+    const nb = cols.every(xs => xs.length) ? ['', ''] : neighbors(pick);
     const near = cols.map((xs, k) => (xs.find(toward) && toward(xs.find(toward))) || nb[k] || '');
     bar.style.setProperty('--c', c);
     bar.append(el('span','sb-end l', near[0] ? `‹ ${near[0]}` : ''), el('span','sb-here', here), el('span','sb-end r', near[1] ? `${near[1]} ›` : ''));
     cols.forEach((xs, k) => {
       const card = el('div','sb-col');
       card.appendChild(el('b','sb-dir', near[k] ? `${near[k]} 방면` : k ? '하행' : '상행'));
-      if (!xs.length) { const row = el('div','sb-row'); row.append(el('span', null, '-'), el('b','off', list === null ? '정보 없음' : quiet())); card.appendChild(row); }
+      if (!xs.length) {
+        const row = el('div','sb-row'), lead = el('span', null, '-'), off = el('b','off', list === null ? '정보 없음' : quiet());
+        row.append(lead, off); card.appendChild(row);
+        if (list !== null && near[k]) firstTrain(pick, near[k], lead, off);
+      }
       for (const x of xs.slice(0, 2)) {
         const row = el('div','sb-row'), t = arrShort(x, here);
         row.append(el('span', null, (dest(x) || '') + (/급행/.test(x.express) ? ' (급행)' : '')), el('b', /곧/.test(t) ? 'now' : null, t));
